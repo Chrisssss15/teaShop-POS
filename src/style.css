@@ -4513,3 +4513,40 @@ body,
   font-size: 18px !important;
   padding: 8px 12px !important;
 }
+
+/* ========================================================= */
+/* ADMIN CATEGORY ORDER                                      */
+/* ========================================================= */
+
+.admin-category-actions {
+  align-items: center;
+}
+
+.admin-category-order-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.admin-order-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #f5f8fc;
+  color: #1B478F;
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.admin-order-btn:hover {
+  background: #e8f0fb;
+  border-color: #b8cae1;
+}
+
+.admin-order-btn:active {
+  transform: scale(0.96);
+}

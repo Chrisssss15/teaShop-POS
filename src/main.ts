@@ -37,6 +37,7 @@ type Category = {
   is_active: boolean
   discount_type: DiscountType
   discount_value: number
+  sort_order: number
   created_at?: string | null
 }
 
@@ -714,6 +715,21 @@ async function loadProducts() {
   }
 
   render()
+}
+
+async function loadCategories() {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) {
+    console.error('Categorieën laden mislukt:', error)
+    return
+  }
+
+  categories = (data ?? []) as Category[]
 }
 
 async function loadToppings() {
@@ -2898,6 +2914,71 @@ function getAdminCategoryProductCount(categoryName: string) {
   return products.filter((product) => product.category === categoryName).length
 }
 
+
+async function moveAdminCategory(
+  categoryId: string,
+  direction: 'up' | 'down'
+) {
+  adminMessage = ''
+  adminError = ''
+
+  const orderedCategories = [...categories].sort((a, b) => {
+    const sortDifference =
+      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
+
+    if (sortDifference !== 0) {
+      return sortDifference
+    }
+
+    return a.name.localeCompare(b.name)
+  })
+
+  const currentIndex = orderedCategories.findIndex(
+    (category) => String(category.id) === String(categoryId)
+  )
+
+  if (currentIndex === -1) {
+    return
+  }
+
+  const targetIndex =
+    direction === 'up'
+      ? currentIndex - 1
+      : currentIndex + 1
+
+  if (
+    targetIndex < 0 ||
+    targetIndex >= orderedCategories.length
+  ) {
+    return
+  }
+
+  const [movedCategory] = orderedCategories.splice(currentIndex, 1)
+  orderedCategories.splice(targetIndex, 0, movedCategory)
+
+  const updates = orderedCategories.map((category, index) => {
+    return supabase
+      .from('categories')
+      .update({
+        sort_order: index + 1,
+      })
+      .eq('id', category.id)
+  })
+
+  const results = await Promise.all(updates)
+
+  const failedResult = results.find((result) => result.error)
+
+  if (failedResult?.error) {
+    adminError = `Volgorde aanpassen mislukt: ${failedResult.error.message}`
+    render()
+    return
+  }
+
+  adminMessage = 'Categorievolgorde aangepast.'
+  await loadAllAdminData()
+}
+
 // =============================
 // ADMIN: LOAD ALL DATA
 // Admin must also see inactive products/toppings.
@@ -2924,6 +3005,7 @@ async function loadAllAdminData() {
     supabase
       .from('categories')
       .select('*')
+      .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
     supabase
       .from('orders')
@@ -3041,14 +3123,41 @@ function renderOrderFilters() {
   `
 }
 
+function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
+  const groupedNames = Object.keys(grouped)
+
+  const orderedFromDatabase = categories
+    .filter((category) => groupedNames.includes(category.name))
+    .sort((a, b) => {
+      const sortDifference =
+        Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
+
+      if (sortDifference !== 0) {
+        return sortDifference
+      }
+
+      return a.name.localeCompare(b.name)
+    })
+    .map((category) => category.name)
+
+  const missingNames = groupedNames
+    .filter((name) => !orderedFromDatabase.includes(name))
+    .sort((a, b) => a.localeCompare(b))
+
+  return [...orderedFromDatabase, ...missingNames]
+}
+
 function renderProductGroups(grouped: Record<string, Product[]>) {
   if (Object.keys(grouped).length === 0) {
     return `<p>Geen producten gevonden.</p>`
   }
 
-  return Object.entries(grouped)
+  return getOrderedCategoryNames(grouped)
     .map(
-      ([category, items], index) => `
+      (category, index) => {
+        const items = grouped[category] ?? []
+
+        return `
         <div class="category-block" id="category-${index}">
           <h3>${escapeHtml(category)}</h3>
 
@@ -3089,6 +3198,7 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
           </div>
         </div>
       `
+      }
     )
     .join('')
 }
@@ -3169,15 +3279,15 @@ function renderCart(isCustomer: boolean) {
 // =============================
 
 function renderCustomerCategorySidebar(grouped: Record<string, Product[]>) {
-  const categories = Object.keys(grouped)
+  const orderedCategories = getOrderedCategoryNames(grouped)
 
-  if (categories.length === 0) {
+  if (orderedCategories.length === 0) {
     return ''
   }
 
   return `
     <aside class="customer-category-sidebar">
-      ${categories
+      ${orderedCategories
         .map(
           (category, index) => `
             <a 
@@ -4651,7 +4761,29 @@ function renderAdminCategoriesPage() {
                             ${category.is_active ? 'Actief' : 'Inactief'}
                           </span>
 
-                          <div class="admin-list-actions">
+                          <div class="admin-list-actions admin-category-actions">
+                            <div class="admin-category-order-buttons">
+                              <button
+                                class="admin-order-btn"
+                                data-admin-move-category="${category.id}"
+                                data-admin-move-direction="up"
+                                title="Omhoog"
+                                aria-label="${escapeHtml(category.name)} omhoog"
+                              >
+                                ↑
+                              </button>
+
+                              <button
+                                class="admin-order-btn"
+                                data-admin-move-category="${category.id}"
+                                data-admin-move-direction="down"
+                                title="Omlaag"
+                                aria-label="${escapeHtml(category.name)} omlaag"
+                              >
+                                ↓
+                              </button>
+                            </div>
+
                             <button class="admin-small-btn" data-admin-edit-category="${category.id}">
                               Bewerken
                             </button>
@@ -5304,6 +5436,22 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#admin-save-category-edit')?.addEventListener('click', saveAdminCategory)
   document.querySelector<HTMLButtonElement>('#admin-cancel-category')?.addEventListener('click', cancelAdminCategoryEdit)
 
+  document.querySelectorAll<HTMLElement>('[data-admin-move-category]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const categoryId = button.dataset.adminMoveCategory
+      const direction = button.dataset.adminMoveDirection
+
+      if (
+        !categoryId ||
+        (direction !== 'up' && direction !== 'down')
+      ) {
+        return
+      }
+
+      await moveAdminCategory(categoryId, direction)
+    })
+  })
+
   document.querySelectorAll<HTMLElement>('[data-admin-edit-category]').forEach((button) => {
     button.addEventListener('click', () => {
       const categoryId = button.dataset.adminEditCategory
@@ -5626,6 +5774,7 @@ async function startApp() {
   await Promise.all([
     loadProducts(),
     loadToppings(),
+    loadCategories(),
   ])
 
   if (screen === 'orders') {
