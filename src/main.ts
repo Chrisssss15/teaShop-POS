@@ -2915,6 +2915,97 @@ function getAdminCategoryProductCount(categoryName: string) {
 }
 
 
+let draggedCategoryId: string | null = null
+
+async function saveCategoryOrder(categoryIds: string[]) {
+  adminMessage = ''
+  adminError = ''
+
+  const results = await Promise.all(
+    categoryIds.map((categoryId, index) =>
+      supabase
+        .from('categories')
+        .update({ sort_order: index + 1 })
+        .eq('id', categoryId)
+    )
+  )
+
+  const failed = results.find((result) => result.error)
+
+  if (failed?.error) {
+    adminError = `Volgorde opslaan mislukt: ${failed.error.message}`
+    render()
+    return
+  }
+
+  adminMessage = 'Categorievolgorde opgeslagen.'
+  await loadAllAdminData()
+}
+
+function bindCategoryDragAndDrop() {
+  const list = document.querySelector<HTMLElement>('#admin-category-sort-list')
+  if (!list) return
+
+  const rows = Array.from(
+    list.querySelectorAll<HTMLElement>('[data-category-sort-id]')
+  )
+
+  rows.forEach((row) => {
+    row.addEventListener('dragstart', (event) => {
+      draggedCategoryId = row.dataset.categorySortId || null
+      row.classList.add('is-dragging')
+
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', draggedCategoryId || '')
+      }
+    })
+
+    row.addEventListener('dragover', (event) => {
+      event.preventDefault()
+
+      if (!draggedCategoryId) return
+
+      const currentId = row.dataset.categorySortId
+      if (!currentId || currentId === draggedCategoryId) return
+
+      const draggedRow = list.querySelector<HTMLElement>(
+        `[data-category-sort-id="${draggedCategoryId}"]`
+      )
+      if (!draggedRow) return
+
+      const rect = row.getBoundingClientRect()
+      const before = event.clientY < rect.top + rect.height / 2
+
+      if (before) {
+        list.insertBefore(draggedRow, row)
+      } else {
+        list.insertBefore(draggedRow, row.nextSibling)
+      }
+    })
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('is-dragging')
+      draggedCategoryId = null
+    })
+  })
+
+  list.addEventListener('drop', async (event) => {
+    event.preventDefault()
+
+    const ids = Array.from(
+      list.querySelectorAll<HTMLElement>('[data-category-sort-id]')
+    )
+      .map((row) => row.dataset.categorySortId)
+      .filter((id): id is string => Boolean(id))
+
+    if (ids.length > 0) {
+      await saveCategoryOrder(ids)
+    }
+  })
+}
+
+
 async function moveAdminCategory(
   categoryId: string,
   direction: 'up' | 'down'
@@ -3180,7 +3271,7 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
                               € ${Number(product.base_price).toFixed(2)}
                             </span>
 
-                            <span class="product-price product-sale-price">
+                            <span class="product-sale-price">
                               € ${getDiscountedProductPrice(product).toFixed(2)}
                             </span>
                           </span>
@@ -4729,14 +4820,22 @@ function renderAdminCategoriesPage() {
             </div>
           </div>
 
-          <div class="admin-list">
+          <div class="admin-list admin-category-sort-list" id="admin-category-sort-list">
             ${
               categories.length === 0
                 ? `<p class="muted">Nog geen categorieën gevonden.</p>`
                 : categories
                     .map(
                       (category) => `
-                        <div class="admin-list-item admin-category-list-item">
+                        <div
+                          class="admin-list-item admin-category-list-item admin-category-sort-row"
+                          draggable="true"
+                          data-category-sort-id="${category.id}"
+                        >
+                          <div class="admin-category-drag-handle" title="Sleep om volgorde te wijzigen">
+                            ⋮⋮
+                          </div>
+
                           <div class="admin-list-main">
                             <strong>${escapeHtml(category.name)}</strong>
                             <span>${getAdminCategoryProductCount(category.name)} producten</span>
@@ -4762,29 +4861,7 @@ function renderAdminCategoriesPage() {
                           </span>
 
                           <div class="admin-list-actions admin-category-actions">
-                            <div class="admin-category-order-buttons">
-                              <button
-                                class="admin-order-btn"
-                                data-admin-move-category="${category.id}"
-                                data-admin-move-direction="up"
-                                title="Omhoog"
-                                aria-label="${escapeHtml(category.name)} omhoog"
-                              >
-                                ↑
-                              </button>
-
-                              <button
-                                class="admin-order-btn"
-                                data-admin-move-category="${category.id}"
-                                data-admin-move-direction="down"
-                                title="Omlaag"
-                                aria-label="${escapeHtml(category.name)} omlaag"
-                              >
-                                ↓
-                              </button>
-                            </div>
-
-                            <button class="admin-small-btn" data-admin-edit-category="${category.id}">
+<button class="admin-small-btn" data-admin-edit-category="${category.id}">
                               Bewerken
                             </button>
 
@@ -5722,6 +5799,7 @@ function bindEvents() {
 
   bindCustomerCategoryScrollSpy()
   bindCustomerCategoryClicks()
+  bindCategoryDragAndDrop()
 }
 
 

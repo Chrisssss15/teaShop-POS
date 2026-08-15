@@ -4550,3 +4550,205 @@ body,
 .admin-order-btn:active {
   transform: scale(0.96);
 }
+
+/* ========================================================= */
+/* CUSTOMER DISCOUNT CARD FIX                                */
+/* - actieprijs altijd zichtbaar                             */
+/* - kortingsbadge overlapt naam niet op mobiel              */
+/* ========================================================= */
+
+/* Prijsblok krijgt een eigen plek in de productkaart */
+.product-card.has-discount .product-price-stack {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* Oude prijs */
+.product-card.has-discount .product-original-price {
+  display: inline-block;
+  color: #cf3d3d !important;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: #cf3d3d;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+/* Nieuwe prijs: los van .product-price zodat oude regels niet meer botsen */
+.product-card.has-discount .product-sale-price {
+  position: static !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 7px 12px !important;
+  margin: 0 !important;
+  background: #1B478F !important;
+  color: #ffffff !important;
+  border-radius: 999px !important;
+  font-size: 16px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  opacity: 1 !important;
+  visibility: visible !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* Desktop customer layout */
+.customer-page .customer-menu-layout .product-card.has-discount .product-price-stack {
+  grid-column: 2;
+  width: fit-content;
+  margin-top: 4px;
+}
+
+.customer-page .customer-menu-layout .product-card.has-discount .product-sale-price {
+  font-size: 17px !important;
+}
+
+/* ========================================================= */
+/* MOBILE                                                    */
+/* ========================================================= */
+
+@media (max-width: 700px) {
+  /*
+   * Geef producttekst meer verticale structuur:
+   * naam -> badge -> prijzen.
+   * Daardoor kan de badge nooit meer over de naam liggen.
+   */
+  .customer-page .customer-menu-layout .product-card.has-discount {
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    align-items: center;
+    row-gap: 6px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  .customer-page .customer-menu-layout .product-card.has-discount .product-name {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+    padding-right: 0;
+    min-width: 0;
+    max-width: 100%;
+    line-height: 1.15;
+  }
+
+  /* Badge wordt onderdeel van de normale layout in plaats van absolute overlay */
+  .customer-page .customer-menu-layout .product-card.has-discount .product-discount-badge {
+    position: static !important;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0;
+    padding: 5px 9px;
+    font-size: 10px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .customer-page .customer-menu-layout .product-card.has-discount .product-price-stack {
+    grid-column: 2;
+    grid-row: 3;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .customer-page .customer-menu-layout .product-card.has-discount .product-original-price {
+    font-size: 13px;
+  }
+
+  .customer-page .customer-menu-layout .product-card.has-discount .product-sale-price {
+    padding: 7px 11px !important;
+    font-size: 16px !important;
+  }
+}
+
+/* Nog iets compacter op smalle telefoons */
+@media (max-width: 430px) {
+  .customer-page .customer-menu-layout .product-card.has-discount .product-discount-badge {
+    font-size: 9px;
+    padding: 4px 7px;
+  }
+
+  .customer-page .customer-menu-layout .product-card.has-discount .product-sale-price {
+    font-size: 15px !important;
+    padding: 7px 10px !important;
+  }
+}
+
+/* ========================================================= */
+/* ADMIN CATEGORY DRAG & DROP                                */
+/* ========================================================= */
+
+.admin-category-sort-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-category-sort-row {
+  grid-template-columns: 34px minmax(0, 1fr) 78px auto;
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-category-drag-handle {
+  width: 30px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  border-radius: 9px;
+  background: #eef3fa;
+  color: #1B478F;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -3px;
+  cursor: grab;
+  user-select: none;
+}
+
+.admin-category-drag-handle:active {
+  cursor: grabbing;
+}
+
+.admin-category-sort-row.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.99);
+  box-shadow: 0 10px 24px rgba(27, 71, 143, 0.12);
+}
+
+@media (max-width: 600px) {
+  .admin-category-sort-row {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "drag main state"
+      "drag actions actions";
+  }
+
+  .admin-category-drag-handle {
+    grid-area: drag;
+  }
+
+  .admin-category-sort-row .admin-list-main {
+    grid-area: main;
+  }
+
+  .admin-category-sort-row .admin-state {
+    grid-area: state;
+  }
+
+  .admin-category-sort-row .admin-list-actions {
+    grid-area: actions;
+    justify-content: flex-start;
+  }
+}
