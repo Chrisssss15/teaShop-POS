@@ -5894,3 +5894,392 @@ body,
     grid-column: 1 !important;
   }
 }
+
+/* ========================================================= */
+/* ORDERS — ANIMATED SEGMENTED TOGGLE                        */
+/* ========================================================= */
+
+.orders-page .order-filters,
+.page.orders-page .order-filters,
+.order-filters {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 !important;
+  width: min(620px, 100%);
+  padding: 4px;
+  margin-bottom: 20px;
+  border: 1px solid #dce5f1;
+  border-radius: 16px;
+  background: #f3f6fb;
+  box-shadow: inset 0 1px 2px rgba(23, 32, 51, 0.04);
+  overflow: hidden;
+}
+
+/* Blauwe slider achter de actieve tab */
+.order-filters::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / 4);
+  height: calc(100% - 8px);
+  border-radius: 12px;
+  background: #1B478F;
+  box-shadow: 0 5px 14px rgba(27, 71, 143, 0.22);
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease;
+  pointer-events: none;
+}
+
+/* Positie van de slider */
+.order-filters[data-active-filter="all"]::before {
+  transform: translateX(0%);
+}
+
+.order-filters[data-active-filter="active"]::before {
+  transform: translateX(100%);
+}
+
+.order-filters[data-active-filter="preparation"]::before {
+  transform: translateX(200%);
+}
+
+.order-filters[data-active-filter="completed"]::before {
+  transform: translateX(300%);
+}
+
+.order-filters .filter-btn {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 14px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  background: transparent !important;
+  color: #617089 !important;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    color 180ms ease,
+    transform 160ms ease;
+}
+
+.order-filters .filter-btn:hover {
+  background: transparent !important;
+  color: #1B478F !important;
+}
+
+.order-filters .filter-btn:active {
+  transform: scale(0.96);
+}
+
+/* Actieve tekst staat boven de blauwe slider */
+.order-filters .filter-btn.active {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+
+/* Kleine subtiele focus-ring voor keyboard gebruik */
+.order-filters .filter-btn:focus-visible {
+  outline: 2px solid #1B478F;
+  outline-offset: -3px;
+}
+
+/* Mobiel: behoud toggle, maar compacter */
+@media (max-width: 620px) {
+  .order-filters {
+    width: 100%;
+    border-radius: 14px;
+  }
+
+  .order-filters::before {
+    border-radius: 10px;
+  }
+
+  .order-filters .filter-btn {
+    height: 40px;
+    padding: 0 6px !important;
+    font-size: 11px;
+  }
+}
+
+/* ========================================================= */
+/* ORDERS — COMPACT PILL FILTERS                             */
+/* ========================================================= */
+
+.order-filters {
+  display: flex !important;
+  grid-template-columns: none !important;
+  width: auto !important;
+  max-width: 100% !important;
+  gap: 10px !important;
+  padding: 0 !important;
+  margin: 0 0 22px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+  flex-wrap: wrap;
+}
+
+.order-filters::before {
+  display: none !important;
+  content: none !important;
+}
+
+.order-filters .filter-btn {
+  min-width: auto !important;
+  height: 38px !important;
+  padding: 0 16px !important;
+  border: 1px solid #d9e3f0 !important;
+  border-radius: 999px !important;
+  background: #ffffff !important;
+  color: #5f6f87 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 2px 6px rgba(23, 32, 51, 0.04);
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 140ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.order-filters .filter-btn:hover {
+  background: #f5f8fc !important;
+  color: #1B478F !important;
+  border-color: #b9cae1 !important;
+  box-shadow: 0 4px 10px rgba(27, 71, 143, 0.08);
+  transform: translateY(-1px);
+}
+
+.order-filters .filter-btn.active {
+  background: #1B478F !important;
+  color: #ffffff !important;
+  border-color: #1B478F !important;
+  box-shadow: 0 5px 12px rgba(27, 71, 143, 0.20);
+  transform: translateY(-1px);
+}
+
+.order-filters .filter-btn:active {
+  transform: scale(0.97) !important;
+}
+
+.order-filters .filter-btn:focus-visible {
+  outline: 3px solid rgba(27, 71, 143, 0.16);
+  outline-offset: 2px;
+}
+
+@media (max-width: 620px) {
+  .order-filters {
+    gap: 8px !important;
+    margin-bottom: 18px !important;
+  }
+
+  .order-filters .filter-btn {
+    height: 36px !important;
+    padding: 0 13px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ========================================================= */
+/* ORDERS FILTER — FINAL COMPACT FIX                         */
+/* ========================================================= */
+
+.page .order-filters,
+.orders-page .order-filters,
+.order-filters {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  flex-wrap: wrap !important;
+
+  width: auto !important;
+  max-width: 100% !important;
+
+  gap: 8px !important;
+  padding: 0 !important;
+  margin: 18px 0 22px !important;
+
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.page .order-filters::before,
+.orders-page .order-filters::before,
+.order-filters::before {
+  display: none !important;
+  content: none !important;
+}
+
+.page .order-filters .filter-btn,
+.orders-page .order-filters .filter-btn,
+.order-filters .filter-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+
+  height: 38px !important;
+  padding: 0 16px !important;
+  margin: 0 !important;
+
+  border: 1px solid #d9e3f0 !important;
+  border-radius: 999px !important;
+
+  background: #ffffff !important;
+  color: #53637b !important;
+
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+
+  box-shadow: none !important;
+
+  transition:
+    background 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 140ms ease,
+    box-shadow 160ms ease !important;
+}
+
+.page .order-filters .filter-btn:hover,
+.orders-page .order-filters .filter-btn:hover,
+.order-filters .filter-btn:hover {
+  background: #f5f8fc !important;
+  color: #1B478F !important;
+  border-color: #b9cae1 !important;
+  transform: translateY(-1px) !important;
+}
+
+.page .order-filters .filter-btn.active,
+.orders-page .order-filters .filter-btn.active,
+.order-filters .filter-btn.active {
+  background: #1B478F !important;
+  color: #ffffff !important;
+  border-color: #1B478F !important;
+  box-shadow: 0 4px 10px rgba(27, 71, 143, 0.18) !important;
+}
+
+.page .order-filters .filter-btn:active,
+.orders-page .order-filters .filter-btn:active,
+.order-filters .filter-btn:active {
+  transform: scale(0.97) !important;
+}
+
+@media (max-width: 620px) {
+  .page .order-filters,
+  .orders-page .order-filters,
+  .order-filters {
+    gap: 6px !important;
+  }
+
+  .page .order-filters .filter-btn,
+  .orders-page .order-filters .filter-btn,
+  .order-filters .filter-btn {
+    height: 36px !important;
+    padding: 0 12px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ========================================================= */
+/* PRODUCT SOLD OUT                                         */
+/* ========================================================= */
+
+/* Productkaart blijft zichtbaar maar is duidelijk niet bestelbaar */
+.product-card.sold-out {
+  position: relative;
+  cursor: not-allowed !important;
+  opacity: 0.62;
+  filter: grayscale(0.65);
+  background: #f3f5f8 !important;
+  border-color: #d8dee8 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.product-card.sold-out:hover,
+.product-card.sold-out:active {
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: #d8dee8 !important;
+}
+
+.product-card.sold-out .product-name,
+.product-card.sold-out .product-price,
+.product-card.sold-out .product-original-price,
+.product-card.sold-out .product-sale-price {
+  opacity: 0.72;
+}
+
+/* Duidelijke uitverkocht badge */
+.product-sold-out-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 5px 9px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: #e4e8ef;
+  color: #5d6878;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+/* Als product óók korting heeft, uitverkocht visueel belangrijker houden */
+.product-card.sold-out .product-discount-badge {
+  opacity: 0.65;
+}
+
+/* Admin */
+.admin-sold-out-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #eceff4;
+  color: #596578;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-sold-out-checkbox {
+  border-color: #d9dee7 !important;
+}
+
+.admin-sold-out-checkbox:has(input:checked) {
+  background: #f1f3f6 !important;
+  border-color: #aeb7c5 !important;
+}
+
+/* Customer/mobile duidelijk houden */
+@media (max-width: 700px) {
+  .product-sold-out-badge {
+    margin-top: 5px;
+    font-size: 10px;
+    padding: 4px 8px;
+  }
+}

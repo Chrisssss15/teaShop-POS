@@ -20,6 +20,7 @@ type Product = {
   base_price: number
   is_active: boolean
   is_bestseller: boolean
+  is_sold_out: boolean
   discount_type: DiscountType
   discount_value: number
 }
@@ -2795,6 +2796,7 @@ async function saveAdminProduct() {
   const discountTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-discount-type')
   const discountValueInput = document.querySelector<HTMLInputElement>('#admin-product-discount-value')
   const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
+  const soldOutInput = document.querySelector<HTMLInputElement>('#admin-product-sold-out')
   const activeInput = document.querySelector<HTMLInputElement>('#admin-product-active')
   const selectedToppingIds = getSelectedAdminToppingIds()
 
@@ -2807,6 +2809,7 @@ async function saveAdminProduct() {
       ? 0
       : Math.max(0, Number(discountValueInput?.value || 0))
   const isBestSeller = bestSellerInput?.checked ?? false
+  const isSoldOut = soldOutInput?.checked ?? false
   const isActive = activeInput?.checked ?? true
 
   adminMessage = ''
@@ -2855,6 +2858,7 @@ async function saveAdminProduct() {
           discount_type: discountType,
           discount_value: discountValue,
           is_bestseller: isBestSeller,
+          is_sold_out: isSoldOut,
           is_active: isActive,
         })
         .eq('id', productId)
@@ -2877,6 +2881,7 @@ async function saveAdminProduct() {
           discount_type: discountType,
           discount_value: discountValue,
           is_bestseller: isBestSeller,
+          is_sold_out: isSoldOut,
           is_active: isActive,
         })
         .select('id')
@@ -3663,7 +3668,7 @@ function renderOrderFilters() {
   const filters: OrderFilter[] = ['all', 'active', 'preparation', 'completed']
 
   return `
-    <div class="order-filters">
+    <div class="order-filters" data-active-filter="${orderFilter}">
       ${filters
         .map(
           (filter) => `
@@ -3746,8 +3751,18 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
             ${items
               .map(
                 (product) => `
-                  <button class="product-card ${hasProductDiscount(product) ? 'has-discount' : ''}" data-add="${product.id}">
+                  <button
+                    class="product-card ${hasProductDiscount(product) ? 'has-discount' : ''} ${product.is_sold_out ? 'sold-out' : ''}"
+                    data-add="${product.id}"
+                    ${product.is_sold_out ? 'disabled aria-disabled="true"' : ''}
+                  >
                     <span class="product-name">${escapeHtml(product.name)}</span>
+
+                    ${
+                      product.is_sold_out
+                        ? `<span class="product-sold-out-badge">Uitverkocht</span>`
+                        : ''
+                    }
 
                     ${
                       hasProductDiscount(product)
@@ -4512,6 +4527,15 @@ function renderAdminProductForm() {
           <span>Best Seller</span>
         </label>
 
+        <label class="admin-checkbox-label admin-sold-out-checkbox">
+          <input
+            id="admin-product-sold-out"
+            type="checkbox"
+            ${editingProduct?.is_sold_out ? 'checked' : ''}
+          />
+          <span>Uitverkocht</span>
+        </label>
+
         <label class="admin-checkbox-label">
           <input
             id="admin-product-active"
@@ -4602,6 +4626,12 @@ function renderAdminProductsList() {
                         ${
                           product.is_bestseller
                             ? `<span class="admin-bestseller-badge">Best Seller</span>`
+                            : ''
+                        }
+
+                        ${
+                          product.is_sold_out
+                            ? `<span class="admin-sold-out-badge">Uitverkocht</span>`
                             : ''
                         }
 
@@ -5037,6 +5067,15 @@ function renderAdminProductEditModal() {
                 ${product.is_bestseller ? 'checked' : ''}
               />
               <span>Best Seller</span>
+            </label>
+
+            <label class="admin-checkbox-label admin-modal-checkbox admin-sold-out-checkbox">
+              <input
+                id="admin-product-sold-out"
+                type="checkbox"
+                ${product.is_sold_out ? 'checked' : ''}
+              />
+              <span>Uitverkocht</span>
             </label>
 
             <label class="admin-checkbox-label admin-modal-checkbox">
