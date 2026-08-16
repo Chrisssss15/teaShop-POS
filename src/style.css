@@ -4687,49 +4687,185 @@ body,
 }
 
 /* ========================================================= */
-/* ADMIN CATEGORY DRAG & DROP                                */
+/* ADMIN CATEGORY → PRODUCTS VIEW                            */
 /* ========================================================= */
 
-.admin-category-sort-list {
-  display: grid;
-  gap: 8px;
-}
-
-.admin-category-sort-row {
-  grid-template-columns: 34px minmax(0, 1fr) 78px auto;
-  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.admin-category-drag-handle {
-  width: 30px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  border-radius: 9px;
+.admin-category-products-btn {
   background: #eef3fa;
   color: #1B478F;
-  font-size: 18px;
+}
+
+.admin-category-products-modal {
+  width: min(720px, 100%);
+}
+
+.admin-category-products-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: #f7f9fc;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.admin-category-products-summary span {
+  color: #6f7a8a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-category-products-summary strong {
+  color: #1B478F;
+  font-size: 20px;
+}
+
+.admin-category-products-list {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+}
+
+.admin-category-product-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #e3e9f2;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.admin-category-product-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-category-product-main > strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.admin-category-product-discount {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #eef3fa;
+  color: #1B478F;
+  font-size: 9px;
   font-weight: 900;
-  letter-spacing: -3px;
-  cursor: grab;
-  user-select: none;
 }
 
-.admin-category-drag-handle:active {
-  cursor: grabbing;
+.admin-category-product-price {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
 }
 
-.admin-category-sort-row.is-dragging {
-  opacity: 0.5;
-  transform: scale(0.99);
-  box-shadow: 0 10px 24px rgba(27, 71, 143, 0.12);
+.admin-category-product-price > strong {
+  color: #1B478F;
+  font-size: 14px;
+}
+
+.admin-category-products-empty {
+  display: grid;
+  gap: 5px;
+  padding: 26px;
+  border: 1px dashed #cfd9e7;
+  border-radius: 14px;
+  text-align: center;
+}
+
+.admin-category-products-empty strong {
+  color: #172033;
+}
+
+.admin-category-products-empty span {
+  color: #7a8798;
+  font-size: 12px;
 }
 
 @media (max-width: 600px) {
-  .admin-category-sort-row {
-    grid-template-columns: 34px minmax(0, 1fr) auto;
+  .admin-category-product-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "product status"
+      "price price";
+  }
+
+  .admin-category-product-main {
+    grid-area: product;
+  }
+
+  .admin-category-product-row .admin-state {
+    grid-area: status;
+  }
+
+  .admin-category-product-price {
+    grid-area: price;
+  }
+}
+
+/* ========================================================= */
+/* ADMIN CATEGORY DRAG & DROP                                */
+/* ========================================================= */
+
+.admin-category-draggable {
+  cursor: grab;
+  user-select: none;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.admin-category-draggable:active {
+  cursor: grabbing;
+}
+
+.admin-category-drag-handle {
+  width: 28px;
+  min-width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #8da0bb;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -4px;
+  cursor: grab;
+}
+
+.admin-category-draggable:hover .admin-category-drag-handle {
+  color: #1B478F;
+}
+
+.admin-category-draggable.dragging {
+  opacity: 0.45;
+  transform: scale(0.99);
+  border-color: #9fb6d5;
+}
+
+.admin-category-draggable.drag-over {
+  border-color: #1B478F;
+  background: #f2f6fc;
+  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+}
+
+/* Oude pijltjes niet meer nodig */
+.admin-category-order-buttons,
+.admin-order-btn {
+  display: none !important;
+}
+
+@media (max-width: 600px) {
+  .admin-category-list-item {
+    grid-template-columns: 24px 1fr auto;
     grid-template-areas:
       "drag main state"
       "drag actions actions";
@@ -4737,18 +4873,493 @@ body,
 
   .admin-category-drag-handle {
     grid-area: drag;
+    width: 24px;
+    min-width: 24px;
+    align-self: stretch;
   }
 
-  .admin-category-sort-row .admin-list-main {
+  .admin-category-list-item .admin-list-main {
     grid-area: main;
   }
 
-  .admin-category-sort-row .admin-state {
+  .admin-category-list-item .admin-state {
     grid-area: state;
   }
 
-  .admin-category-sort-row .admin-list-actions {
+  .admin-category-list-item .admin-list-actions {
     grid-area: actions;
     justify-content: flex-start;
   }
+}
+
+/* ========================================================= */
+/* CATEGORY ADMIN — CLEAN COMPACT DRAG LAYOUT                */
+/* ========================================================= */
+
+.admin-category-list-item {
+  display: grid !important;
+  grid-template-columns: 28px minmax(180px, 1fr) auto auto !important;
+  grid-template-areas: "drag main state actions" !important;
+  gap: 12px !important;
+  align-items: center !important;
+  min-height: 58px !important;
+  padding: 10px 12px !important;
+}
+
+/* Drag handle */
+.admin-category-drag-handle {
+  grid-area: drag !important;
+  width: 28px !important;
+  min-width: 28px !important;
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  align-self: center !important;
+  color: #9aabc0 !important;
+  font-size: 17px !important;
+  letter-spacing: -4px !important;
+}
+
+/* Naam + product count gewoon links */
+.admin-category-list-item .admin-list-main {
+  grid-area: main !important;
+  min-width: 0 !important;
+  display: grid !important;
+  justify-items: start !important;
+  align-content: center !important;
+  gap: 2px !important;
+  text-align: left !important;
+}
+
+.admin-category-list-item .admin-list-main strong {
+  font-size: 14px !important;
+  line-height: 1.15 !important;
+  text-align: left !important;
+}
+
+.admin-category-list-item .admin-list-main > span:not(.admin-category-discount-label) {
+  font-size: 10px !important;
+  line-height: 1.2 !important;
+  text-align: left !important;
+}
+
+/* Kortingslabel compact onder de category naam */
+.admin-category-discount-label {
+  margin-top: 3px !important;
+  padding: 3px 6px !important;
+  font-size: 8px !important;
+  line-height: 1 !important;
+}
+
+/* Status */
+.admin-category-list-item .admin-state {
+  grid-area: state !important;
+  justify-self: end !important;
+  align-self: center !important;
+  white-space: nowrap !important;
+}
+
+/* Buttons rechts op één rij */
+.admin-category-list-item .admin-list-actions,
+.admin-category-actions {
+  grid-area: actions !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  min-width: max-content !important;
+}
+
+.admin-category-list-item .admin-small-btn {
+  padding: 7px 9px !important;
+  font-size: 9px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+/* Producten button iets neutraler */
+.admin-category-products-btn {
+  background: #f1f5fa !important;
+  color: #1B478F !important;
+}
+
+/* Drag states rustiger */
+.admin-category-draggable.dragging {
+  opacity: 0.55 !important;
+  transform: scale(0.995) !important;
+}
+
+.admin-category-draggable.drag-over {
+  background: #f7faff !important;
+  border-color: #8eacd2 !important;
+  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.06) !important;
+}
+
+/* Desktop: panel wat rustiger */
+.admin-category-layout > .admin-panel:last-child {
+  padding: 18px !important;
+}
+
+/* Tablet */
+@media (max-width: 1050px) {
+  .admin-category-list-item {
+    grid-template-columns: 26px minmax(150px, 1fr) auto !important;
+    grid-template-areas:
+      "drag main state"
+      "drag actions actions" !important;
+    row-gap: 7px !important;
+  }
+
+  .admin-category-list-item .admin-list-actions {
+    justify-content: flex-start !important;
+  }
+}
+
+/* Mobile */
+@media (max-width: 650px) {
+  .admin-category-list-item {
+    grid-template-columns: 24px minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "drag main state"
+      "drag actions actions" !important;
+    min-height: 0 !important;
+    padding: 10px !important;
+  }
+
+  .admin-category-drag-handle {
+    width: 24px !important;
+    min-width: 24px !important;
+    height: 100% !important;
+    align-self: stretch !important;
+  }
+
+  .admin-category-list-item .admin-list-actions {
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+  }
+}
+
+/* ========================================================= */
+/* AUTOMATIC DISCOUNT CATEGORY                               */
+/* ========================================================= */
+
+/* Discount gebruikt dezelfde productkaarten; alleen heading iets herkenbaarder */
+.category-block:first-child > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ========================================================= */
+/* ADMIN AUTOMATIC DISCOUNT CATEGORY                         */
+/* ========================================================= */
+
+.admin-auto-category-row {
+  display: grid !important;
+  grid-template-columns: 28px minmax(180px, 1fr) auto auto !important;
+  grid-template-areas: "icon main state actions" !important;
+  gap: 12px !important;
+  align-items: center !important;
+  min-height: 58px !important;
+  padding: 10px 12px !important;
+  border-color: #b9cbe2 !important;
+  background: #f7faff !important;
+}
+
+.admin-auto-category-icon {
+  grid-area: icon;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #1B478F;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.admin-auto-category-row .admin-list-main {
+  grid-area: main !important;
+}
+
+.admin-auto-category-row .admin-state {
+  grid-area: state !important;
+  justify-self: end !important;
+}
+
+.admin-auto-category-row .admin-list-actions {
+  grid-area: actions !important;
+}
+
+.admin-auto-category-label {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #e8f0fb;
+  color: #1B478F !important;
+  font-size: 8px !important;
+  font-weight: 900;
+}
+
+@media (max-width: 1050px) {
+  .admin-auto-category-row {
+    grid-template-columns: 28px minmax(150px, 1fr) auto !important;
+    grid-template-areas:
+      "icon main state"
+      "icon actions actions" !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .admin-auto-category-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "icon main state"
+      "icon actions actions" !important;
+  }
+
+  .admin-auto-category-icon {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* ========================================================= */
+/* DISCOUNT SYSTEM CATEGORY — TOGGLE + DRAG                  */
+/* ========================================================= */
+
+.admin-discount-system-row {
+  border-color: #b9cbe2 !important;
+  background: #f7faff !important;
+}
+
+.admin-discount-system-row .admin-category-drag-handle {
+  color: #1B478F !important;
+}
+
+.admin-discount-system-row .admin-list-main > strong {
+  color: #1B478F !important;
+}
+
+.admin-discount-system-row .admin-auto-category-label {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #e8f0fb;
+  color: #1B478F !important;
+  font-size: 8px !important;
+  font-weight: 900;
+}
+
+/* ========================================================= */
+/* BEST SELLER SYSTEM CATEGORY                               */
+/* ========================================================= */
+
+.admin-bestseller-system-row {
+  border-color: #d9c987 !important;
+  background: #fffdf5 !important;
+}
+
+.admin-bestseller-system-row .admin-category-drag-handle {
+  color: #9a7b18 !important;
+}
+
+.admin-bestseller-system-row .admin-list-main > strong {
+  color: #7f6310 !important;
+}
+
+.admin-bestseller-system-row .admin-auto-category-label {
+  background: #fff5c7 !important;
+  color: #7f6310 !important;
+}
+
+.admin-bestseller-sold-badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #fff5c7;
+  color: #7f6310;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+/* ========================================================= */
+/* MANUAL BEST SELLER                                        */
+/* ========================================================= */
+
+.admin-product-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-bestseller-checkbox {
+  border-color: #dbc978 !important;
+  background: #fff9df !important;
+}
+
+.admin-bestseller-checkbox span {
+  color: #7f6310;
+  font-weight: 850;
+}
+
+.admin-product-statuses {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-bestseller-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #fff5c7;
+  color: #7f6310;
+  font-size: 8px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+/* ========================================================= */
+/* PRODUCT CARD — DISCOUNT BADGE TITLE FIX                   */
+/* ========================================================= */
+
+/* Zorg dat de kaart de badge goed kan positioneren */
+.product-card.has-discount {
+  position: relative;
+}
+
+/* Geef de titel altijd voldoende ruimte aan de rechterkant */
+.product-card.has-discount .product-name {
+  display: block;
+  max-width: 100%;
+  padding-right: 92px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+/* Badge strak rechtsboven */
+.product-card.has-discount .product-discount-badge {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  z-index: 3;
+  width: auto;
+  max-width: 82px;
+  margin: 0 !important;
+  white-space: nowrap;
+  text-align: center;
+}
+
+/* Iets meer ademruimte op compacte POS cards */
+.page:not(.customer-page) .product-card.has-discount {
+  padding-top: 16px;
+}
+
+/* Als kaart te smal wordt, badge niet over titel laten vallen */
+@media (max-width: 1200px) {
+  .page:not(.customer-page) .product-card.has-discount .product-name {
+    padding-right: 78px;
+    font-size: 13px;
+  }
+
+  .page:not(.customer-page) .product-card.has-discount .product-discount-badge {
+    top: 8px !important;
+    right: 8px !important;
+    max-width: 72px;
+    padding: 4px 6px !important;
+    font-size: 8px !important;
+  }
+}
+
+/* Mobiel/customer: badge onderdeel van layout, nooit over titel */
+@media (max-width: 700px) {
+  .customer-page .product-card.has-discount .product-name {
+    padding-right: 0 !important;
+  }
+
+  .customer-page .product-card.has-discount .product-discount-badge {
+    position: static !important;
+    max-width: none;
+    width: fit-content;
+    margin-top: 4px !important;
+  }
+}
+
+/* ========================================================= */
+/* PRODUCT CARD — CLEAN TITLE LAYOUT                         */
+/* ========================================================= */
+
+/*
+ * De badge krijgt bovenin zijn eigen ruimte.
+ * De productnaam mag daarna weer de volledige kaartbreedte gebruiken.
+ */
+.page:not(.customer-page) .product-card.has-discount {
+  position: relative;
+  padding-top: 42px !important;
+}
+
+/* Geen kunstmatige smalle titel meer */
+.page:not(.customer-page) .product-card.has-discount .product-name {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  padding-right: 0 !important;
+  margin: 0 !important;
+  line-height: 1.15 !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  hyphens: none !important;
+}
+
+/* Badge blijft netjes bovenaan rechts */
+.page:not(.customer-page) .product-card.has-discount .product-discount-badge {
+  position: absolute !important;
+  top: 10px !important;
+  right: 10px !important;
+  width: auto !important;
+  max-width: none !important;
+  white-space: nowrap !important;
+}
+
+/* Prijsblok netjes onder de naam */
+.page:not(.customer-page) .product-card.has-discount .product-price-stack {
+  margin-top: 12px !important;
+}
+
+/* Op iets smallere POS-schermen blijft de titel nog steeds normaal leesbaar */
+@media (max-width: 1200px) {
+  .page:not(.customer-page) .product-card.has-discount {
+    padding-top: 40px !important;
+  }
+
+  .page:not(.customer-page) .product-card.has-discount .product-name {
+    padding-right: 0 !important;
+    font-size: 14px !important;
+  }
+
+  .page:not(.customer-page) .product-card.has-discount .product-discount-badge {
+    top: 9px !important;
+    right: 9px !important;
+    max-width: none !important;
+  }
+}
+
+/* Customer/mobile gebruikt de bestaande mobiele layout */
+@media (max-width: 700px) {
+  .customer-page .product-card.has-discount {
+    padding-top: 14px !important;
+  }
+}
+
+.customer-checkout-footer{
+  display: none;
 }

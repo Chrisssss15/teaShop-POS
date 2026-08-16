@@ -19,6 +19,7 @@ type Product = {
   category: string
   base_price: number
   is_active: boolean
+  is_bestseller: boolean
   discount_type: DiscountType
   discount_value: number
 }
@@ -485,11 +486,15 @@ let customerLanguage: CustomerLanguage = 'nl'
 let adminEditingProductId: string | null = null
 let adminEditingToppingId: string | null = null
 let adminEditingCategoryId: string | null = null
+let adminViewingCategoryId: string | null = null
+let adminDraggingCategoryId: string | null = null
 let adminMessage = ''
 let adminError = ''
 
 let adminTodayOrders: Order[] = []
 let adminTodayOrderItems: OrderItem[] = []
+
+let bestSellerSales: Record<string, number> = {}
 
 // Product customizer
 let isCustomerCustomizerOpen = false
@@ -717,6 +722,50 @@ async function loadProducts() {
   render()
 }
 
+async function loadBestSellerSales() {
+  const { data: orderData, error: orderError } = await supabase
+    .from('orders')
+    .select('id,status')
+
+  if (orderError) {
+    console.error('Best seller orders laden mislukt:', orderError)
+    bestSellerSales = {}
+    return
+  }
+
+  const validOrderIds = (orderData ?? [])
+    .filter((order: any) => order.status !== 'cancelled')
+    .map((order: any) => order.id)
+
+  if (validOrderIds.length === 0) {
+    bestSellerSales = {}
+    return
+  }
+
+  const { data: itemData, error: itemError } = await supabase
+    .from('order_items')
+    .select('product_id,quantity,order_id')
+    .in('order_id', validOrderIds)
+
+  if (itemError) {
+    console.error('Best seller order items laden mislukt:', itemError)
+    bestSellerSales = {}
+    return
+  }
+
+  const sales: Record<string, number> = {}
+
+  for (const item of itemData ?? []) {
+    if (!item.product_id) continue
+
+    const productId = String(item.product_id)
+    sales[productId] =
+      Number(sales[productId] ?? 0) + Number(item.quantity ?? 0)
+  }
+
+  bestSellerSales = sales
+}
+
 async function loadCategories() {
   const { data, error } = await supabase
     .from('categories')
@@ -730,6 +779,30 @@ async function loadCategories() {
   }
 
   categories = (data ?? []) as Category[]
+
+  let shouldRefresh = false
+
+  if (!getDiscountSystemCategory()) {
+    await ensureDiscountSystemCategory()
+    shouldRefresh = true
+  }
+
+  if (!getBestSellerSystemCategory()) {
+    await ensureBestSellerSystemCategory()
+    shouldRefresh = true
+  }
+
+  if (shouldRefresh) {
+    const { data: refreshedData, error: refreshedError } = await supabase
+      .from('categories')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (!refreshedError) {
+      categories = (refreshedData ?? []) as Category[]
+    }
+  }
 }
 
 async function loadToppings() {
@@ -1190,15 +1263,150 @@ function getTotal() {
   return cart.reduce((sum, item) => sum + getCartItemLineTotal(item), 0)
 }
 
+const DISCOUNT_CATEGORY_KEY = '__discount__'
+const DISCOUNT_CATEGORY_LABEL = 'Discount'
+
+const BESTSELLER_CATEGORY_KEY = '__bestseller__'
+const BESTSELLER_CATEGORY_LABEL = 'Best Seller'
+const BESTSELLER_LIMIT = 5
+
+function isDiscountSystemCategory(category: Category) {
+  return category.name.trim().toLowerCase() === DISCOUNT_CATEGORY_LABEL.toLowerCase()
+}
+
+function getDiscountSystemCategory() {
+  return categories.find((category) => isDiscountSystemCategory(category)) ?? null
+}
+
+
+function isBestSellerSystemCategory(category: Category) {
+  return category.name.trim().toLowerCase() === BESTSELLER_CATEGORY_LABEL.toLowerCase()
+}
+
+function getBestSellerSystemCategory() {
+  return categories.find((category) => isBestSellerSystemCategory(category)) ?? null
+}
+
+async function ensureBestSellerSystemCategory() {
+  if (getBestSellerSystemCategory()) {
+    return
+  }
+
+  const maxSortOrder = categories.reduce((max, category) => {
+    return Math.max(max, Number(category.sort_order ?? 0))
+  }, 0)
+
+  const { error } = await supabase
+    .from('categories')
+    .insert({
+      name: BESTSELLER_CATEGORY_LABEL,
+      is_active: true,
+      discount_type: 'none',
+      discount_value: 0,
+      sort_order: maxSortOrder + 1,
+    })
+
+  if (error) {
+    console.error('Best Seller categorie aanmaken mislukt:', error)
+  }
+}
+
+async function ensureDiscountSystemCategory() {
+  if (getDiscountSystemCategory()) {
+    return
+  }
+
+  const maxSortOrder = categories.reduce((max, category) => {
+    return Math.max(max, Number(category.sort_order ?? 0))
+  }, 0)
+
+  const { error } = await supabase
+    .from('categories')
+    .insert({
+      name: DISCOUNT_CATEGORY_LABEL,
+      is_active: true,
+      discount_type: 'none',
+      discount_value: 0,
+      sort_order: maxSortOrder + 1,
+    })
+
+  if (error) {
+    console.error('Discount categorie aanmaken mislukt:', error)
+  }
+}
+
+function getCategoryDisplayName(categoryKey: string) {
+  if (categoryKey === DISCOUNT_CATEGORY_KEY) {
+    return DISCOUNT_CATEGORY_LABEL
+  }
+
+  if (categoryKey === BESTSELLER_CATEGORY_KEY) {
+    return BESTSELLER_CATEGORY_LABEL
+  }
+
+  return categoryKey
+}
+
+
+function getDiscountedProducts() {
+  return products
+    .filter((product) => hasProductDiscount(product))
+    .sort((a, b) => {
+      const discountA =
+        Number(a.base_price) - getDiscountedProductPrice(a)
+
+      const discountB =
+        Number(b.base_price) - getDiscountedProductPrice(b)
+
+      if (discountB !== discountA) {
+        return discountB - discountA
+      }
+
+      return a.name.localeCompare(b.name)
+    })
+}
+
+
+function getBestSellerProducts() {
+  return products
+    .filter((product) => product.is_bestseller === true)
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function getBestSellerSoldCount(productId: string) {
+  return Number(bestSellerSales[String(productId)] ?? 0)
+}
+
 function groupProductsByCategory() {
   const grouped: Record<string, Product[]> = {}
-
   for (const product of products) {
+    // Normale categorie blijft altijd bestaan.
     if (!grouped[product.category]) {
       grouped[product.category] = []
     }
 
     grouped[product.category].push(product)
+
+  }
+
+  const discountedProducts = getDiscountedProducts()
+  const discountCategory = getDiscountSystemCategory()
+
+  if (
+    discountCategory?.is_active &&
+    discountedProducts.length > 0
+  ) {
+    grouped[DISCOUNT_CATEGORY_KEY] = discountedProducts
+  }
+
+  const bestSellerProducts = getBestSellerProducts()
+  const bestSellerCategory = getBestSellerSystemCategory()
+
+  if (
+    bestSellerCategory?.is_active &&
+    bestSellerProducts.length > 0
+  ) {
+    grouped[BESTSELLER_CATEGORY_KEY] = bestSellerProducts
   }
 
   return grouped
@@ -2337,6 +2545,7 @@ async function saveAdminProduct() {
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
   const discountTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-discount-type')
   const discountValueInput = document.querySelector<HTMLInputElement>('#admin-product-discount-value')
+  const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
   const activeInput = document.querySelector<HTMLInputElement>('#admin-product-active')
 
   const name = nameInput?.value.trim() || ''
@@ -2347,6 +2556,7 @@ async function saveAdminProduct() {
     discountType === 'none'
       ? 0
       : Math.max(0, Number(discountValueInput?.value || 0))
+  const isBestSeller = bestSellerInput?.checked ?? false
   const isActive = activeInput?.checked ?? true
 
   adminMessage = ''
@@ -2391,6 +2601,7 @@ async function saveAdminProduct() {
         base_price: basePrice,
         discount_type: discountType,
         discount_value: discountValue,
+        is_bestseller: isBestSeller,
         is_active: isActive,
       })
       .eq('id', adminEditingProductId)
@@ -2411,6 +2622,7 @@ async function saveAdminProduct() {
         base_price: basePrice,
         discount_type: discountType,
         discount_value: discountValue,
+        is_bestseller: isBestSeller,
         is_active: isActive,
       })
 
@@ -2906,7 +3118,24 @@ async function toggleAdminCategory(categoryId: string, nextActive: boolean) {
     return
   }
 
-  adminMessage = nextActive ? 'Categorie geactiveerd.' : 'Categorie gedeactiveerd.'
+  const toggledCategory = categories.find(
+    (category) => String(category.id) === String(categoryId)
+  )
+
+  if (toggledCategory && isDiscountSystemCategory(toggledCategory)) {
+    adminMessage = nextActive
+      ? 'Discount categorie aangezet.'
+      : 'Discount categorie uitgezet.'
+  } else if (toggledCategory && isBestSellerSystemCategory(toggledCategory)) {
+    adminMessage = nextActive
+      ? 'Best Seller categorie aangezet.'
+      : 'Best Seller categorie uitgezet.'
+  } else {
+    adminMessage = nextActive
+      ? 'Categorie geactiveerd.'
+      : 'Categorie gedeactiveerd.'
+  }
+
   await loadAllAdminData()
 }
 
@@ -2914,150 +3143,33 @@ function getAdminCategoryProductCount(categoryName: string) {
   return products.filter((product) => product.category === categoryName).length
 }
 
-
-let draggedCategoryId: string | null = null
-
-async function saveCategoryOrder(categoryIds: string[]) {
+function openAdminCategoryProducts(categoryId: string) {
+  adminViewingCategoryId = categoryId
   adminMessage = ''
   adminError = ''
-
-  const results = await Promise.all(
-    categoryIds.map((categoryId, index) =>
-      supabase
-        .from('categories')
-        .update({ sort_order: index + 1 })
-        .eq('id', categoryId)
-    )
-  )
-
-  const failed = results.find((result) => result.error)
-
-  if (failed?.error) {
-    adminError = `Volgorde opslaan mislukt: ${failed.error.message}`
-    render()
-    return
-  }
-
-  adminMessage = 'Categorievolgorde opgeslagen.'
-  await loadAllAdminData()
+  render()
 }
 
-function bindCategoryDragAndDrop() {
-  const list = document.querySelector<HTMLElement>('#admin-category-sort-list')
-  if (!list) return
-
-  const rows = Array.from(
-    list.querySelectorAll<HTMLElement>('[data-category-sort-id]')
-  )
-
-  rows.forEach((row) => {
-    row.addEventListener('dragstart', (event) => {
-      draggedCategoryId = row.dataset.categorySortId || null
-      row.classList.add('is-dragging')
-
-      if (event.dataTransfer) {
-        event.dataTransfer.effectAllowed = 'move'
-        event.dataTransfer.setData('text/plain', draggedCategoryId || '')
-      }
-    })
-
-    row.addEventListener('dragover', (event) => {
-      event.preventDefault()
-
-      if (!draggedCategoryId) return
-
-      const currentId = row.dataset.categorySortId
-      if (!currentId || currentId === draggedCategoryId) return
-
-      const draggedRow = list.querySelector<HTMLElement>(
-        `[data-category-sort-id="${draggedCategoryId}"]`
-      )
-      if (!draggedRow) return
-
-      const rect = row.getBoundingClientRect()
-      const before = event.clientY < rect.top + rect.height / 2
-
-      if (before) {
-        list.insertBefore(draggedRow, row)
-      } else {
-        list.insertBefore(draggedRow, row.nextSibling)
-      }
-    })
-
-    row.addEventListener('dragend', () => {
-      row.classList.remove('is-dragging')
-      draggedCategoryId = null
-    })
-  })
-
-  list.addEventListener('drop', async (event) => {
-    event.preventDefault()
-
-    const ids = Array.from(
-      list.querySelectorAll<HTMLElement>('[data-category-sort-id]')
-    )
-      .map((row) => row.dataset.categorySortId)
-      .filter((id): id is string => Boolean(id))
-
-    if (ids.length > 0) {
-      await saveCategoryOrder(ids)
-    }
-  })
+function closeAdminCategoryProducts() {
+  adminViewingCategoryId = null
+  render()
 }
 
 
-async function moveAdminCategory(
-  categoryId: string,
-  direction: 'up' | 'down'
-) {
+async function saveAdminCategoryOrder(orderedCategoryIds: string[]) {
   adminMessage = ''
   adminError = ''
 
-  const orderedCategories = [...categories].sort((a, b) => {
-    const sortDifference =
-      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
-
-    if (sortDifference !== 0) {
-      return sortDifference
-    }
-
-    return a.name.localeCompare(b.name)
-  })
-
-  const currentIndex = orderedCategories.findIndex(
-    (category) => String(category.id) === String(categoryId)
-  )
-
-  if (currentIndex === -1) {
-    return
-  }
-
-  const targetIndex =
-    direction === 'up'
-      ? currentIndex - 1
-      : currentIndex + 1
-
-  if (
-    targetIndex < 0 ||
-    targetIndex >= orderedCategories.length
-  ) {
-    return
-  }
-
-  const [movedCategory] = orderedCategories.splice(currentIndex, 1)
-  orderedCategories.splice(targetIndex, 0, movedCategory)
-
-  const updates = orderedCategories.map((category, index) => {
+  const updates = orderedCategoryIds.map((categoryId, index) => {
     return supabase
       .from('categories')
       .update({
         sort_order: index + 1,
       })
-      .eq('id', category.id)
+      .eq('id', categoryId)
   })
 
   const results = await Promise.all(updates)
-
   const failedResult = results.find((result) => result.error)
 
   if (failedResult?.error) {
@@ -3070,6 +3182,57 @@ async function moveAdminCategory(
   await loadAllAdminData()
 }
 
+function handleAdminCategoryDragStart(categoryId: string) {
+  adminDraggingCategoryId = categoryId
+}
+
+function handleAdminCategoryDragEnd() {
+  adminDraggingCategoryId = null
+}
+
+async function handleAdminCategoryDrop(targetCategoryId: string) {
+  if (
+    !adminDraggingCategoryId ||
+    adminDraggingCategoryId === targetCategoryId
+  ) {
+    adminDraggingCategoryId = null
+    return
+  }
+
+  const orderedCategories = [...categories].sort((a, b) => {
+    const sortDifference =
+      Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
+
+    if (sortDifference !== 0) {
+      return sortDifference
+    }
+
+    return a.name.localeCompare(b.name)
+  })
+
+  const draggedIndex = orderedCategories.findIndex(
+    (category) => String(category.id) === String(adminDraggingCategoryId)
+  )
+
+  const targetIndex = orderedCategories.findIndex(
+    (category) => String(category.id) === String(targetCategoryId)
+  )
+
+  if (draggedIndex === -1 || targetIndex === -1) {
+    adminDraggingCategoryId = null
+    return
+  }
+
+  const [draggedCategory] = orderedCategories.splice(draggedIndex, 1)
+  orderedCategories.splice(targetIndex, 0, draggedCategory)
+
+  adminDraggingCategoryId = null
+
+  await saveAdminCategoryOrder(
+    orderedCategories.map((category) => String(category.id))
+  )
+}
+
 // =============================
 // ADMIN: LOAD ALL DATA
 // Admin must also see inactive products/toppings.
@@ -3077,6 +3240,8 @@ async function moveAdminCategory(
 
 async function loadAllAdminData() {
   const { startIso, endIso } = getTodayDateRange()
+
+  await loadBestSellerSales()
 
   const [
     { data: productData, error: productError },
@@ -3134,6 +3299,30 @@ async function loadAllAdminData() {
   toppings = (toppingData ?? []) as Topping[]
   categories = (categoryData ?? []) as Category[]
   adminTodayOrders = (todayOrderData ?? []) as Order[]
+
+  let shouldRefreshSystemCategories = false
+
+  if (!getDiscountSystemCategory()) {
+    await ensureDiscountSystemCategory()
+    shouldRefreshSystemCategories = true
+  }
+
+  if (!getBestSellerSystemCategory()) {
+    await ensureBestSellerSystemCategory()
+    shouldRefreshSystemCategories = true
+  }
+
+  if (shouldRefreshSystemCategories) {
+    const { data: refreshedCategories } = await supabase
+      .from('categories')
+      .select('*')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true })
+
+    if (refreshedCategories) {
+      categories = refreshedCategories as Category[]
+    }
+  }
 
   const todayOrderIds = adminTodayOrders.map((order) => order.id)
 
@@ -3218,7 +3407,21 @@ function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
   const groupedNames = Object.keys(grouped)
 
   const orderedFromDatabase = categories
-    .filter((category) => groupedNames.includes(category.name))
+    .filter((category) => {
+      if (!category.is_active) {
+        return false
+      }
+
+      if (isDiscountSystemCategory(category)) {
+        return groupedNames.includes(DISCOUNT_CATEGORY_KEY)
+      }
+
+      if (isBestSellerSystemCategory(category)) {
+        return groupedNames.includes(BESTSELLER_CATEGORY_KEY)
+      }
+
+      return groupedNames.includes(category.name)
+    })
     .sort((a, b) => {
       const sortDifference =
         Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)
@@ -3229,7 +3432,17 @@ function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
 
       return a.name.localeCompare(b.name)
     })
-    .map((category) => category.name)
+    .map((category) => {
+      if (isDiscountSystemCategory(category)) {
+        return DISCOUNT_CATEGORY_KEY
+      }
+
+      if (isBestSellerSystemCategory(category)) {
+        return BESTSELLER_CATEGORY_KEY
+      }
+
+      return category.name
+    })
 
   const missingNames = groupedNames
     .filter((name) => !orderedFromDatabase.includes(name))
@@ -3250,7 +3463,7 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
 
         return `
         <div class="category-block" id="category-${index}">
-          <h3>${escapeHtml(category)}</h3>
+          <h3>${escapeHtml(getCategoryDisplayName(category))}</h3>
 
           <div class="product-grid">
             ${items
@@ -3386,7 +3599,7 @@ function renderCustomerCategorySidebar(grouped: Record<string, Product[]>) {
               href="#category-${index}"
               data-category-link="${index}"
             >
-              ${escapeHtml(category)}
+              ${escapeHtml(getCategoryDisplayName(category))}
             </a>
           `
         )
@@ -3880,7 +4093,12 @@ function renderAdminProductForm() {
           >
             <option value="">Kies een categorie</option>
             ${categories
-              .filter((category) => category.is_active || category.name === editingProduct?.category)
+              .filter(
+                (category) =>
+                  !isDiscountSystemCategory(category) &&
+                  !isBestSellerSystemCategory(category) &&
+                  (category.is_active || category.name === editingProduct?.category)
+              )
               .map(
                 (category) => `
                   <option
@@ -3960,6 +4178,15 @@ function renderAdminProductForm() {
 
         <label class="admin-checkbox-label">
           <input
+            id="admin-product-bestseller"
+            type="checkbox"
+            ${editingProduct?.is_bestseller ? 'checked' : ''}
+          />
+          <span>Best Seller</span>
+        </label>
+
+        <label class="admin-checkbox-label">
+          <input
             id="admin-product-active"
             type="checkbox"
             ${editingProduct ? (editingProduct.is_active ? 'checked' : '') : 'checked'}
@@ -4022,9 +4249,17 @@ function renderAdminProductsList() {
                         }
                       </div>
 
-                      <span class="admin-state ${product.is_active ? 'active' : 'inactive'}">
-                        ${product.is_active ? 'Actief' : 'Inactief'}
-                      </span>
+                      <div class="admin-product-statuses">
+                        ${
+                          product.is_bestseller
+                            ? `<span class="admin-bestseller-badge">Best Seller</span>`
+                            : ''
+                        }
+
+                        <span class="admin-state ${product.is_active ? 'active' : 'inactive'}">
+                          ${product.is_active ? 'Actief' : 'Inactief'}
+                        </span>
+                      </div>
 
                       <div class="admin-list-actions">
                         <button class="admin-small-btn" data-admin-edit-product="${product.id}">
@@ -4314,7 +4549,12 @@ function renderAdminProductEditModal() {
             <select id="admin-product-category" class="admin-input admin-select">
               <option value="">Kies een categorie</option>
               ${categories
-                .filter((category) => category.is_active || category.name === product.category)
+                .filter(
+                  (category) =>
+                    !isDiscountSystemCategory(category) &&
+                    !isBestSellerSystemCategory(category) &&
+                    (category.is_active || category.name === product.category)
+                )
                 .map(
                   (category) => `
                     <option
@@ -4392,10 +4632,21 @@ function renderAdminProductEditModal() {
             <small id="admin-product-preview-text"></small>
           </div>
 
-          <label class="admin-checkbox-label admin-modal-checkbox">
-            <input id="admin-product-active" type="checkbox" ${product.is_active ? 'checked' : ''} />
-            <span>Actief</span>
-          </label>
+          <div class="admin-product-toggle-row">
+            <label class="admin-checkbox-label admin-modal-checkbox admin-bestseller-checkbox">
+              <input
+                id="admin-product-bestseller"
+                type="checkbox"
+                ${product.is_bestseller ? 'checked' : ''}
+              />
+              <span>Best Seller</span>
+            </label>
+
+            <label class="admin-checkbox-label admin-modal-checkbox">
+              <input id="admin-product-active" type="checkbox" ${product.is_active ? 'checked' : ''} />
+              <span>Actief</span>
+            </label>
+          </div>
         </div>
 
         <div class="admin-modal-footer">
@@ -4486,7 +4737,7 @@ function renderAdminCategoryEditModal() {
         <div class="admin-modal-header">
           <div>
             <p class="muted">Categorie aanpassen</p>
-            <h2>${escapeHtml(category.name)}</h2>
+            <h2>${escapeHtml(categoryName)}</h2>
           </div>
 
           <button class="admin-modal-close" id="admin-close-category-modal" type="button">×</button>
@@ -4704,6 +4955,151 @@ function renderAdminAddToppingPage() {
   `
 }
 
+
+function renderAdminCategoryProductsModal() {
+  if (!adminViewingCategoryId) {
+    return ''
+  }
+
+  const isDiscountCategory =
+    adminViewingCategoryId === DISCOUNT_CATEGORY_KEY
+
+  const isBestSellerCategory =
+    adminViewingCategoryId === BESTSELLER_CATEGORY_KEY
+
+  const category =
+    isDiscountCategory || isBestSellerCategory
+      ? null
+      : categories.find(
+          (item) => String(item.id) === String(adminViewingCategoryId)
+        )
+
+  if (!isDiscountCategory && !isBestSellerCategory && !category) {
+    return ''
+  }
+
+  const categoryName = isDiscountCategory
+    ? DISCOUNT_CATEGORY_LABEL
+    : isBestSellerCategory
+      ? BESTSELLER_CATEGORY_LABEL
+      : category!.name
+
+  const categoryProducts = isDiscountCategory
+    ? getDiscountedProducts()
+    : isBestSellerCategory
+      ? getBestSellerProducts()
+      : products
+          .filter((product) => product.category === category!.name)
+          .sort((a, b) => a.name.localeCompare(b.name))
+
+  return `
+    <div class="admin-modal-overlay" id="admin-category-products-overlay">
+      <section class="admin-modal admin-category-products-modal">
+        <div class="admin-modal-header">
+          <div>
+            <p class="muted">Producten in categorie</p>
+            <h2>${escapeHtml(categoryName)}</h2>
+          </div>
+
+          <button
+            class="admin-modal-close"
+            id="admin-close-category-products"
+            type="button"
+            aria-label="Sluiten"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="admin-category-products-summary">
+          <span>Aantal producten</span>
+          <strong>${categoryProducts.length}</strong>
+        </div>
+
+        <div class="admin-category-products-list">
+          ${
+            categoryProducts.length === 0
+              ? `
+                <div class="admin-category-products-empty">
+                  <strong>Nog geen producten</strong>
+                  <span>${
+                    isDiscountCategory
+                      ? 'Er zijn momenteel geen drankjes met korting.'
+                      : isBestSellerCategory
+                        ? 'Er zijn nog geen verkochte drankjes om Best Sellers te bepalen.'
+                        : 'Er zijn nog geen drankjes gekoppeld aan deze categorie.'
+                  }</span>
+                </div>
+              `
+              : categoryProducts
+                  .map(
+                    (product) => `
+                      <div class="admin-category-product-row">
+                        <div class="admin-category-product-main">
+                          <strong>${escapeHtml(product.name)}</strong>
+
+                          ${
+                            isBestSellerCategory
+                              ? `
+                                <span class="admin-bestseller-sold-badge">
+                                  ${getBestSellerSoldCount(String(product.id))} verkocht
+                                </span>
+                              `
+                              : ''
+                          }
+
+                          ${
+                            hasProductDiscount(product)
+                              ? `
+                                <span class="admin-category-product-discount">
+                                  ${escapeHtml(getProductDiscountLabel(product))}
+                                </span>
+                              `
+                              : ''
+                          }
+                        </div>
+
+                        <div class="admin-category-product-price">
+                          ${
+                            hasProductDiscount(product)
+                              ? `
+                                <span class="admin-old-price">
+                                  € ${Number(product.base_price).toFixed(2)}
+                                </span>
+                                <strong>
+                                  € ${getDiscountedProductPrice(product).toFixed(2)}
+                                </strong>
+                              `
+                              : `
+                                <strong>€ ${Number(product.base_price).toFixed(2)}</strong>
+                              `
+                          }
+                        </div>
+
+                        <span class="admin-state ${product.is_active ? 'active' : 'inactive'}">
+                          ${product.is_active ? 'Actief' : 'Inactief'}
+                        </span>
+                      </div>
+                    `
+                  )
+                  .join('')
+          }
+        </div>
+
+        <div class="admin-modal-footer">
+          <button
+            class="admin-secondary-btn"
+            id="admin-close-category-products-footer"
+            type="button"
+          >
+            Sluiten
+          </button>
+        </div>
+      </section>
+    </div>
+  `
+}
+
 function renderAdminCategoriesPage() {
   const editingCategory = adminEditingCategoryId
     ? categories.find((category) => String(category.id) === String(adminEditingCategoryId))
@@ -4816,11 +5212,11 @@ function renderAdminCategoriesPage() {
           <div class="admin-panel-header">
             <div>
               <h2>Categorieën</h2>
-              <p class="muted">${categories.length} categorieën</p>
+              <p class="muted">${categories.length} categorieën · sleep om volgorde te wijzigen</p>
             </div>
           </div>
 
-          <div class="admin-list admin-category-sort-list" id="admin-category-sort-list">
+          <div class="admin-list">
             ${
               categories.length === 0
                 ? `<p class="muted">Nog geen categorieën gevonden.</p>`
@@ -4828,19 +5224,45 @@ function renderAdminCategoriesPage() {
                     .map(
                       (category) => `
                         <div
-                          class="admin-list-item admin-category-list-item admin-category-sort-row"
+                          class="admin-list-item admin-category-list-item admin-category-draggable ${
+                            isDiscountSystemCategory(category)
+                              ? 'admin-discount-system-row'
+                              : isBestSellerSystemCategory(category)
+                                ? 'admin-bestseller-system-row'
+                                : ''
+                          }"
                           draggable="true"
-                          data-category-sort-id="${category.id}"
+                          data-admin-category-row="${category.id}"
                         >
-                          <div class="admin-category-drag-handle" title="Sleep om volgorde te wijzigen">
+                          <div
+                            class="admin-category-drag-handle"
+                            title="Sleep om volgorde te wijzigen"
+                            aria-label="Sleep ${escapeHtml(category.name)}"
+                          >
                             ⋮⋮
                           </div>
 
                           <div class="admin-list-main">
                             <strong>${escapeHtml(category.name)}</strong>
-                            <span>${getAdminCategoryProductCount(category.name)} producten</span>
+                            <span>${
+                              isDiscountSystemCategory(category)
+                                ? getDiscountedProducts().length
+                                : isBestSellerSystemCategory(category)
+                                  ? getBestSellerProducts().length
+                                  : getAdminCategoryProductCount(category.name)
+                            } producten</span>
 
                             ${
+                              isDiscountSystemCategory(category)
+                                ? `<span class="admin-auto-category-label">Automatisch gevuld</span>`
+                                : isBestSellerSystemCategory(category)
+                                  ? `<span class="admin-auto-category-label">Handmatig geselecteerd</span>`
+                                  : ''
+                            }
+
+                            ${
+                              !isDiscountSystemCategory(category) &&
+                              !isBestSellerSystemCategory(category) &&
                               normalizeDiscountType(category.discount_type) !== 'none' &&
                               Number(category.discount_value ?? 0) > 0
                                 ? `
@@ -4861,9 +5283,34 @@ function renderAdminCategoriesPage() {
                           </span>
 
                           <div class="admin-list-actions admin-category-actions">
-<button class="admin-small-btn" data-admin-edit-category="${category.id}">
-                              Bewerken
+                            <button
+                              class="admin-small-btn admin-category-products-btn"
+                              data-admin-view-category-products="${
+                                isDiscountSystemCategory(category)
+                                  ? DISCOUNT_CATEGORY_KEY
+                                  : isBestSellerSystemCategory(category)
+                                    ? BESTSELLER_CATEGORY_KEY
+                                    : category.id
+                              }"
+                            >
+                              Producten (${
+                                isDiscountSystemCategory(category)
+                                  ? getDiscountedProducts().length
+                                  : isBestSellerSystemCategory(category)
+                                    ? getBestSellerProducts().length
+                                    : getAdminCategoryProductCount(category.name)
+                              })
                             </button>
+
+                            ${
+                              isDiscountSystemCategory(category) || isBestSellerSystemCategory(category)
+                                ? ''
+                                : `
+                                  <button class="admin-small-btn" data-admin-edit-category="${category.id}">
+                                    Bewerken
+                                  </button>
+                                `
+                            }
 
                             <button
                               class="admin-small-btn ${category.is_active ? 'danger' : 'success'}"
@@ -4883,6 +5330,7 @@ function renderAdminCategoriesPage() {
       </main>
 
       ${renderAdminCategoryEditModal()}
+      ${renderAdminCategoryProductsModal()}
     </div>
   `
 }
@@ -5513,31 +5961,113 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#admin-save-category-edit')?.addEventListener('click', saveAdminCategory)
   document.querySelector<HTMLButtonElement>('#admin-cancel-category')?.addEventListener('click', cancelAdminCategoryEdit)
 
-  document.querySelectorAll<HTMLElement>('[data-admin-move-category]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const categoryId = button.dataset.adminMoveCategory
-      const direction = button.dataset.adminMoveDirection
 
-      if (
-        !categoryId ||
-        (direction !== 'up' && direction !== 'down')
-      ) {
+  document.querySelectorAll<HTMLElement>('[data-admin-category-row]').forEach((row) => {
+    row.addEventListener('dragstart', (event) => {
+      const target = event.target as HTMLElement
+
+      if (target.closest('button')) {
+        event.preventDefault()
         return
       }
 
-      await moveAdminCategory(categoryId, direction)
+      const categoryId = row.dataset.adminCategoryRow
+
+      if (!categoryId) return
+
+      handleAdminCategoryDragStart(categoryId)
+      row.classList.add('dragging')
+
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', categoryId)
+      }
+    })
+
+    row.addEventListener('dragover', (event) => {
+      event.preventDefault()
+
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = 'move'
+      }
+
+      row.classList.add('drag-over')
+    })
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drag-over')
+    })
+
+    row.addEventListener('drop', async (event) => {
+      event.preventDefault()
+      row.classList.remove('drag-over')
+
+      const targetCategoryId = row.dataset.adminCategoryRow
+
+      if (!targetCategoryId) return
+
+      await handleAdminCategoryDrop(targetCategoryId)
+    })
+
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging')
+
+      document
+        .querySelectorAll<HTMLElement>('[data-admin-category-row]')
+        .forEach((item) => {
+          item.classList.remove('drag-over')
+        })
+
+      handleAdminCategoryDragEnd()
     })
   })
 
+  document.querySelectorAll<HTMLElement>('[data-admin-view-category-products]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+
+      const categoryId = button.dataset.adminViewCategoryProducts
+
+      if (!categoryId) {
+        return
+      }
+
+      openAdminCategoryProducts(categoryId)
+    })
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-close-category-products')?.addEventListener(
+    'click',
+    closeAdminCategoryProducts
+  )
+
+  document.querySelector<HTMLButtonElement>('#admin-close-category-products-footer')?.addEventListener(
+    'click',
+    closeAdminCategoryProducts
+  )
+
+  document.querySelector<HTMLDivElement>('#admin-category-products-overlay')?.addEventListener(
+    'click',
+    (event) => {
+      if (event.target === event.currentTarget) {
+        closeAdminCategoryProducts()
+      }
+    }
+  )
+
   document.querySelectorAll<HTMLElement>('[data-admin-edit-category]').forEach((button) => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+
       const categoryId = button.dataset.adminEditCategory
       if (categoryId) editAdminCategory(categoryId)
     })
   })
 
   document.querySelectorAll<HTMLElement>('[data-admin-toggle-category]').forEach((button) => {
-    button.addEventListener('click', async () => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation()
+
       const categoryId = button.dataset.adminToggleCategory
       const nextActive = button.dataset.adminNextCategoryActive === 'true'
 
@@ -5799,7 +6329,6 @@ function bindEvents() {
 
   bindCustomerCategoryScrollSpy()
   bindCustomerCategoryClicks()
-  bindCategoryDragAndDrop()
 }
 
 
@@ -5853,6 +6382,7 @@ async function startApp() {
     loadProducts(),
     loadToppings(),
     loadCategories(),
+    loadBestSellerSales(),
   ])
 
   if (screen === 'orders') {
