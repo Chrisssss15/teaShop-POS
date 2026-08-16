@@ -21,6 +21,7 @@ type Product = {
   is_active: boolean
   is_bestseller: boolean
   is_sold_out: boolean
+  image_url: string | null
   discount_type: DiscountType
   discount_value: number
 }
@@ -2789,6 +2790,90 @@ function showError(errorMessage: string) {
 // ADMIN: PRODUCT MANAGEMENT
 // =============================
 
+const PRODUCT_IMAGE_BUCKET = 'product-images'
+const MAX_PRODUCT_IMAGE_SIZE = 5 * 1024 * 1024
+
+async function uploadProductImage(productId: string, file: File) {
+  const allowedTypes = [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/heic',
+    'image/heif',
+  ]
+
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Gebruik een JPG, PNG, WEBP of HEIC afbeelding.')
+  }
+
+  if (file.size > MAX_PRODUCT_IMAGE_SIZE) {
+    throw new Error('De productfoto mag maximaal 5 MB zijn.')
+  }
+
+  const fileExtension =
+    file.name.includes('.') && file.name.split('.').pop()
+      ? file.name.split('.').pop()!.toLowerCase().replace(/[^a-z0-9]/g, '')
+      : 'jpg'
+
+  const safeExtension = fileExtension || 'jpg'
+  const filePath = `${productId}/${Date.now()}.${safeExtension}`
+
+  const { error: uploadError } = await supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type,
+    })
+
+  if (uploadError) {
+    throw new Error(`Foto uploaden mislukt: ${uploadError.message}`)
+  }
+
+  const { data } = supabase.storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .getPublicUrl(filePath)
+
+  if (!data.publicUrl) {
+    throw new Error('Kon geen publieke URL voor de productfoto maken.')
+  }
+
+  return data.publicUrl
+}
+
+function bindAdminProductImagePreview() {
+  const input = document.querySelector<HTMLInputElement>('#admin-product-image')
+  const preview = document.querySelector<HTMLImageElement>('#admin-product-image-preview')
+  const empty = document.querySelector<HTMLElement>('#admin-product-image-empty')
+  const fileName = document.querySelector<HTMLElement>('#admin-product-image-name')
+
+  if (!input || !preview || !empty) return
+
+  input.addEventListener('change', () => {
+    const file = input.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      input.value = ''
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.addEventListener('load', () => {
+      preview.src = String(reader.result || '')
+      preview.hidden = false
+      empty.hidden = true
+
+      if (fileName) {
+        fileName.textContent = file.name
+      }
+    })
+
+    reader.readAsDataURL(file)
+  })
+}
+
 async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
@@ -2798,6 +2883,10 @@ async function saveAdminProduct() {
   const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
   const soldOutInput = document.querySelector<HTMLInputElement>('#admin-product-sold-out')
   const activeInput = document.querySelector<HTMLInputElement>('#admin-product-active')
+  const imageInput = document.querySelector<HTMLInputElement>('#admin-product-image')
+  const removeImageInput = document.querySelector<HTMLInputElement>('#admin-product-remove-image')
+  const selectedImageFile = imageInput?.files?.[0] ?? null
+  const removeExistingImage = removeImageInput?.checked ?? false
   const selectedToppingIds = getSelectedAdminToppingIds()
 
   const name = nameInput?.value.trim() || ''
@@ -2848,6 +2937,17 @@ async function saveAdminProduct() {
   try {
     if (adminEditingProductId) {
       const productId = adminEditingProductId
+      const existingProduct = products.find(
+        (product) => String(product.id) === String(productId)
+      )
+
+      let imageUrl = removeExistingImage
+        ? null
+        : existingProduct?.image_url ?? null
+
+      if (selectedImageFile) {
+        imageUrl = await uploadProductImage(productId, selectedImageFile)
+      }
 
       const { error } = await supabase
         .from('products')
@@ -2860,6 +2960,7 @@ async function saveAdminProduct() {
           is_bestseller: isBestSeller,
           is_sold_out: isSoldOut,
           is_active: isActive,
+          image_url: imageUrl,
         })
         .eq('id', productId)
 
@@ -2870,7 +2971,7 @@ async function saveAdminProduct() {
       }
 
       await saveProductToppingLinks(productId, selectedToppingIds)
-      adminMessage = 'Product en toppings aangepast.'
+      adminMessage = 'Product, toppings en foto aangepast.'
     } else {
       const { data, error } = await supabase
         .from('products')
@@ -2883,6 +2984,7 @@ async function saveAdminProduct() {
           is_bestseller: isBestSeller,
           is_sold_out: isSoldOut,
           is_active: isActive,
+          image_url: null,
         })
         .select('id')
         .single()
@@ -2894,8 +2996,22 @@ async function saveAdminProduct() {
       }
 
       const productId = String(data.id)
+
+      if (selectedImageFile) {
+        const imageUrl = await uploadProductImage(productId, selectedImageFile)
+
+        const { error: imageUpdateError } = await supabase
+          .from('products')
+          .update({ image_url: imageUrl })
+          .eq('id', productId)
+
+        if (imageUpdateError) {
+          throw new Error(`Foto URL opslaan mislukt: ${imageUpdateError.message}`)
+        }
+      }
+
       await saveProductToppingLinks(productId, selectedToppingIds)
-      adminMessage = 'Product en toppings toegevoegd.'
+      adminMessage = 'Product, toppings en foto toegevoegd.'
     }
   } catch (error) {
     adminError =
@@ -3752,10 +3868,25 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
               .map(
                 (product) => `
                   <button
-                    class="product-card ${hasProductDiscount(product) ? 'has-discount' : ''} ${product.is_sold_out ? 'sold-out' : ''}"
+                    class="product-card ${hasProductDiscount(product) ? 'has-discount' : ''} ${product.is_sold_out ? 'sold-out' : ''} ${product.image_url ? 'has-image' : ''}"
                     data-add="${product.id}"
                     ${product.is_sold_out ? 'disabled aria-disabled="true"' : ''}
                   >
+                    ${
+                      product.image_url
+                        ? `
+                          <span class="product-card-image-wrap">
+                            <img
+                              class="product-card-image"
+                              src="${escapeHtml(product.image_url)}"
+                              alt="${escapeHtml(product.name)}"
+                              loading="lazy"
+                            />
+                          </span>
+                        `
+                        : ''
+                    }
+
                     <span class="product-name">${escapeHtml(product.name)}</span>
 
                     ${
@@ -4418,6 +4549,62 @@ function renderAdminProductForm() {
           />
         </label>
 
+        <div class="admin-product-image-field">
+          <div class="admin-product-image-heading">
+            <strong>Productfoto</strong>
+            <span>JPG, PNG, WEBP of HEIC · maximaal 5 MB</span>
+          </div>
+
+          <div class="admin-product-image-layout">
+            <div class="admin-product-image-preview-box">
+              <img
+                id="admin-product-image-preview"
+                class="admin-product-image-preview"
+                src="${editingProduct?.image_url ? escapeHtml(editingProduct.image_url) : ''}"
+                alt="Productfoto preview"
+                ${editingProduct?.image_url ? '' : 'hidden'}
+              />
+
+              <div
+                id="admin-product-image-empty"
+                class="admin-product-image-empty"
+                ${editingProduct?.image_url ? 'hidden' : ''}
+              >
+                <span>📷</span>
+                <strong>Nog geen foto</strong>
+              </div>
+            </div>
+
+            <div class="admin-product-image-controls">
+              <label class="admin-image-upload-btn" for="admin-product-image">
+                Foto kiezen
+              </label>
+
+              <input
+                id="admin-product-image"
+                class="admin-product-image-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+              />
+
+              <span id="admin-product-image-name" class="admin-product-image-name">
+                ${editingProduct?.image_url ? 'Huidige foto' : 'Geen bestand gekozen'}
+              </span>
+
+              ${
+                editingProduct?.image_url
+                  ? `
+                    <label class="admin-remove-image-option">
+                      <input id="admin-product-remove-image" type="checkbox" />
+                      <span>Huidige foto verwijderen</span>
+                    </label>
+                  `
+                  : ''
+              }
+            </div>
+          </div>
+        </div>
+
         <label>
           <span>Kortingstype</span>
           <select
@@ -4601,9 +4788,24 @@ function renderAdminProductsList() {
                 .map(
                   (product) => `
                     <div class="admin-list-item">
-                      <div class="admin-list-main">
-                        <strong>${escapeHtml(product.name)}</strong>
-                        <span>${escapeHtml(product.category)}</span>
+                      <div class="admin-list-main admin-product-list-main">
+                        ${
+                          product.image_url
+                            ? `
+                              <img
+                                class="admin-product-thumb"
+                                src="${escapeHtml(product.image_url)}"
+                                alt="${escapeHtml(product.name)}"
+                                loading="lazy"
+                              />
+                            `
+                            : `<span class="admin-product-thumb admin-product-thumb-placeholder">🧋</span>`
+                        }
+
+                        <span class="admin-product-list-copy">
+                          <strong>${escapeHtml(product.name)}</strong>
+                          <span>${escapeHtml(product.category)}</span>
+                        </span>
                       </div>
 
                       <div class="admin-list-price admin-list-price-with-discount">
@@ -4959,6 +5161,62 @@ function renderAdminProductEditModal() {
               value="${Number(product.base_price).toFixed(2)}"
             />
           </label>
+
+          <div class="admin-product-image-field admin-product-image-modal-field">
+            <div class="admin-product-image-heading">
+              <strong>Productfoto</strong>
+              <span>JPG, PNG, WEBP of HEIC · maximaal 5 MB</span>
+            </div>
+
+            <div class="admin-product-image-layout">
+              <div class="admin-product-image-preview-box">
+                <img
+                  id="admin-product-image-preview"
+                  class="admin-product-image-preview"
+                  src="${product.image_url ? escapeHtml(product.image_url) : ''}"
+                  alt="Productfoto preview"
+                  ${product.image_url ? '' : 'hidden'}
+                />
+
+                <div
+                  id="admin-product-image-empty"
+                  class="admin-product-image-empty"
+                  ${product.image_url ? 'hidden' : ''}
+                >
+                  <span>📷</span>
+                  <strong>Nog geen foto</strong>
+                </div>
+              </div>
+
+              <div class="admin-product-image-controls">
+                <label class="admin-image-upload-btn" for="admin-product-image">
+                  ${product.image_url ? 'Foto vervangen' : 'Foto kiezen'}
+                </label>
+
+                <input
+                  id="admin-product-image"
+                  class="admin-product-image-input"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                />
+
+                <span id="admin-product-image-name" class="admin-product-image-name">
+                  ${product.image_url ? 'Huidige foto' : 'Geen bestand gekozen'}
+                </span>
+
+                ${
+                  product.image_url
+                    ? `
+                      <label class="admin-remove-image-option">
+                        <input id="admin-product-remove-image" type="checkbox" />
+                        <span>Huidige foto verwijderen</span>
+                      </label>
+                    `
+                    : ''
+                }
+              </div>
+            </div>
+          </div>
 
           <div class="admin-discount-fields">
             <label class="admin-modal-field">
@@ -6609,6 +6867,8 @@ function bindEvents() {
       newInput.setSelectionRange(cursorPosition, cursorPosition)
     }
   })
+
+  bindAdminProductImagePreview()
 
   document.querySelector<HTMLButtonElement>('#admin-save-product')?.addEventListener('click', saveAdminProduct)
   document.querySelector<HTMLButtonElement>('#admin-cancel-product')?.addEventListener('click', cancelAdminProductEdit)
