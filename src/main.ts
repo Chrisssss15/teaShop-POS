@@ -490,6 +490,7 @@ let customerLanguage: CustomerLanguage = 'nl'
 // =============================
 
 let adminEditingProductId: string | null = null
+let adminProductSearch = ''
 let adminEditingToppingId: string | null = null
 let adminEditingCategoryId: string | null = null
 let adminViewingCategoryId: string | null = null
@@ -4537,20 +4538,42 @@ function renderAdminProductForm() {
 }
 
 function renderAdminProductsList() {
+  const filteredProducts = getFilteredAdminProducts()
+  const isSearching = adminProductSearch.trim().length > 0
+
   return `
     <section class="admin-panel">
       <div class="admin-panel-header">
         <div>
           <h2>Producten</h2>
-          <p class="muted">${products.length} producten</p>
+
+          <div class="admin-product-search-wrap">
+            <span class="admin-product-search-icon">⌕</span>
+            <input
+              id="admin-product-search"
+              class="admin-product-search-input"
+              type="search"
+              placeholder="Zoek een drankje..."
+              value="${escapeHtml(adminProductSearch)}"
+              autocomplete="off"
+            />
+          </div>
+
+          <p class="muted">
+            ${
+              isSearching
+                ? `${filteredProducts.length} van ${products.length} producten`
+                : `${products.length} producten`
+            }
+          </p>
         </div>
       </div>
 
       <div class="admin-list">
         ${
-          products.length === 0
-            ? `<p class="muted">Geen producten gevonden.</p>`
-            : products
+          filteredProducts.length === 0
+            ? `<p class="muted">Geen producten gevonden voor "${escapeHtml(adminProductSearch)}".</p>`
+            : filteredProducts
                 .map(
                   (product) => `
                     <div class="admin-list-item">
@@ -5201,7 +5224,23 @@ function renderAdminCategoryEditModal() {
   `
 }
 
+function getFilteredAdminProducts() {
+  const search = adminProductSearch.trim().toLowerCase()
+
+  if (!search) {
+    return products
+  }
+
+  return products.filter((product) => {
+    const name = String(product.name ?? '').toLowerCase()
+    const category = String(product.category ?? '').toLowerCase()
+
+    return name.includes(search) || category.includes(search)
+  })
+}
+
 function renderAdminProductsPage() {
+  const filteredProducts = getFilteredAdminProducts()
   return `
     <div class="page admin-page">
       ${renderNav()}
@@ -6515,6 +6554,21 @@ function bindEvents() {
     button.addEventListener('click', () => {
       toggleAllAdminProductToppings(button)
     })
+  })
+
+  document.querySelector<HTMLInputElement>('#admin-product-search')?.addEventListener('input', (event) => {
+    const input = event.currentTarget as HTMLInputElement
+    adminProductSearch = input.value
+
+    const cursorPosition = input.selectionStart ?? adminProductSearch.length
+
+    render()
+
+    const newInput = document.querySelector<HTMLInputElement>('#admin-product-search')
+    if (newInput) {
+      newInput.focus()
+      newInput.setSelectionRange(cursorPosition, cursorPosition)
+    }
   })
 
   document.querySelector<HTMLButtonElement>('#admin-save-product')?.addEventListener('click', saveAdminProduct)
