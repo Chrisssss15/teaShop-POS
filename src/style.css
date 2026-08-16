@@ -5668,3 +5668,229 @@ body,
     font-size: 16px;
   }
 }
+
+/* ========================================================= */
+/* ADMIN CATEGORY FORM — WIDER NAME + RIGHT ALIGNED ACTION   */
+/* ========================================================= */
+
+/* Geef het naamveld duidelijk meer ruimte */
+.admin-category-form {
+  display: grid !important;
+  grid-template-columns:
+    minmax(300px, 2fr)
+    minmax(180px, 1fr)
+    minmax(150px, 0.8fr)
+    auto !important;
+  gap: 14px !important;
+  align-items: end !important;
+}
+
+/* Naamveld mag breed uitlopen */
+.admin-category-form > label:first-child {
+  min-width: 0;
+}
+
+.admin-category-form > label:first-child .admin-input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Actief compact houden */
+.admin-category-form .admin-checkbox-label {
+  min-width: 130px;
+  justify-content: center;
+}
+
+/* Toevoegen-knop naar rechts */
+.admin-category-layout .admin-panel:first-child .admin-form-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  width: 100%;
+  margin-top: 18px;
+}
+
+/* Button iets breder en duidelijker */
+.admin-category-layout .admin-panel:first-child .admin-form-actions .admin-primary-btn {
+  min-width: 210px;
+}
+
+/* Tablet */
+@media (max-width: 1050px) {
+  .admin-category-form {
+    grid-template-columns: minmax(260px, 1.5fr) 1fr 1fr !important;
+  }
+
+  .admin-category-form .admin-checkbox-label {
+    grid-column: 3;
+  }
+}
+
+/* Mobiel / smalle schermen */
+@media (max-width: 700px) {
+  .admin-category-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-category-form .admin-checkbox-label {
+    grid-column: auto;
+    justify-content: flex-start;
+  }
+
+  .admin-category-layout .admin-panel:first-child .admin-form-actions {
+    justify-content: stretch !important;
+  }
+
+  .admin-category-layout .admin-panel:first-child .admin-form-actions .admin-primary-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ========================================================= */
+/* CATEGORIES — LIST LEFT / ADD FORM RIGHT                   */
+/* ========================================================= */
+
+/*
+ * HTML-volgorde blijft hetzelfde:
+ * 1 = categorie toevoegen
+ * 2 = bestaande categorieën
+ *
+ * Met CSS zetten we de bestaande lijst links en het formulier rechts.
+ */
+.admin-category-layout {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.75fr) !important;
+  gap: 20px !important;
+  align-items: start !important;
+}
+
+/* Nieuwe categorie toevoegen -> rechts */
+.admin-category-layout > .admin-panel:first-child {
+  grid-column: 2 !important;
+  grid-row: 1 !important;
+}
+
+/* Bestaande categorieën -> links */
+.admin-category-layout > .admin-panel:last-child {
+  grid-column: 1 !important;
+  grid-row: 1 !important;
+  min-width: 0;
+}
+
+/* Rechter formulier rustiger en overzichtelijker */
+.admin-category-layout > .admin-panel:first-child .admin-category-form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.72fr) !important;
+  gap: 14px !important;
+  align-items: end !important;
+}
+
+/* Naam krijgt altijd volledige breedte */
+.admin-category-layout > .admin-panel:first-child .admin-category-form > label:first-child {
+  grid-column: 1 / -1 !important;
+  min-width: 0;
+}
+
+.admin-category-layout > .admin-panel:first-child .admin-category-form > label:first-child .admin-input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Kortingstype links, kortingswaarde rechts */
+.admin-category-layout > .admin-panel:first-child .admin-category-form > label:nth-of-type(2) {
+  grid-column: 1 !important;
+}
+
+.admin-category-layout > .admin-panel:first-child .admin-category-form > label:nth-of-type(3) {
+  grid-column: 2 !important;
+}
+
+/* Preview over volledige breedte */
+.admin-category-layout > .admin-panel:first-child .admin-category-live-preview {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Actief als nette losse rij */
+.admin-category-layout > .admin-panel:first-child .admin-category-form .admin-checkbox-label {
+  grid-column: 1 / -1 !important;
+  min-width: 0 !important;
+  width: fit-content;
+  justify-content: flex-start !important;
+  padding: 11px 14px;
+  border: 1px solid #dbe5f2;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+/* Formulierlabels gelijk en rustig */
+.admin-category-layout > .admin-panel:first-child .admin-category-form label > span:first-child {
+  display: block;
+  margin-bottom: 7px;
+  color: #2f4d78;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Inputs consistent */
+.admin-category-layout > .admin-panel:first-child .admin-input,
+.admin-category-layout > .admin-panel:first-child .admin-discount-input-wrap {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Toevoegen-knop over de hele rechter kaart */
+.admin-category-layout > .admin-panel:first-child .admin-form-actions {
+  display: flex !important;
+  width: 100% !important;
+  margin-top: 18px !important;
+}
+
+.admin-category-layout > .admin-panel:first-child .admin-form-actions .admin-primary-btn {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 46px;
+}
+
+/* Bestaande categorieën mogen de beschikbare ruimte gebruiken */
+.admin-category-layout > .admin-panel:last-child .admin-list {
+  width: 100%;
+}
+
+.admin-category-layout > .admin-panel:last-child .admin-category-list-item {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Tablet: onder elkaar, lijst eerst en formulier daarna */
+@media (max-width: 1050px) {
+  .admin-category-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-category-layout > .admin-panel:last-child {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  .admin-category-layout > .admin-panel:first-child {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+  }
+}
+
+/* Mobiel: kortingvelden ook onder elkaar */
+@media (max-width: 620px) {
+  .admin-category-layout > .admin-panel:first-child .admin-category-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .admin-category-layout > .admin-panel:first-child .admin-category-form > label,
+  .admin-category-layout > .admin-panel:first-child .admin-category-form > label:nth-of-type(2),
+  .admin-category-layout > .admin-panel:first-child .admin-category-form > label:nth-of-type(3),
+  .admin-category-layout > .admin-panel:first-child .admin-category-live-preview,
+  .admin-category-layout > .admin-panel:first-child .admin-category-form .admin-checkbox-label {
+    grid-column: 1 !important;
+  }
+}
