@@ -5360,6 +5360,116 @@ body,
   }
 }
 
-.customer-checkout-footer{
-  display: none;
+/* ========================================================= */
+/* CUSTOMER CHECKOUT HIDDEN FIX                              */
+/* ========================================================= */
+
+/* Checkout volledig uit layout zolang hij niet open is */
+.customer-checkout-screen.hidden,
+.customer-checkout-footer.hidden {
+  display: none !important;
+}
+
+/* Ook zonder extra class: footer alleen zichtbaar binnen open checkout */
+.customer-checkout-screen:not(.open) .customer-checkout-footer {
+  display: none !important;
+}
+
+/* Voorkom dat off-screen checkout horizontale overflow veroorzaakt */
+.customer-page {
+  overflow-x: hidden;
+}
+
+.customer-checkout-screen {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Als checkout wel open is, mag footer normaal renderen */
+.customer-checkout-screen.open .customer-checkout-footer,
+.customer-checkout-footer.open {
+  display: flex;
+}
+
+/* ========================================================= */
+/* CUSTOMER CHECKOUT — MOBILE PAYMENT BUTTON FIX             */
+/* ========================================================= */
+
+/*
+ * Gebruik de echte dynamische viewport op mobiel.
+ * Dit voorkomt dat Safari's onderste browserbalk de betaalknop verstopt.
+ */
+.customer-checkout-screen {
+  height: 100dvh !important;
+  min-height: 0 !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Header blijft bovenaan */
+.customer-checkout-header {
+  flex: 0 0 auto;
+}
+
+/* Alleen het middendeel scrollt */
+.customer-checkout-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px !important;
+}
+
+/*
+ * Footer niet meer fixed.
+ * Hij is nu het laatste vaste deel van de flex-layout en blijft dus
+ * altijd zichtbaar binnen de echte mobiele viewport.
+ */
+.customer-checkout-footer,
+.customer-checkout-footer.open {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: 100% !important;
+  flex: 0 0 auto !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+  background: #ffffff !important;
+  border-top: 1px solid #e3e9f2 !important;
+  box-shadow: 0 -4px 14px rgba(61, 38, 20, 0.05) !important;
+}
+
+/* Gesloten checkout blijft volledig verborgen */
+.customer-checkout-footer.hidden,
+.customer-checkout-screen.hidden {
+  display: none !important;
+}
+
+/* De betaal/bestelknop vult netjes de footer */
+.customer-checkout-footer .checkout-btn {
+  display: block !important;
+  width: 100% !important;
+  min-height: 52px !important;
+  height: 52px !important;
+  margin: 0 !important;
+  border-radius: 16px !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+
+/* iPhone / kleine schermen */
+@media (max-width: 700px) {
+  .customer-checkout-screen {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .customer-checkout-content {
+    padding-bottom: 18px !important;
+  }
 }

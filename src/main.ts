@@ -71,7 +71,7 @@ type SavedCartItem = {
 
 type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
 type LabelStatus = 'new' | 'preparing' | 'done' | 'cancelled'
-type OrderFilter = 'all' | 'active' | 'ready' | 'completed' | 'cancelled'
+type OrderFilter = 'all' | 'active' | 'preparation' | 'completed'
 type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
 type PaymentMethod = 'cash' | 'card' | 'online_fake' | 'pay_at_counter'
 type CustomerLanguage = 'nl' | 'en' | 'cn'
@@ -511,6 +511,12 @@ let editingCartItemId: string | null = null
 
 let autoRefreshTimer: number | null = null
 let customerProgressTimer: number | null = null
+
+let ordersRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
+let kitchenRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
+
+let ordersRealtimeReloadTimer: number | null = null
+let kitchenRealtimeReloadTimer: number | null = null
 let isSmoothScrollingToCategory = false
 
 
@@ -825,9 +831,13 @@ async function loadOrders() {
   isLoadingOrders = true
   render()
 
+  const { startIso, endIso } = getTodayDateRange()
+
   const { data, error } = await supabase
     .from('orders')
     .select('*')
+    .gte('created_at', startIso)
+    .lt('created_at', endIso)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -2142,24 +2152,147 @@ async function updateWholeKitchenOrder(orderId: string, nextLabelStatus: LabelSt
 
 
 // =============================
-// AUTO REFRESH TIMERS
+// REALTIME: ORDERS + KITCHEN
+// Refresh-knoppen blijven als fallback.
 // =============================
 
 function stopAutoRefresh() {
+  // Oude polling timer opruimen voor het geval deze nog actief was.
   if (autoRefreshTimer !== null) {
     window.clearInterval(autoRefreshTimer)
     autoRefreshTimer = null
   }
+
+  stopOrdersRealtime()
+  stopKitchenRealtime()
 }
 
-function startKitchenAutoRefresh() {
-  stopAutoRefresh()
+function scheduleOrdersRealtimeReload() {
+  if (ordersRealtimeReloadTimer !== null) {
+    window.clearTimeout(ordersRealtimeReloadTimer)
+  }
 
-  autoRefreshTimer = window.setInterval(async () => {
+  ordersRealtimeReloadTimer = window.setTimeout(async () => {
+    ordersRealtimeReloadTimer = null
+
+    if (screen === 'orders') {
+      await loadOrders()
+    }
+  }, 150)
+}
+
+function scheduleKitchenRealtimeReload() {
+  if (kitchenRealtimeReloadTimer !== null) {
+    window.clearTimeout(kitchenRealtimeReloadTimer)
+  }
+
+  kitchenRealtimeReloadTimer = window.setTimeout(async () => {
+    kitchenRealtimeReloadTimer = null
+
     if (screen === 'kitchen') {
       await loadKitchenLabels(false)
     }
-  }, 5000)
+  }, 150)
+}
+
+function startOrdersRealtime() {
+  stopOrdersRealtime()
+
+  ordersRealtimeChannel = supabase
+    .channel('blue-cup-orders')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+      },
+      () => {
+        scheduleOrdersRealtimeReload()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'order_items',
+      },
+      () => {
+        scheduleOrdersRealtimeReload()
+      }
+    )
+    .subscribe((status, error) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Orders realtime verbonden')
+      }
+
+      if (error) {
+        console.error('Orders realtime fout:', error)
+      }
+    })
+}
+
+function stopOrdersRealtime() {
+  if (ordersRealtimeReloadTimer !== null) {
+    window.clearTimeout(ordersRealtimeReloadTimer)
+    ordersRealtimeReloadTimer = null
+  }
+
+  if (ordersRealtimeChannel) {
+    void supabase.removeChannel(ordersRealtimeChannel)
+    ordersRealtimeChannel = null
+  }
+}
+
+function startKitchenRealtime() {
+  stopKitchenRealtime()
+
+  kitchenRealtimeChannel = supabase
+    .channel('blue-cup-kitchen')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'kitchen_labels',
+      },
+      () => {
+        scheduleKitchenRealtimeReload()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+      },
+      () => {
+        scheduleKitchenRealtimeReload()
+      }
+    )
+    .subscribe((status, error) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Kitchen realtime verbonden')
+      }
+
+      if (error) {
+        console.error('Kitchen realtime fout:', error)
+      }
+    })
+}
+
+function stopKitchenRealtime() {
+  if (kitchenRealtimeReloadTimer !== null) {
+    window.clearTimeout(kitchenRealtimeReloadTimer)
+    kitchenRealtimeReloadTimer = null
+  }
+
+  if (kitchenRealtimeChannel) {
+    void supabase.removeChannel(kitchenRealtimeChannel)
+    kitchenRealtimeChannel = null
+  }
 }
 
 function stopCustomerProgressRefresh() {
@@ -2221,10 +2354,13 @@ async function goToOrders() {
   screen = 'orders'
   message = ''
   updateModeInUrl('orders')
+
   await loadOrders()
+  startOrdersRealtime()
 }
 
 async function goToKitchen() {
+  stopAutoRefresh()
   stopCustomerProgressRefresh()
   removeCustomerScrollListeners()
 
@@ -2233,7 +2369,7 @@ async function goToKitchen() {
   updateModeInUrl('kitchen')
 
   await loadKitchenLabels()
-  startKitchenAutoRefresh()
+  startKitchenRealtime()
 }
 
 
@@ -2420,19 +2556,30 @@ function getFilteredOrders() {
 
   if (orderFilter === 'active') {
     return orders.filter((order) => {
-      return order.status === 'new' || order.status === 'preparing'
+      return (
+        order.status === 'new' ||
+        order.status === 'preparing' ||
+        order.status === 'ready'
+      )
     })
   }
 
-  return orders.filter((order) => order.status === orderFilter)
+  if (orderFilter === 'preparation') {
+    return orders.filter((order) => order.status === 'preparing')
+  }
+
+  if (orderFilter === 'completed') {
+    return orders.filter((order) => order.status === 'completed')
+  }
+
+  return orders
 }
 
 function getOrderFilterText(filter: OrderFilter) {
   if (filter === 'all') return 'All'
   if (filter === 'active') return 'Active'
-  if (filter === 'ready') return 'Ready'
+  if (filter === 'preparation') return 'Preparation'
   if (filter === 'completed') return 'Completed'
-  if (filter === 'cancelled') return 'Cancelled'
 
   return filter
 }
@@ -3383,7 +3530,7 @@ function renderNav() {
 }
 
 function renderOrderFilters() {
-  const filters: OrderFilter[] = ['all', 'active', 'ready', 'completed', 'cancelled']
+  const filters: OrderFilter[] = ['all', 'active', 'preparation', 'completed']
 
   return `
     <div class="order-filters">
@@ -3934,7 +4081,7 @@ function renderCustomerCheckoutScreen() {
         </section>
       </div>
 
-      <div class="customer-checkout-footer">
+      <div class="customer-checkout-footer ${isCustomerCheckoutOpen ? 'open' : 'hidden'}">
         <button class="checkout-btn" id="customer-pay-btn" ${cart.length === 0 || isSubmitting ? 'disabled' : ''}>
           ${isSubmitting ? escapeHtml(t('placingOrder')) : escapeHtml(t('placeOrder'))}
         </button>
@@ -6349,12 +6496,13 @@ window.addEventListener('popstate', async () => {
 
   if (screen === 'orders') {
     await loadOrders()
+    startOrdersRealtime()
     return
   }
 
   if (screen === 'kitchen') {
     await loadKitchenLabels()
-    startKitchenAutoRefresh()
+    startKitchenRealtime()
     return
   }
 
@@ -6387,12 +6535,13 @@ async function startApp() {
 
   if (screen === 'orders') {
     await loadOrders()
+    startOrdersRealtime()
     return
   }
 
   if (screen === 'kitchen') {
     await loadKitchenLabels()
-    startKitchenAutoRefresh()
+    startKitchenRealtime()
     return
   }
 
