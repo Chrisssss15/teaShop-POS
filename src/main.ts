@@ -31,6 +31,11 @@ type Topping = {
   is_active: boolean
 }
 
+type ProductToppingLink = {
+  product_id: string
+  topping_id: string
+}
+
 
 type Category = {
   id: string
@@ -449,6 +454,7 @@ let orderFilter: OrderFilter = 'active'
 
 let products: Product[] = []
 let toppings: Topping[] = []
+let productToppingLinks: ProductToppingLink[] = []
 let categories: Category[] = []
 let cart: CartItem[] = []
 
@@ -825,6 +831,97 @@ async function loadToppings() {
 
   toppings = (data ?? []) as Topping[]
   console.log('Toppings geladen:', toppings)
+}
+
+
+async function loadProductToppingLinks() {
+  const { data, error } = await supabase
+    .from('product_toppings')
+    .select('product_id,topping_id')
+
+  if (error) {
+    console.error('Product toppings laden mislukt:', error)
+    productToppingLinks = []
+    return
+  }
+
+  productToppingLinks = (data ?? []) as ProductToppingLink[]
+}
+
+function getAllowedToppingsForProduct(productId: string) {
+  const allowedIds = new Set(
+    productToppingLinks
+      .filter((link) => String(link.product_id) === String(productId))
+      .map((link) => String(link.topping_id))
+  )
+
+  return toppings.filter(
+    (topping) =>
+      topping.is_active &&
+      allowedIds.has(String(topping.id))
+  )
+}
+
+function getSelectedAdminToppingIds() {
+  return Array.from(
+    document.querySelectorAll<HTMLInputElement>(
+      'input[name="admin-product-topping"]:checked'
+    )
+  ).map((input) => String(input.value))
+}
+
+
+function toggleAllAdminProductToppings(button: HTMLButtonElement) {
+  const container = button.closest('.admin-product-toppings-field')
+  if (!container) return
+
+  const checkboxes = Array.from(
+    container.querySelectorAll<HTMLInputElement>(
+      'input[name="admin-product-topping"]'
+    )
+  )
+
+  if (checkboxes.length === 0) return
+
+  const allChecked = checkboxes.every((checkbox) => checkbox.checked)
+  const nextChecked = !allChecked
+
+  checkboxes.forEach((checkbox) => {
+    checkbox.checked = nextChecked
+  })
+
+  button.textContent = nextChecked ? 'Clear' : 'All'
+}
+
+async function saveProductToppingLinks(productId: string, toppingIds: string[]) {
+  const { error: deleteError } = await supabase
+    .from('product_toppings')
+    .delete()
+    .eq('product_id', productId)
+
+  if (deleteError) {
+    throw new Error(`Bestaande toppings verwijderen mislukt: ${deleteError.message}`)
+  }
+
+  if (toppingIds.length === 0) {
+    productToppingLinks = productToppingLinks.filter(
+      (link) => String(link.product_id) !== String(productId)
+    )
+    return
+  }
+
+  const rows = toppingIds.map((toppingId) => ({
+    product_id: productId,
+    topping_id: toppingId,
+  }))
+
+  const { error: insertError } = await supabase
+    .from('product_toppings')
+    .insert(rows)
+
+  if (insertError) {
+    throw new Error(`Toppings koppelen mislukt: ${insertError.message}`)
+  }
 }
 
 async function loadOrders() {
@@ -1556,7 +1653,11 @@ function toggleCustomizerTopping(toppingId: string) {
 }
 
 function getCustomizerSelectedToppings(): SelectedTopping[] {
-  return toppings
+  if (!customizerProduct) return []
+
+  const allowedToppings = getAllowedToppingsForProduct(customizerProduct.id)
+
+  return allowedToppings
     .filter((topping) => customizerToppingIds.includes(String(topping.id)))
     .map((topping) => ({
       id: String(topping.id),
@@ -2694,6 +2795,7 @@ async function saveAdminProduct() {
   const discountValueInput = document.querySelector<HTMLInputElement>('#admin-product-discount-value')
   const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
   const activeInput = document.querySelector<HTMLInputElement>('#admin-product-active')
+  const selectedToppingIds = getSelectedAdminToppingIds()
 
   const name = nameInput?.value.trim() || ''
   const category = categoryInput?.value.trim() || ''
@@ -2739,47 +2841,63 @@ async function saveAdminProduct() {
     return
   }
 
-  if (adminEditingProductId) {
-    const { error } = await supabase
-      .from('products')
-      .update({
-        name,
-        category,
-        base_price: basePrice,
-        discount_type: discountType,
-        discount_value: discountValue,
-        is_bestseller: isBestSeller,
-        is_active: isActive,
-      })
-      .eq('id', adminEditingProductId)
+  try {
+    if (adminEditingProductId) {
+      const productId = adminEditingProductId
 
-    if (error) {
-      adminError = `Product aanpassen mislukt: ${error.message}`
-      render()
-      return
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name,
+          category,
+          base_price: basePrice,
+          discount_type: discountType,
+          discount_value: discountValue,
+          is_bestseller: isBestSeller,
+          is_active: isActive,
+        })
+        .eq('id', productId)
+
+      if (error) {
+        adminError = `Product aanpassen mislukt: ${error.message}`
+        render()
+        return
+      }
+
+      await saveProductToppingLinks(productId, selectedToppingIds)
+      adminMessage = 'Product en toppings aangepast.'
+    } else {
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          name,
+          category,
+          base_price: basePrice,
+          discount_type: discountType,
+          discount_value: discountValue,
+          is_bestseller: isBestSeller,
+          is_active: isActive,
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        adminError = `Product toevoegen mislukt: ${error.message}`
+        render()
+        return
+      }
+
+      const productId = String(data.id)
+      await saveProductToppingLinks(productId, selectedToppingIds)
+      adminMessage = 'Product en toppings toegevoegd.'
     }
-
-    adminMessage = 'Product aangepast.'
-  } else {
-    const { error } = await supabase
-      .from('products')
-      .insert({
-        name,
-        category,
-        base_price: basePrice,
-        discount_type: discountType,
-        discount_value: discountValue,
-        is_bestseller: isBestSeller,
-        is_active: isActive,
-      })
-
-    if (error) {
-      adminError = `Product toevoegen mislukt: ${error.message}`
-      render()
-      return
-    }
-
-    adminMessage = 'Product toegevoegd.'
+  } catch (error) {
+    adminError =
+      error instanceof Error
+        ? error.message
+        : 'Product toppings opslaan mislukt.'
+    render()
+    return
   }
 
   adminEditingProductId = null
@@ -3393,6 +3511,7 @@ async function loadAllAdminData() {
   const [
     { data: productData, error: productError },
     { data: toppingData, error: toppingError },
+    { data: productToppingData, error: productToppingError },
     { data: categoryData, error: categoryError },
     { data: todayOrderData, error: todayOrderError },
   ] = await Promise.all([
@@ -3405,6 +3524,9 @@ async function loadAllAdminData() {
       .from('toppings')
       .select('*')
       .order('name', { ascending: true }),
+    supabase
+      .from('product_toppings')
+      .select('product_id,topping_id'),
     supabase
       .from('categories')
       .select('*')
@@ -3430,6 +3552,12 @@ async function loadAllAdminData() {
     return
   }
 
+  if (productToppingError) {
+    adminError = `Product toppings laden mislukt: ${productToppingError.message}`
+    render()
+    return
+  }
+
   if (categoryError) {
     adminError = `Categorieën laden mislukt: ${categoryError.message}`
     render()
@@ -3444,6 +3572,7 @@ async function loadAllAdminData() {
 
   products = (productData ?? []) as Product[]
   toppings = (toppingData ?? []) as Topping[]
+  productToppingLinks = (productToppingData ?? []) as ProductToppingLink[]
   categories = (categoryData ?? []) as Category[]
   adminTodayOrders = (todayOrderData ?? []) as Order[]
 
@@ -3840,9 +3969,9 @@ function renderCustomerCustomizer() {
 
           <div class="customer-topping-options">
             ${
-              toppings.length === 0
+              getAllowedToppingsForProduct(customizerProduct.id).length === 0
                 ? `<p class="muted">${escapeHtml(t('noToppings'))}</p>`
-                : toppings
+                : getAllowedToppingsForProduct(customizerProduct.id)
                     .map(
                       (topping) => `
                         <button
@@ -4323,6 +4452,56 @@ function renderAdminProductForm() {
           <small id="admin-product-preview-text"></small>
         </div>
 
+        <div class="admin-product-toppings-field">
+          <div class="admin-product-toppings-header">
+            <div>
+              <strong>Beschikbare toppings</strong>
+              <span>Kies welke toppings bij dit drankje besteld kunnen worden.</span>
+            </div>
+
+            <button
+              type="button"
+              class="admin-toppings-all-btn"
+              data-action="toggle-all-product-toppings"
+            >
+              All
+            </button>
+          </div>
+
+          <div class="admin-product-toppings-grid">
+            ${
+              toppings.length === 0
+                ? `<p class="muted">Nog geen toppings aangemaakt.</p>`
+                : toppings
+                    .map((topping) => {
+                      const isLinked = editingProduct
+                        ? productToppingLinks.some(
+                            (link) =>
+                              String(link.product_id) === String(editingProduct.id) &&
+                              String(link.topping_id) === String(topping.id)
+                          )
+                        : false
+
+                      return `
+                        <label class="admin-topping-checkbox ${!topping.is_active ? 'inactive' : ''}">
+                          <input
+                            type="checkbox"
+                            name="admin-product-topping"
+                            value="${topping.id}"
+                            ${isLinked ? 'checked' : ''}
+                          />
+                          <span class="admin-topping-checkbox-text">
+                            <strong>${escapeHtml(topping.name)}</strong>
+                            <small>+ € ${Number(topping.price).toFixed(2)}${!topping.is_active ? ' · Inactief' : ''}</small>
+                          </span>
+                        </label>
+                      `
+                    })
+                    .join('')
+            }
+          </div>
+        </div>
+
         <label class="admin-checkbox-label">
           <input
             id="admin-product-bestseller"
@@ -4777,6 +4956,54 @@ function renderAdminProductEditModal() {
               € ${getDiscountedProductPrice(product).toFixed(2)}
             </strong>
             <small id="admin-product-preview-text"></small>
+          </div>
+
+          <div class="admin-product-toppings-field admin-product-toppings-modal">
+            <div class="admin-product-toppings-header">
+              <div>
+                <strong>Beschikbare toppings</strong>
+                <span>Kies welke toppings bij dit drankje besteld kunnen worden.</span>
+              </div>
+
+              <button
+                type="button"
+                class="admin-toppings-all-btn"
+                data-action="toggle-all-product-toppings"
+              >
+                All
+              </button>
+            </div>
+
+            <div class="admin-product-toppings-grid">
+              ${
+                toppings.length === 0
+                  ? `<p class="muted">Nog geen toppings aangemaakt.</p>`
+                  : toppings
+                      .map((topping) => {
+                        const isLinked = productToppingLinks.some(
+                          (link) =>
+                            String(link.product_id) === String(product.id) &&
+                            String(link.topping_id) === String(topping.id)
+                        )
+
+                        return `
+                          <label class="admin-topping-checkbox ${!topping.is_active ? 'inactive' : ''}">
+                            <input
+                              type="checkbox"
+                              name="admin-product-topping"
+                              value="${topping.id}"
+                              ${isLinked ? 'checked' : ''}
+                            />
+                            <span class="admin-topping-checkbox-text">
+                              <strong>${escapeHtml(topping.name)}</strong>
+                              <small>+ € ${Number(topping.price).toFixed(2)}${!topping.is_active ? ' · Inactief' : ''}</small>
+                            </span>
+                          </label>
+                        `
+                      })
+                      .join('')
+              }
+            </div>
           </div>
 
           <div class="admin-product-toggle-row">
@@ -6284,6 +6511,12 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#admin-refresh-stats')?.addEventListener('click', loadAllAdminData)
 
+  document.querySelectorAll<HTMLButtonElement>('[data-action="toggle-all-product-toppings"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      toggleAllAdminProductToppings(button)
+    })
+  })
+
   document.querySelector<HTMLButtonElement>('#admin-save-product')?.addEventListener('click', saveAdminProduct)
   document.querySelector<HTMLButtonElement>('#admin-cancel-product')?.addEventListener('click', cancelAdminProductEdit)
   document.querySelector<HTMLButtonElement>('#admin-save-topping')?.addEventListener('click', saveAdminTopping)
@@ -6529,6 +6762,7 @@ async function startApp() {
   await Promise.all([
     loadProducts(),
     loadToppings(),
+    loadProductToppingLinks(),
     loadCategories(),
     loadBestSellerSales(),
   ])

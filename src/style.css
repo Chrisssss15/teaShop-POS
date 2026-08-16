@@ -5473,3 +5473,135 @@ body,
     padding-bottom: 18px !important;
   }
 }
+
+/* ========================================================= */
+/* ADMIN — PRODUCT SPECIFIC TOPPINGS                         */
+/* ========================================================= */
+
+.admin-product-toppings-field {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dce6f3;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.admin-product-toppings-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.admin-product-toppings-header strong {
+  display: block;
+  color: #172033;
+  font-size: 15px;
+}
+
+.admin-product-toppings-header span {
+  display: block;
+  margin-top: 3px;
+  color: #6b7890;
+  font-size: 13px;
+}
+
+.admin-product-toppings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.admin-topping-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  padding: 12px;
+  border: 1px solid #d8e2ef;
+  border-radius: 14px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.admin-topping-checkbox:hover {
+  border-color: #1B478F;
+  box-shadow: 0 4px 12px rgba(27, 71, 143, 0.08);
+}
+
+.admin-topping-checkbox input {
+  width: 18px;
+  height: 18px;
+  accent-color: #1B478F;
+  flex: 0 0 auto;
+}
+
+.admin-topping-checkbox-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.admin-topping-checkbox-text strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.admin-topping-checkbox-text small {
+  color: #6b7890;
+  font-size: 12px;
+}
+
+.admin-topping-checkbox.inactive {
+  opacity: 0.6;
+}
+
+.admin-product-toppings-modal {
+  margin-top: 6px;
+}
+
+@media (max-width: 700px) {
+  .admin-product-toppings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ========================================================= */
+/* ADMIN PRODUCT TOPPINGS — ALL / CLEAR BUTTON              */
+/* ========================================================= */
+
+.admin-toppings-all-btn {
+  flex: 0 0 auto;
+  min-width: 66px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #1B478F;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1B478F;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.admin-toppings-all-btn:hover {
+  background: #1B478F;
+  color: #ffffff;
+}
+
+@media (max-width: 700px) {
+  .admin-product-toppings-header {
+    align-items: center;
+  }
+
+  .admin-toppings-all-btn {
+    min-width: 60px;
+    height: 34px;
+    padding: 0 12px;
+  }
+}
