@@ -6518,7 +6518,7 @@ function renderPos() {
   const grouped = groupProductsByCategory()
 
   return `
-    <div class="page">
+    <div class="page pos-page">
       ${renderNav()}
 
       <header class="header">
@@ -6529,23 +6529,6 @@ function renderPos() {
             <h1>Blue Cup POS</h1>
             <p class="sub">MVP kassascherm</p>
 
-            <div class="pos-quick-actions">
-              <button
-                type="button"
-                class="pos-wait-settings-btn"
-                id="pos-wait-settings"
-              >
-                ⚙ Wachttijd
-              </button>
-
-              <button
-                type="button"
-                class="pos-history-btn"
-                id="go-order-history"
-              >
-                🧾 Bonnen
-              </button>
-            </div>
           </div>
         </div>
 
@@ -6563,6 +6546,32 @@ function renderPos() {
 
         ${renderCart(false)}
       </main>
+
+      <nav class="pos-action-dock" aria-label="POS snelmenu">
+        <button
+          type="button"
+          class="pos-action-tile"
+          id="pos-wait-settings"
+        >
+          <span class="pos-action-icon" aria-hidden="true">⏱</span>
+          <span class="pos-action-copy">
+            <strong>Wachttijd</strong>
+            <small>Pickup scherm instellen</small>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="pos-action-tile"
+          id="go-order-history"
+        >
+          <span class="pos-action-icon" aria-hidden="true">🧾</span>
+          <span class="pos-action-copy">
+            <strong>Bonnen / Orders</strong>
+            <small>Zoek oude bestellingen</small>
+          </span>
+        </button>
+      </nav>
     </div>
   `
 }
