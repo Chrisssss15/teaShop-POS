@@ -7609,3 +7609,383 @@ body,
   border-color: #b9cae1;
   background: #f5f8fc;
 }
+
+/* ========================================================= */
+/* PICKUP — THIRD WAIT TIME COLUMN                           */
+/* ========================================================= */
+
+.pickup-board {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 22px !important;
+}
+
+.pickup-wait .pickup-step {
+  background: #fff4d9;
+  color: #976900;
+}
+
+.pickup-wait-content {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  text-align: center;
+}
+
+.pickup-wait-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.pickup-wait-value strong {
+  color: #1B478F;
+  font-size: clamp(58px, 6vw, 104px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+}
+
+.pickup-wait-value span {
+  color: #5f6f87;
+  font-size: clamp(20px, 2vw, 30px);
+  font-weight: 800;
+}
+
+.pickup-wait-note {
+  max-width: 320px;
+  margin: 22px 0 0;
+  color: #8793a5;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.pickup-wait-hidden {
+  max-width: 320px;
+  padding: 22px;
+  border: 1px dashed #d8e1ec;
+  border-radius: 18px;
+  color: #8995a7;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+@media (max-width: 1000px) {
+  .pickup-board {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ========================================================= */
+/* POS — WAIT TIME SETTINGS                                  */
+/* ========================================================= */
+
+.pos-wait-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  margin-top: 9px;
+  padding: 0 12px;
+  border: 1px solid #d7e2f0;
+  border-radius: 10px;
+  background: #f7faff;
+  color: #1B478F;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pos-wait-settings-btn:hover {
+  background: #edf4fd;
+}
+
+.pos-wait-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(23, 32, 51, 0.40);
+  backdrop-filter: blur(4px);
+}
+
+.pos-wait-modal {
+  width: min(560px, 100%);
+  overflow: hidden;
+  border: 1px solid #dce5f1;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(23, 32, 51, 0.20);
+}
+
+.pos-wait-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.pos-wait-modal-header h2 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 24px;
+}
+
+.pos-wait-close {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: #edf3fb;
+  color: #1B478F;
+  font-size: 24px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pos-wait-modal-body {
+  padding: 24px;
+}
+
+.pos-wait-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.pos-wait-setting-row strong {
+  display: block;
+  font-size: 17px;
+  color: #172033;
+}
+
+.pos-wait-setting-row p {
+  margin: 5px 0 0;
+  color: #718097;
+  font-size: 13px;
+}
+
+.pos-wait-divider {
+  height: 1px;
+  margin: 22px 0;
+  background: #e8edf4;
+}
+
+.pos-wait-switch {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.pos-wait-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pos-wait-switch-track {
+  display: block;
+  width: 56px;
+  height: 32px;
+  padding: 4px;
+  border-radius: 999px;
+  background: #d9e1ec;
+  box-sizing: border-box;
+  transition: background 160ms ease;
+}
+
+.pos-wait-switch-thumb {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(23, 32, 51, 0.20);
+  transition: transform 180ms ease;
+}
+
+.pos-wait-switch input:checked + .pos-wait-switch-track {
+  background: #1B478F;
+}
+
+.pos-wait-switch input:checked + .pos-wait-switch-track .pos-wait-switch-thumb {
+  transform: translateX(24px);
+}
+
+.pos-wait-field > span {
+  display: block;
+  margin-bottom: 9px;
+  color: #2f4d78;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pos-wait-input-wrap {
+  display: flex;
+  align-items: center;
+  width: 260px;
+  overflow: hidden;
+  border: 1px solid #d8e2ef;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.pos-wait-input-wrap input {
+  width: 140px;
+  height: 48px;
+  padding: 0 14px;
+  border: 0;
+  outline: 0;
+  color: #172033;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.pos-wait-input-wrap span {
+  color: #718097;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pos-wait-field small {
+  display: block;
+  margin-top: 8px;
+  color: #8995a7;
+  font-size: 12px;
+}
+
+.pos-wait-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 24px;
+  border-top: 1px solid #e8edf4;
+  background: #fbfcfe;
+}
+
+@media (max-width: 620px) {
+  .pos-wait-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .pos-wait-modal {
+    width: 100%;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .pos-wait-input-wrap {
+    width: 100%;
+  }
+}
+
+/* ========================================================= */
+/* PICKUP — HIDE WAIT COLUMN + RESPONSIVE ORDER NUMBERS      */
+/* ========================================================= */
+
+/* 3 kolommen als wachttijd zichtbaar is */
+.pickup-board.has-wait-time {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+/* 2 kolommen als wachttijd uit staat */
+.pickup-board.no-wait-time {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+/* Nummerlijst automatisch laten schalen */
+.pickup-number-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)) !important;
+  gap: 14px !important;
+  align-content: start !important;
+  min-width: 0 !important;
+}
+
+/* Kaartje mag nooit over zijn eigen breedte heen */
+.pickup-number-card {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 96px !important;
+
+  padding: 12px 8px !important;
+  box-sizing: border-box !important;
+
+  overflow: hidden !important;
+
+  font-size: clamp(28px, 3vw, 52px) !important;
+  line-height: 1 !important;
+  letter-spacing: -0.02em !important;
+  white-space: nowrap !important;
+}
+
+/* Bij 2 kolommen mogen de ordernummers iets groter */
+.pickup-board.no-wait-time .pickup-number-card {
+  font-size: clamp(32px, 3.6vw, 60px) !important;
+}
+
+/* Grote schermen: liever max 3 nummers per rij */
+@media (min-width: 1300px) {
+  .pickup-number-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+/* Middelgrote schermen */
+@media (max-width: 1200px) {
+  .pickup-number-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .pickup-number-card {
+    min-height: 88px !important;
+    font-size: clamp(26px, 3.4vw, 46px) !important;
+  }
+}
+
+/* Tablet */
+@media (max-width: 900px) {
+  .pickup-board.has-wait-time,
+  .pickup-board.no-wait-time {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pickup-number-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .pickup-number-card {
+    font-size: clamp(28px, 6vw, 48px) !important;
+  }
+}
+
+/* Mobiel / heel smal */
+@media (max-width: 620px) {
+  .pickup-page {
+    padding: 16px !important;
+  }
+
+  .pickup-number-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  .pickup-number-card {
+    min-height: 76px !important;
+    padding: 10px 6px !important;
+    font-size: clamp(24px, 9vw, 40px) !important;
+  }
+
+  .pickup-column {
+    padding: 16px !important;
+  }
+}

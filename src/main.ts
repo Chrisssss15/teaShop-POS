@@ -529,6 +529,10 @@ let pickupRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
 let ordersRealtimeReloadTimer: number | null = null
 let kitchenRealtimeReloadTimer: number | null = null
 let pickupRealtimeReloadTimer: number | null = null
+
+let pickupWaitVisible = true
+let pickupWaitMinutes = 10
+let isPosWaitSettingsOpen = false
 let isSmoothScrollingToCategory = false
 
 
@@ -2390,6 +2394,79 @@ function stopOrdersRealtime() {
 }
 
 
+
+async function loadPickupWaitSettings() {
+  const { data, error } = await supabase
+    .from('shop_settings')
+    .select('pickup_wait_visible,pickup_wait_minutes')
+    .eq('id', 1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Wachttijd instellingen laden mislukt:', error)
+    return
+  }
+
+  if (!data) return
+
+  pickupWaitVisible = data.pickup_wait_visible ?? true
+  pickupWaitMinutes = Number(data.pickup_wait_minutes ?? 10)
+}
+
+async function savePickupWaitSettings() {
+  const visibleInput =
+    document.querySelector<HTMLInputElement>('#pos-wait-visible')
+  const minutesInput =
+    document.querySelector<HTMLInputElement>('#pos-wait-minutes')
+
+  const visible = visibleInput?.checked ?? true
+  const minutes = Math.max(
+    0,
+    Math.min(180, Math.round(Number(minutesInput?.value ?? 10)))
+  )
+
+  if (!Number.isFinite(minutes)) {
+    message = 'Vul een geldige wachttijd in.'
+    render()
+    return
+  }
+
+  const { error } = await supabase
+    .from('shop_settings')
+    .upsert(
+      {
+        id: 1,
+        pickup_wait_visible: visible,
+        pickup_wait_minutes: minutes,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    )
+
+  if (error) {
+    message = `Wachttijd opslaan mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  pickupWaitVisible = visible
+  pickupWaitMinutes = minutes
+  isPosWaitSettingsOpen = false
+  message = 'Wachttijd opgeslagen.'
+  render()
+}
+
+function openPosWaitSettings() {
+  isPosWaitSettingsOpen = true
+  message = ''
+  render()
+}
+
+function closePosWaitSettings() {
+  isPosWaitSettingsOpen = false
+  render()
+}
+
 function schedulePickupRealtimeReload() {
   if (pickupRealtimeReloadTimer !== null) {
     window.clearTimeout(pickupRealtimeReloadTimer)
@@ -2418,6 +2495,22 @@ function startPickupRealtime() {
       },
       () => {
         schedulePickupRealtimeReload()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'shop_settings',
+        filter: 'id=eq.1',
+      },
+      async () => {
+        await loadPickupWaitSettings()
+
+        if (screen === 'pickup') {
+          render()
+        }
       }
     )
     .subscribe((status, error) => {
@@ -2567,7 +2660,11 @@ async function goToPickup() {
   message = ''
   updateModeInUrl('pickup')
 
-  await loadOrders()
+  await Promise.all([
+    loadOrders(),
+    loadPickupWaitSettings(),
+  ])
+
   startPickupRealtime()
 }
 
@@ -6284,6 +6381,93 @@ function renderAdminSalesPage() {
   `
 }
 
+
+function renderPosWaitSettingsModal() {
+  if (!isPosWaitSettingsOpen) return ''
+
+  return `
+    <div class="pos-wait-modal-overlay" id="pos-wait-modal-overlay">
+      <div class="pos-wait-modal" role="dialog" aria-modal="true">
+        <div class="pos-wait-modal-header">
+          <div>
+            <p class="eyebrow">Pickup scherm</p>
+            <h2>Wachttijd instellen</h2>
+          </div>
+
+          <button
+            type="button"
+            class="pos-wait-close"
+            id="pos-wait-close"
+            aria-label="Sluiten"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="pos-wait-modal-body">
+          <div class="pos-wait-setting-row">
+            <div>
+              <strong>Wachttijd zichtbaar</strong>
+              <p>Toon de wachttijd op het scherm aan de voorkant.</p>
+            </div>
+
+            <label class="pos-wait-switch">
+              <input
+                id="pos-wait-visible"
+                type="checkbox"
+                ${pickupWaitVisible ? 'checked' : ''}
+              />
+              <span class="pos-wait-switch-track">
+                <span class="pos-wait-switch-thumb"></span>
+              </span>
+            </label>
+          </div>
+
+          <div class="pos-wait-divider"></div>
+
+          <label class="pos-wait-field">
+            <span>Geschatte wachttijd</span>
+
+            <div class="pos-wait-input-wrap">
+              <input
+                id="pos-wait-minutes"
+                type="number"
+                min="0"
+                max="180"
+                step="1"
+                value="${pickupWaitMinutes}"
+              />
+              <span>minuten</span>
+            </div>
+
+            <small>
+              Bijvoorbeeld 15 = ± 15 minuten op het pickup-scherm.
+            </small>
+          </label>
+        </div>
+
+        <div class="pos-wait-modal-footer">
+          <button
+            type="button"
+            class="secondary-btn"
+            id="pos-wait-cancel"
+          >
+            Annuleren
+          </button>
+
+          <button
+            type="button"
+            class="primary-btn"
+            id="pos-wait-save"
+          >
+            Opslaan
+          </button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 // =============================
 // RENDER: STAFF POS
 // =============================
@@ -6302,6 +6486,14 @@ function renderPos() {
           <div>
             <h1>Blue Cup POS</h1>
             <p class="sub">MVP kassascherm</p>
+
+            <button
+              type="button"
+              class="pos-wait-settings-btn"
+              id="pos-wait-settings"
+            >
+              ⚙ Wachttijd
+            </button>
           </div>
         </div>
 
@@ -6309,6 +6501,7 @@ function renderPos() {
       </header>
 
       ${renderCustomerCustomizer()}
+      ${renderPosWaitSettingsModal()}
 
       <main class="layout">
         <section class="products">
@@ -6372,7 +6565,7 @@ function renderPickup() {
         </div>
       </header>
 
-      <main class="pickup-board">
+      <main class="pickup-board ${pickupWaitVisible ? 'has-wait-time' : 'no-wait-time'}">
         <section class="pickup-column pickup-preparing">
           <div class="pickup-column-title">
             <span class="pickup-step">1</span>
@@ -6400,6 +6593,33 @@ function renderPickup() {
             ${renderPickupNumberList('ready')}
           </div>
         </section>
+
+        ${
+          pickupWaitVisible
+            ? `
+              <section class="pickup-column pickup-wait">
+                <div class="pickup-column-title">
+                  <span class="pickup-step">⏱</span>
+                  <div>
+                    <h2>Geschatte wachttijd</h2>
+                    <p>Voor nieuwe bestellingen</p>
+                  </div>
+                </div>
+
+                <div class="pickup-wait-content">
+                  <div class="pickup-wait-value">
+                    <strong>± ${pickupWaitMinutes}</strong>
+                    <span>minuten</span>
+                  </div>
+
+                  <p class="pickup-wait-note">
+                    Dit is een schatting. De werkelijke wachttijd kan iets afwijken.
+                  </p>
+                </div>
+              </section>
+            `
+            : ''
+        }
       </main>
     </div>
   `
@@ -6900,6 +7120,19 @@ function bindEvents() {
     })
   })
 
+  document.querySelector<HTMLButtonElement>('#pos-wait-settings')?.addEventListener('click', openPosWaitSettings)
+  document.querySelector<HTMLButtonElement>('#pos-wait-close')?.addEventListener('click', closePosWaitSettings)
+  document.querySelector<HTMLButtonElement>('#pos-wait-cancel')?.addEventListener('click', closePosWaitSettings)
+  document.querySelector<HTMLButtonElement>('#pos-wait-save')?.addEventListener('click', () => {
+    void savePickupWaitSettings()
+  })
+
+  document.querySelector<HTMLDivElement>('#pos-wait-modal-overlay')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      closePosWaitSettings()
+    }
+  })
+
   document.querySelector<HTMLButtonElement>('#go-pos')?.addEventListener('click', goToPos)
   document.querySelector<HTMLButtonElement>('#go-orders')?.addEventListener('click', goToOrders)
   document.querySelector<HTMLButtonElement>('#go-kitchen')?.addEventListener('click', goToKitchen)
@@ -7352,7 +7585,10 @@ window.addEventListener('popstate', async () => {
   message = ''
 
   if (screen === 'pickup') {
-    await loadOrders()
+    await Promise.all([
+      loadOrders(),
+      loadPickupWaitSettings(),
+    ])
     startPickupRealtime()
     return
   }
@@ -7395,10 +7631,14 @@ async function startApp() {
     loadProductToppingLinks(),
     loadCategories(),
     loadBestSellerSales(),
+    loadPickupWaitSettings(),
   ])
 
   if (screen === 'pickup') {
-    await loadOrders()
+    await Promise.all([
+      loadOrders(),
+      loadPickupWaitSettings(),
+    ])
     startPickupRealtime()
     return
   }
