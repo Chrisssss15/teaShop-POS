@@ -9,7 +9,7 @@ import { supabase } from './lib/supabase'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories'
+type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -430,6 +430,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'orders') return 'orders'
   if (modeValue === 'kitchen') return 'kitchen'
   if (modeValue === 'customer') return 'customer'
+  if (modeValue === 'pickup') return 'pickup'
   if (modeValue === 'admin') return 'admin'
   if (modeValue === 'admin-products') return 'admin-products'
   if (modeValue === 'admin-sales') return 'admin-sales'
@@ -523,9 +524,11 @@ let customerProgressTimer: number | null = null
 
 let ordersRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
 let kitchenRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
+let pickupRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
 
 let ordersRealtimeReloadTimer: number | null = null
 let kitchenRealtimeReloadTimer: number | null = null
+let pickupRealtimeReloadTimer: number | null = null
 let isSmoothScrollingToCategory = false
 
 
@@ -2067,17 +2070,48 @@ async function createKitchenLabelsForOrder(
 // =============================
 
 async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
-  const updateData: Record<string, string> = {
+  const currentOrder = orders.find(
+    (order) => String(order.id) === String(orderId)
+  )
+
+  // Als een READY-order teruggaat naar PREPARING,
+  // moeten de kitchen labels ook terug naar preparing.
+  // Anders zou de kitchen-sync de order opnieuw op READY kunnen zetten.
+  if (currentOrder?.status === 'ready' && nextStatus === 'preparing') {
+    const now = new Date().toISOString()
+
+    const { error: labelError } = await supabase
+      .from('kitchen_labels')
+      .update({
+        status: 'preparing',
+        started_at: now,
+        done_at: null,
+      })
+      .eq('order_id', orderId)
+      .eq('status', 'done')
+
+    if (labelError) {
+      message = `Terugzetten naar voorbereiding mislukt: ${labelError.message}`
+      render()
+      return
+    }
+  }
+
+  const updateData: Record<string, string | null> = {
     status: nextStatus,
     updated_at: new Date().toISOString(),
   }
 
   if (nextStatus === 'completed') {
     updateData.completed_at = new Date().toISOString()
+  } else {
+    updateData.completed_at = null
   }
 
   if (nextStatus === 'cancelled') {
     updateData.cancelled_at = new Date().toISOString()
+  } else {
+    updateData.cancelled_at = null
   }
 
   const { error } = await supabase
@@ -2091,7 +2125,12 @@ async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
     return
   }
 
-  message = `Order status aangepast naar ${nextStatus}`
+  message =
+    currentOrder?.status === 'ready' && nextStatus === 'preparing'
+      ? 'Order teruggezet naar voorbereiding.'
+      : currentOrder?.status === 'completed' && nextStatus === 'ready'
+        ? 'Order teruggezet naar pickup.'
+        : `Order status aangepast naar ${nextStatus}`
 
   if (screen === 'orders') {
     await loadOrders()
@@ -2269,6 +2308,7 @@ function stopAutoRefresh() {
 
   stopOrdersRealtime()
   stopKitchenRealtime()
+  stopPickupRealtime()
 }
 
 function scheduleOrdersRealtimeReload() {
@@ -2346,6 +2386,60 @@ function stopOrdersRealtime() {
   if (ordersRealtimeChannel) {
     void supabase.removeChannel(ordersRealtimeChannel)
     ordersRealtimeChannel = null
+  }
+}
+
+
+function schedulePickupRealtimeReload() {
+  if (pickupRealtimeReloadTimer !== null) {
+    window.clearTimeout(pickupRealtimeReloadTimer)
+  }
+
+  pickupRealtimeReloadTimer = window.setTimeout(async () => {
+    pickupRealtimeReloadTimer = null
+
+    if (screen === 'pickup') {
+      await loadOrders()
+    }
+  }, 150)
+}
+
+function startPickupRealtime() {
+  stopPickupRealtime()
+
+  pickupRealtimeChannel = supabase
+    .channel('blue-cup-pickup')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+      },
+      () => {
+        schedulePickupRealtimeReload()
+      }
+    )
+    .subscribe((status, error) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Pickup realtime verbonden')
+      }
+
+      if (error) {
+        console.error('Pickup realtime fout:', error)
+      }
+    })
+}
+
+function stopPickupRealtime() {
+  if (pickupRealtimeReloadTimer !== null) {
+    window.clearTimeout(pickupRealtimeReloadTimer)
+    pickupRealtimeReloadTimer = null
+  }
+
+  if (pickupRealtimeChannel) {
+    void supabase.removeChannel(pickupRealtimeChannel)
+    pickupRealtimeChannel = null
   }
 }
 
@@ -2461,6 +2555,20 @@ async function goToOrders() {
 
   await loadOrders()
   startOrdersRealtime()
+}
+
+
+async function goToPickup() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'pickup'
+  message = ''
+  updateModeInUrl('pickup')
+
+  await loadOrders()
+  startPickupRealtime()
 }
 
 async function goToKitchen() {
@@ -6219,6 +6327,84 @@ function renderPos() {
 // RENDER: ORDERS
 // =============================
 
+
+function renderPickupNumberList(status: 'preparing' | 'ready') {
+  const pickupOrders =
+    status === 'preparing'
+      ? orders.filter(
+          (order) =>
+            order.status === 'new' ||
+            order.status === 'preparing'
+        )
+      : orders.filter((order) => order.status === 'ready')
+
+  if (pickupOrders.length === 0) {
+    return `<div class="pickup-empty">Nog geen bestellingen</div>`
+  }
+
+  return pickupOrders
+    .map(
+      (order) => `
+        <div class="pickup-number-card">
+          ${escapeHtml(order.pickup_code || '----')}
+        </div>
+      `
+    )
+    .join('')
+}
+
+function renderPickup() {
+  return `
+    <div class="pickup-page">
+      <header class="pickup-header">
+        <div class="pickup-brand">
+          <img src="/logo.jpg" alt="Blue Cup" class="pickup-logo" />
+
+          <div>
+            <h1>Blue Cup</h1>
+            <p>Bestelstatus</p>
+          </div>
+        </div>
+
+        <div class="pickup-live">
+          <span></span>
+          Live
+        </div>
+      </header>
+
+      <main class="pickup-board">
+        <section class="pickup-column pickup-preparing">
+          <div class="pickup-column-title">
+            <span class="pickup-step">1</span>
+            <div>
+              <h2>In voorbereiding</h2>
+              <p>Bestelling ontvangen of wordt bereid</p>
+            </div>
+          </div>
+
+          <div class="pickup-number-list">
+            ${renderPickupNumberList('preparing')}
+          </div>
+        </section>
+
+        <section class="pickup-column pickup-ready">
+          <div class="pickup-column-title">
+            <span class="pickup-step">2</span>
+            <div>
+              <h2>Klaar om op te halen</h2>
+              <p>Je bestelling staat klaar</p>
+            </div>
+          </div>
+
+          <div class="pickup-number-list">
+            ${renderPickupNumberList('ready')}
+          </div>
+        </section>
+      </main>
+    </div>
+  `
+}
+
 function renderOrders() {
   const filteredOrders = getFilteredOrders()
 
@@ -6277,9 +6463,39 @@ function renderOrderCard(order: Order) {
           ${customerText ? `<p class="muted">${escapeHtml(customerText)}</p>` : ''}
         </div>
 
-        <span class="status-badge status-${order.status}">
-          ${order.status}
-        </span>
+        <div class="order-status-actions">
+          <span class="status-badge status-${order.status}">
+            ${order.status}
+          </span>
+
+          ${
+            order.status === 'ready'
+              ? `
+                <button
+                  type="button"
+                  class="ready-back-btn"
+                  data-status-order="${order.id}"
+                  data-next-status="preparing"
+                  title="Terug naar voorbereiding"
+                >
+                  ↩ Terug
+                </button>
+              `
+              : order.status === 'completed'
+                ? `
+                  <button
+                    type="button"
+                    class="ready-back-btn completed-back-btn"
+                    data-status-order="${order.id}"
+                    data-next-status="ready"
+                    title="Terug naar pickup"
+                  >
+                    ↩ Terug naar pickup
+                  </button>
+                `
+                : ''
+          }
+        </div>
       </div>
 
       <div class="order-items">
@@ -6340,7 +6556,15 @@ function renderStatusButtons(order: Order) {
 
     ${
       order.status === 'ready'
-        ? `<button class="status-btn green" data-status-order="${order.id}" data-next-status="completed">Afgerond</button>`
+        ? `
+          <button
+            class="status-btn green"
+            data-status-order="${order.id}"
+            data-next-status="completed"
+          >
+            Afgerond
+          </button>
+        `
         : ''
     }
 
@@ -6627,6 +6851,10 @@ function render() {
 
   if (screen === 'customer') {
     app.innerHTML = renderCustomer()
+  }
+
+  if (screen === 'pickup') {
+    app.innerHTML = renderPickup()
   }
 
   if (screen === 'admin') {
@@ -7123,6 +7351,12 @@ window.addEventListener('popstate', async () => {
   screen = nextScreen
   message = ''
 
+  if (screen === 'pickup') {
+    await loadOrders()
+    startPickupRealtime()
+    return
+  }
+
   if (screen === 'orders') {
     await loadOrders()
     startOrdersRealtime()
@@ -7162,6 +7396,12 @@ async function startApp() {
     loadCategories(),
     loadBestSellerSales(),
   ])
+
+  if (screen === 'pickup') {
+    await loadOrders()
+    startPickupRealtime()
+    return
+  }
 
   if (screen === 'orders') {
     await loadOrders()

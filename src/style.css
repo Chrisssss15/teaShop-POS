@@ -7276,3 +7276,336 @@ body,
     grid-column: auto !important;
   }
 }
+
+/* ========================================================= */
+/* PICKUP DISPLAY                                            */
+/* ========================================================= */
+
+.pickup-page {
+  min-height: 100dvh;
+  padding: 28px 34px 34px;
+  box-sizing: border-box;
+  background: #f4f7fb;
+  color: #172033;
+  overflow: hidden;
+}
+
+.pickup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.pickup-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pickup-logo {
+  width: 58px;
+  height: 58px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.pickup-brand h1 {
+  margin: 0;
+  font-size: clamp(30px, 3vw, 48px);
+  line-height: 1;
+}
+
+.pickup-brand p {
+  margin: 6px 0 0;
+  color: #718097;
+  font-size: clamp(14px, 1.4vw, 20px);
+  font-weight: 700;
+}
+
+.pickup-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 15px;
+  border: 1px solid #dce5f1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #59687d;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pickup-live span {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #2fa66a;
+  box-shadow: 0 0 0 5px rgba(47, 166, 106, 0.12);
+}
+
+.pickup-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  height: calc(100dvh - 124px);
+}
+
+.pickup-column {
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid #dfe7f2;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(27, 71, 143, 0.06);
+  overflow: hidden;
+}
+
+.pickup-column-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e9eef5;
+}
+
+.pickup-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: #edf3fb;
+  color: #1B478F;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.pickup-ready .pickup-step {
+  background: #eaf7ef;
+  color: #218755;
+}
+
+.pickup-column-title h2 {
+  margin: 0;
+  font-size: clamp(19px, 1.8vw, 28px);
+  line-height: 1.1;
+}
+
+.pickup-column-title p {
+  margin: 5px 0 0;
+  color: #718097;
+  font-size: clamp(12px, 1vw, 15px);
+  font-weight: 600;
+}
+
+.pickup-number-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  max-height: calc(100% - 86px);
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.pickup-number-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  padding: 12px;
+  border: 2px solid #dfe7f2;
+  border-radius: 20px;
+  background: #f9fbfe;
+  color: #1B478F;
+  font-size: clamp(30px, 3.2vw, 54px);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.pickup-new .pickup-number-card {
+  color: #4d5b70;
+  background: #f7f9fc;
+}
+
+.pickup-preparing .pickup-number-card {
+  border-color: #c9d8eb;
+  background: #f3f7fc;
+  color: #1B478F;
+}
+
+.pickup-ready .pickup-number-card {
+  border-color: #bfe4ce;
+  background: #effaf3;
+  color: #218755;
+}
+
+.pickup-empty {
+  grid-column: 1 / -1;
+  padding: 24px 16px;
+  border: 1px dashed #d9e2ee;
+  border-radius: 18px;
+  color: #8995a7;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+@media (max-width: 1000px) {
+  .pickup-page {
+    overflow: auto;
+  }
+
+  .pickup-board {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .pickup-number-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-height: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .pickup-page {
+    padding: 18px;
+  }
+
+  .pickup-number-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ========================================================= */
+/* PICKUP DISPLAY — TWO COLUMN LAYOUT                        */
+/* ========================================================= */
+
+.pickup-board {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 26px !important;
+}
+
+/* Iets grotere nummers nu er meer ruimte is */
+.pickup-number-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.pickup-number-card {
+  min-height: 108px !important;
+  font-size: clamp(34px, 4vw, 64px) !important;
+}
+
+/* Preparation iets duidelijker blauw */
+.pickup-preparing .pickup-step {
+  background: #edf3fb;
+  color: #1B478F;
+}
+
+/* Nieuwe bestelling kolom bestaat niet meer */
+.pickup-new {
+  display: none !important;
+}
+
+@media (max-width: 1000px) {
+  .pickup-board {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pickup-number-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .pickup-number-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+/* ========================================================= */
+/* ORDERS — SUBTLE READY BACK ACTION                         */
+/* ========================================================= */
+
+.order-status-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ready-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 25px;
+  padding: 0 8px;
+
+  border: 1px solid #d7e1ee;
+  border-radius: 999px;
+
+  background: #ffffff;
+  color: #6b7890;
+
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+
+  cursor: pointer;
+
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease;
+}
+
+.ready-back-btn:hover {
+  background: #f3f6fa;
+  color: #1B478F;
+  border-color: #b9cae1;
+}
+
+.ready-back-btn:active {
+  transform: scale(0.96);
+}
+
+.ready-back-btn:focus-visible {
+  outline: 2px solid rgba(27, 71, 143, 0.18);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+  .order-status-actions {
+    gap: 5px;
+  }
+
+  .ready-back-btn {
+    min-height: 24px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+}
+
+/* ========================================================= */
+/* ORDERS — COMPLETED BACK TO PICKUP                         */
+/* ========================================================= */
+
+.completed-back-btn {
+  color: #5d6d83;
+  border-color: #d8e1ec;
+  background: #ffffff;
+}
+
+.completed-back-btn:hover {
+  color: #1B478F;
+  border-color: #b9cae1;
+  background: #f5f8fc;
+}
