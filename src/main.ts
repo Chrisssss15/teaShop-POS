@@ -4445,7 +4445,7 @@ function renderCustomer() {
   }
 
   return `
-    <div class="page customer-page customer-success-page">
+    <div class="page customer-page">
       <header class="header customer-header">
         <div class="customer-brand">
           <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
