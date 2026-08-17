@@ -4,12 +4,13 @@
 
 import './style.css'
 import { supabase } from './lib/supabase'
+import QRCode from 'qrcode'
 
 // =============================
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories'
+type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -78,6 +79,7 @@ type SavedCartItem = {
 
 type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
 type LabelStatus = 'new' | 'preparing' | 'done' | 'cancelled'
+type PrintStatus = 'pending' | 'printing' | 'printed' | 'failed'
 type OrderFilter = 'all' | 'active' | 'preparation' | 'completed'
 type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
 type PaymentMethod = 'cash' | 'card' | 'online_fake' | 'pay_at_counter'
@@ -86,6 +88,8 @@ type CustomerLanguage = 'nl' | 'en' | 'cn'
 type Order = {
   id: string
   order_number?: string | null
+  order_type?: string | null
+  channel?: string | null
   status: OrderStatus
   subtotal?: number | null
   total?: number | null
@@ -130,6 +134,10 @@ type KitchenLabel = {
   sugar_level?: SugarLevel | null
   toppings?: SelectedTopping[] | null
   notes?: string | null
+  print_status?: PrintStatus | null
+  print_attempts?: number | null
+  printed_at?: string | null
+  print_error?: string | null
   created_at?: string | null
   started_at?: string | null
   done_at?: string | null
@@ -438,6 +446,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'admin-add-product') return 'admin-add-product'
   if (modeValue === 'admin-add-topping') return 'admin-add-topping'
   if (modeValue === 'admin-categories') return 'admin-categories'
+  if (modeValue === 'print-preview') return 'print-preview'
 
   return 'pos'
 }
@@ -465,6 +474,13 @@ let cart: CartItem[] = []
 let orders: Order[] = []
 let orderItems: OrderItem[] = []
 let kitchenLabels: KitchenLabel[] = []
+
+// Sticker preview: latest real order from Supabase
+let printPreviewLabels: KitchenLabel[] = []
+let printPreviewOrder: Order | null = null
+let printPreviewQrDataUrl = ''
+let isLoadingPrintPreview = false
+let printPreviewError = ''
 
 let isSubmitting = false
 let isLoadingOrders = false
@@ -2080,6 +2096,10 @@ async function createKitchenLabelsForOrder(
         ice_level: item.ice_level || null,
         sugar_level: item.sugar_level || null,
         toppings: item.toppings || [],
+        print_status: 'pending',
+        print_attempts: 0,
+        printed_at: null,
+        print_error: null,
       })
     }
   }
@@ -7602,6 +7622,525 @@ function bindCustomerCategoryClicks() {
 
 
 // =============================
+// STICKER PRINT PREVIEW
+// Shows the latest real order from Supabase.
+// Open with: ?mode=print-preview
+// =============================
+
+function getStickerIceText(level?: IceLevel | null) {
+  if (level === 'no_ice') return 'No ice'
+  if (level === 'less_ice') return 'Less ice'
+  if (level === 'extra_ice') return 'Extra ice'
+  return 'Normal ice'
+}
+
+function getStickerSugarText(level?: SugarLevel | null) {
+  if (level === 'none') return 'No sugar'
+  if (level === 'minimal') return 'Minimal sugar'
+  if (level === 'less') return 'Less sugar'
+  if (level === 'sweet') return 'Sweet'
+  return 'Normal sugar'
+}
+
+function getStickerChannelText(order?: Order | null) {
+  const rawChannel = String(order?.channel || '').trim()
+  const channel = rawChannel.toLowerCase()
+
+  if (channel === 'pos' || channel === 'in_store' || channel === 'in-store') {
+    return 'in-store'
+  }
+
+  if (channel === 'qr') {
+    return 'QR'
+  }
+
+  if (channel === 'thuisbezorgd') {
+    return 'Thuisbezorgd'
+  }
+
+  if (channel === 'uber_eats' || channel === 'ubereats' || channel === 'uber') {
+    return 'Uber Eats'
+  }
+
+  if (rawChannel) {
+    return rawChannel
+  }
+
+  if (order?.order_type === 'staff') {
+    return 'in-store'
+  }
+
+  if (order?.order_type === 'customer') {
+    return 'QR'
+  }
+
+  return 'in-store'
+}
+
+
+function getPrintStatusText(status?: PrintStatus | null) {
+  if (status === 'printed') return 'Printed'
+  if (status === 'failed') return 'Failed'
+  if (status === 'printing') return 'Printing'
+  return 'Pending'
+}
+
+function getPrintStatusStyle(status?: PrintStatus | null) {
+  if (status === 'printed') {
+    return 'background:#e3f5e8;color:#1f6b34;border:1px solid #b9dfc2;'
+  }
+
+  if (status === 'failed') {
+    return 'background:#fde7e7;color:#9a1c1c;border:1px solid #efbcbc;'
+  }
+
+  if (status === 'printing') {
+    return 'background:#dce8f8;color:#1B478F;border:1px solid #bfd0e8;'
+  }
+
+  return 'background:#eef3fa;color:#1B478F;border:1px solid #d1ddec;'
+}
+
+async function updateStickerPrintResult(
+  labelId: string,
+  result: 'success' | 'failed'
+) {
+  const label = printPreviewLabels.find(
+    (item) => String(item.id) === String(labelId)
+  )
+
+  if (!label) return
+
+  const nextAttempts = Number(label.print_attempts ?? 0) + 1
+  const now = new Date().toISOString()
+
+  const updateData =
+    result === 'success'
+      ? {
+          print_status: 'printed',
+          print_attempts: nextAttempts,
+          printed_at: now,
+          print_error: null,
+        }
+      : {
+          print_status: 'failed',
+          print_attempts: nextAttempts,
+          printed_at: null,
+          print_error: 'Gesimuleerde printerfout',
+        }
+
+  const { error } = await supabase
+    .from('kitchen_labels')
+    .update(updateData)
+    .eq('id', labelId)
+
+  if (error) {
+    printPreviewError = `Printstatus aanpassen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  await loadPrintPreviewData(false)
+}
+
+async function resetStickerPrintStatus(labelId: string) {
+  const { error } = await supabase
+    .from('kitchen_labels')
+    .update({
+      print_status: 'pending',
+      printed_at: null,
+      print_error: null,
+    })
+    .eq('id', labelId)
+
+  if (error) {
+    printPreviewError = `Sticker opnieuw klaarzetten mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  await loadPrintPreviewData(false)
+}
+
+async function loadPrintPreviewData(showLoading = true) {
+  if (showLoading) {
+    isLoadingPrintPreview = true
+    printPreviewError = ''
+    render()
+  }
+
+  const { data: latestLabelData, error: latestLabelError } = await supabase
+    .from('kitchen_labels')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (latestLabelError) {
+    isLoadingPrintPreview = false
+    printPreviewLabels = []
+    printPreviewOrder = null
+    printPreviewQrDataUrl = ''
+    printPreviewError = `Laatste sticker ophalen mislukt: ${latestLabelError.message}`
+    render()
+    return
+  }
+
+  if (!latestLabelData) {
+    isLoadingPrintPreview = false
+    printPreviewLabels = []
+    printPreviewOrder = null
+    printPreviewQrDataUrl = ''
+    printPreviewError = ''
+    render()
+    return
+  }
+
+  const latestLabel = latestLabelData as KitchenLabel
+
+  const { data: labelsData, error: labelsError } = await supabase
+    .from('kitchen_labels')
+    .select('*')
+    .eq('order_id', latestLabel.order_id)
+    .order('created_at', { ascending: true })
+
+  if (labelsError) {
+    isLoadingPrintPreview = false
+    printPreviewLabels = []
+    printPreviewOrder = null
+    printPreviewQrDataUrl = ''
+    printPreviewError = `Stickers van de order ophalen mislukt: ${labelsError.message}`
+    render()
+    return
+  }
+
+  const { data: orderData, error: orderError } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', latestLabel.order_id)
+    .maybeSingle()
+
+  if (orderError) {
+    isLoadingPrintPreview = false
+    printPreviewLabels = (labelsData ?? []) as KitchenLabel[]
+    printPreviewOrder = null
+    printPreviewQrDataUrl = ''
+    printPreviewError = `Ordergegevens ophalen mislukt: ${orderError.message}`
+    render()
+    return
+  }
+
+  printPreviewLabels = (labelsData ?? []) as KitchenLabel[]
+  printPreviewOrder = orderData ? (orderData as Order) : null
+
+  const qrOrderNumber =
+    printPreviewOrder?.order_number ||
+    printPreviewLabels[0]?.order_number ||
+    latestLabel.order_id
+
+  try {
+    printPreviewQrDataUrl = await QRCode.toDataURL(
+      `Blue Cup Order: ${qrOrderNumber}`,
+      {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 220,
+      }
+    )
+  } catch (qrError) {
+    console.error('QR-code genereren mislukt:', qrError)
+    printPreviewQrDataUrl = ''
+  }
+
+  printPreviewError = ''
+  isLoadingPrintPreview = false
+  render()
+}
+
+function renderStickerPreview(
+  label: KitchenLabel,
+  index: number,
+  totalLabels: number,
+  order?: Order | null
+) {
+  const stickerTimeSource = order?.created_at || label.created_at
+
+  const time = stickerTimeSource
+    ? new Date(stickerTimeSource).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '--:--'
+
+  const toppingNames = (label.toppings ?? [])
+    .map((topping) => topping.name)
+    .filter(Boolean)
+
+  const modifiers = [
+    getStickerIceText(label.ice_level),
+    getStickerSugarText(label.sugar_level),
+    ...toppingNames,
+  ]
+
+  const orderNumber =
+    order?.order_number ||
+    label.order_number ||
+    label.order_id
+
+  const channelText = getStickerChannelText(order)
+  const printStatus = (label.print_status || 'pending') as PrintStatus
+  const attempts = Number(label.print_attempts ?? 0)
+
+  return `
+    <div class="sticker-preview-item">
+      <article class="drink-sticker">
+        <div class="drink-sticker-top">
+          <div class="drink-sticker-brand">
+            <img
+              class="drink-sticker-logo"
+              src="/logo.jpg"
+              alt="Blue Cup logo"
+            />
+            <div class="drink-sticker-brand-text">
+              <span>Blue Cup</span>
+              <strong>#${escapeHtml(orderNumber)}</strong>
+            </div>
+          </div>
+
+          <div class="drink-sticker-top-right">
+            <strong>${index}/${totalLabels}</strong>
+            <span>${escapeHtml(time)}</span>
+          </div>
+        </div>
+
+        <div class="drink-sticker-main">
+          <div class="drink-sticker-product">
+            ${escapeHtml(label.product_name)}
+          </div>
+
+          <div class="drink-sticker-modifiers">
+            ${modifiers.map((modifier) => escapeHtml(modifier)).join(', ')}
+          </div>
+        </div>
+
+        <div class="drink-sticker-lower">
+          <span class="drink-sticker-order-type">
+            ${escapeHtml(channelText)}
+          </span>
+
+          <div class="drink-sticker-qr-placeholder" aria-label="QR code">
+            ${
+              printPreviewQrDataUrl
+                ? `
+                  <img
+                    src="${printPreviewQrDataUrl}"
+                    alt="QR-code voor order ${escapeHtml(orderNumber)}"
+                    style="width:100%;height:100%;display:block;object-fit:contain;background:#fff;"
+                  />
+                `
+                : `<span>QR</span>`
+            }
+          </div>
+        </div>
+
+        <div class="drink-sticker-footer">
+          Powered by Blue Cup POS
+        </div>
+      </article>
+
+      <div
+        class="no-print"
+        style="
+          margin-top:10px;
+          padding:10px;
+          border:1px solid #dce4ef;
+          border-radius:12px;
+          background:#fff;
+          font-family:Arial,Helvetica,sans-serif;
+        "
+      >
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+          <span
+            style="
+              display:inline-flex;
+              align-items:center;
+              padding:5px 8px;
+              border-radius:999px;
+              font-size:11px;
+              font-weight:800;
+              ${getPrintStatusStyle(printStatus)}
+            "
+          >
+            ${escapeHtml(getPrintStatusText(printStatus))}
+          </span>
+
+          <small style="color:#6f7a8a;">
+            Pogingen: ${attempts}
+          </small>
+        </div>
+
+        ${
+          label.print_error
+            ? `
+              <div style="margin-bottom:8px;color:#9a1c1c;font-size:11px;font-weight:700;">
+                ${escapeHtml(label.print_error)}
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          label.printed_at
+            ? `
+              <div style="margin-bottom:8px;color:#6f7a8a;font-size:10px;">
+                Laatst geprint: ${escapeHtml(formatDate(label.printed_at))}
+              </div>
+            `
+            : ''
+        }
+
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${
+            printStatus === 'pending'
+              ? `
+                <button
+                  type="button"
+                  class="small-btn"
+                  data-simulate-print-success="${label.id}"
+                  style="font-size:11px;padding:7px 10px;"
+                >
+                  Simuleer print
+                </button>
+
+                <button
+                  type="button"
+                  class="small-btn"
+                  data-simulate-print-failure="${label.id}"
+                  style="font-size:11px;padding:7px 10px;background:#c63d3d;"
+                >
+                  Simuleer fout
+                </button>
+              `
+              : ''
+          }
+
+          ${
+            printStatus === 'failed'
+              ? `
+                <button
+                  type="button"
+                  class="small-btn"
+                  data-simulate-print-success="${label.id}"
+                  style="font-size:11px;padding:7px 10px;"
+                >
+                  Opnieuw printen
+                </button>
+
+                <button
+                  type="button"
+                  class="nav-btn"
+                  data-reset-print-status="${label.id}"
+                  style="font-size:11px;padding:7px 10px;"
+                >
+                  Terug naar pending
+                </button>
+              `
+              : ''
+          }
+
+          ${
+            printStatus === 'printed'
+              ? `
+                <button
+                  type="button"
+                  class="nav-btn"
+                  data-simulate-print-success="${label.id}"
+                  style="font-size:11px;padding:7px 10px;"
+                >
+                  Reprint simuleren
+                </button>
+              `
+              : ''
+          }
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderPrintPreview() {
+  const orderTitle =
+    printPreviewOrder?.order_number ||
+    printPreviewLabels[0]?.order_number ||
+    ''
+
+  return `
+    <div class="page sticker-preview-page">
+      <div class="sticker-preview-toolbar no-print">
+        <div>
+          <h1>Sticker preview</h1>
+          <p class="sub">
+            ${
+              orderTitle
+                ? `Laatste order uit Supabase: ${escapeHtml(orderTitle)}`
+                : 'Laatste order uit Supabase.'
+            }
+          </p>
+        </div>
+
+        <div class="sticker-preview-actions">
+          <button class="nav-btn" id="go-pos" type="button">Terug naar POS</button>
+          <button class="nav-btn" id="refresh-sticker-preview" type="button">Vernieuwen</button>
+          <button
+            class="small-btn"
+            id="print-sticker-preview"
+            type="button"
+            ${printPreviewLabels.length === 0 ? 'disabled' : ''}
+          >
+            Print test
+          </button>
+        </div>
+      </div>
+
+      ${
+        isLoadingPrintPreview
+          ? `
+            <div class="sticker-preview-state no-print">
+              Stickers laden uit Supabase...
+            </div>
+          `
+          : printPreviewError
+            ? `
+              <div class="sticker-preview-state sticker-preview-state-error no-print">
+                ${escapeHtml(printPreviewError)}
+              </div>
+            `
+            : printPreviewLabels.length === 0
+              ? `
+                <div class="sticker-preview-state no-print">
+                  Nog geen kitchen labels gevonden. Plaats eerst een testbestelling in de POS.
+                </div>
+              `
+              : `
+                <div class="sticker-preview-grid">
+                  ${printPreviewLabels
+                    .map((label, index) =>
+                      renderStickerPreview(
+                        label,
+                        index + 1,
+                        printPreviewLabels.length,
+                        printPreviewOrder
+                      )
+                    )
+                    .join('')}
+                </div>
+              `
+      }
+    </div>
+  `
+}
+
+// =============================
 // APP RENDER
 // =============================
 
@@ -7656,6 +8195,10 @@ function render() {
     app.innerHTML = renderAdminCategoriesPage()
   }
 
+  if (screen === 'print-preview') {
+    app.innerHTML = renderPrintPreview()
+  }
+
   bindEvents()
 }
 
@@ -7665,6 +8208,41 @@ function render() {
 // =============================
 
 function bindEvents() {
+  document.querySelector<HTMLButtonElement>('#print-sticker-preview')?.addEventListener('click', () => {
+    window.print()
+  })
+
+  document.querySelector<HTMLButtonElement>('#refresh-sticker-preview')?.addEventListener('click', () => {
+    void loadPrintPreviewData()
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-simulate-print-success]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const labelId = button.dataset.simulatePrintSuccess
+      if (!labelId) return
+
+      void updateStickerPrintResult(labelId, 'success')
+    })
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-simulate-print-failure]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const labelId = button.dataset.simulatePrintFailure
+      if (!labelId) return
+
+      void updateStickerPrintResult(labelId, 'failed')
+    })
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-reset-print-status]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const labelId = button.dataset.resetPrintStatus
+      if (!labelId) return
+
+      void resetStickerPrintStatus(labelId)
+    })
+  })
+
   document.querySelectorAll<HTMLElement>('[data-customer-language]').forEach((button) => {
     button.addEventListener('click', () => {
       const language = button.dataset.customerLanguage as CustomerLanguage | undefined
@@ -8187,6 +8765,11 @@ window.addEventListener('popstate', async () => {
   screen = nextScreen
   message = ''
 
+  if (screen === 'print-preview') {
+    await loadPrintPreviewData()
+    return
+  }
+
   if (screen === 'pickup') {
     await Promise.all([
       loadOrders(),
@@ -8238,6 +8821,11 @@ window.addEventListener('popstate', async () => {
 getCustomerSessionId()
 
 async function startApp() {
+  if (screen === 'print-preview') {
+    await loadPrintPreviewData()
+    return
+  }
+
   await Promise.all([
     loadProducts(),
     loadToppings(),
