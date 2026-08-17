@@ -9,7 +9,7 @@ import { supabase } from './lib/supabase'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories'
+type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -431,6 +431,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'kitchen') return 'kitchen'
   if (modeValue === 'customer') return 'customer'
   if (modeValue === 'pickup') return 'pickup'
+  if (modeValue === 'order-history') return 'order-history'
   if (modeValue === 'admin') return 'admin'
   if (modeValue === 'admin-products') return 'admin-products'
   if (modeValue === 'admin-sales') return 'admin-sales'
@@ -467,6 +468,8 @@ let kitchenLabels: KitchenLabel[] = []
 
 let isSubmitting = false
 let isLoadingOrders = false
+let isLoadingOrderHistory = false
+let orderHistorySearch = ''
 let isLoadingKitchen = false
 let message = ''
 
@@ -932,6 +935,31 @@ async function saveProductToppingLinks(productId: string, toppingIds: string[]) 
   if (insertError) {
     throw new Error(`Toppings koppelen mislukt: ${insertError.message}`)
   }
+}
+
+
+async function loadOrderHistory() {
+  isLoadingOrderHistory = true
+  render()
+
+  const { data, error } = await supabase
+    .from('orders')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    isLoadingOrderHistory = false
+    message = `Orderhistorie laden mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  orders = (data ?? []) as Order[]
+
+  await loadOrderItemsForOrders(orders)
+
+  isLoadingOrderHistory = false
+  render()
 }
 
 async function loadOrders() {
@@ -2635,6 +2663,20 @@ function goToPos() {
   message = ''
   updateModeInUrl('pos')
   render()
+}
+
+
+async function goToOrderHistory() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'order-history'
+  message = ''
+  orderHistorySearch = ''
+  updateModeInUrl('order-history')
+
+  await loadOrderHistory()
 }
 
 async function goToOrders() {
@@ -6487,13 +6529,23 @@ function renderPos() {
             <h1>Blue Cup POS</h1>
             <p class="sub">MVP kassascherm</p>
 
-            <button
-              type="button"
-              class="pos-wait-settings-btn"
-              id="pos-wait-settings"
-            >
-              ⚙ Wachttijd
-            </button>
+            <div class="pos-quick-actions">
+              <button
+                type="button"
+                class="pos-wait-settings-btn"
+                id="pos-wait-settings"
+              >
+                ⚙ Wachttijd
+              </button>
+
+              <button
+                type="button"
+                class="pos-history-btn"
+                id="go-order-history"
+              >
+                🧾 Bonnen
+              </button>
+            </div>
           </div>
         </div>
 
@@ -6511,6 +6563,195 @@ function renderPos() {
 
         ${renderCart(false)}
       </main>
+    </div>
+  `
+}
+
+
+
+function getOrderHistorySearchText(order: Order) {
+  const items = getOrderItems(order.id)
+
+  return [
+    order.order_number,
+    order.pickup_code,
+    order.customer_name,
+    order.customer_phone,
+    order.status,
+    order.payment_status,
+    order.payment_method,
+    order.created_at,
+    ...items.map((item) =>
+      item.product_name_snapshot || item.product_name || ''
+    ),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function getFilteredOrderHistory() {
+  const search = orderHistorySearch.trim().toLowerCase()
+
+  if (!search) {
+    return orders
+  }
+
+  return orders.filter((order) =>
+    getOrderHistorySearchText(order).includes(search)
+  )
+}
+
+function renderOrderHistoryCard(order: Order) {
+  const items = getOrderItems(order.id)
+  const customerText = getCustomerOrderText(order)
+
+  return `
+    <article class="history-order-card">
+      <div class="history-order-top">
+        <div>
+          <h3>${escapeHtml(getOrderName(order))}</h3>
+          <p>${escapeHtml(formatDate(order.created_at))}</p>
+        </div>
+
+        <span class="status-badge status-${order.status}">
+          ${escapeHtml(order.status)}
+        </span>
+      </div>
+
+      <div class="history-order-meta">
+        ${
+          order.pickup_code
+            ? `<span><strong>Pickup:</strong> ${escapeHtml(order.pickup_code)}</span>`
+            : ''
+        }
+
+        <span><strong>Betaling:</strong> ${escapeHtml(getPaymentText(order))}</span>
+
+        ${
+          customerText
+            ? `<span><strong>Klant:</strong> ${escapeHtml(customerText)}</span>`
+            : ''
+        }
+      </div>
+
+      <div class="history-order-items">
+        ${
+          items.length === 0
+            ? `<p class="muted">Geen orderregels gevonden.</p>`
+            : items
+                .map((item) => {
+                  const name =
+                    item.product_name_snapshot ||
+                    item.product_name ||
+                    'Onbekend product'
+
+                  return `
+                    <div class="history-order-item">
+                      <div>
+                        <strong>${item.quantity}× ${escapeHtml(name)}</strong>
+                        ${renderModifierSummary(
+                          item.ice_level,
+                          item.sugar_level,
+                          item.toppings
+                        )}
+                      </div>
+
+                      <span>€ ${getOrderItemTotal(item).toFixed(2)}</span>
+                    </div>
+                  `
+                })
+                .join('')
+        }
+      </div>
+
+      <div class="history-order-total">
+        <span>Totaal</span>
+        <strong>€ ${getOrderTotal(order).toFixed(2)}</strong>
+      </div>
+    </article>
+  `
+}
+
+function renderOrderHistory() {
+  const filteredOrders = getFilteredOrderHistory()
+  const isSearching = orderHistorySearch.trim().length > 0
+
+  return `
+    <div class="page order-history-page">
+      ${renderNav()}
+
+      <header class="header history-header">
+        <div class="staff-brand">
+          <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
+
+          <div>
+            <h1>Bonnen & orderhistorie</h1>
+            <p class="sub">Zoek oude bestellingen en bonnen terug.</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="secondary-btn"
+          id="history-back-pos"
+        >
+          ← Terug naar POS
+        </button>
+      </header>
+
+      <section class="history-panel">
+        <div class="history-search-row">
+          <div class="history-search-wrap">
+            <span class="history-search-icon">⌕</span>
+
+            <input
+              id="order-history-search"
+              type="search"
+              placeholder="Zoek order, pickupcode, klant, telefoon of drankje..."
+              value="${escapeHtml(orderHistorySearch)}"
+              autocomplete="off"
+            />
+          </div>
+
+          <button
+            type="button"
+            class="small-btn"
+            id="refresh-order-history"
+          >
+            Vernieuwen
+          </button>
+        </div>
+
+        <div class="history-result-count">
+          ${
+            isSearching
+              ? `${filteredOrders.length} van ${orders.length} orders`
+              : `${orders.length} orders`
+          }
+        </div>
+
+        ${
+          isLoadingOrderHistory
+            ? `<p class="history-empty">Orderhistorie laden...</p>`
+            : filteredOrders.length === 0
+              ? `
+                <div class="history-empty">
+                  Geen orders gevonden
+                  ${
+                    isSearching
+                      ? `voor “${escapeHtml(orderHistorySearch)}”`
+                      : ''
+                  }.
+                </div>
+              `
+              : `
+                <div class="history-orders-grid">
+                  ${filteredOrders.map(renderOrderHistoryCard).join('')}
+                </div>
+              `
+        }
+      </section>
     </div>
   `
 }
@@ -7077,6 +7318,10 @@ function render() {
     app.innerHTML = renderPickup()
   }
 
+  if (screen === 'order-history') {
+    app.innerHTML = renderOrderHistory()
+  }
+
   if (screen === 'admin') {
     app.innerHTML = renderAdmin()
   }
@@ -7134,6 +7379,33 @@ function bindEvents() {
   })
 
   document.querySelector<HTMLButtonElement>('#go-pos')?.addEventListener('click', goToPos)
+  document.querySelector<HTMLButtonElement>('#go-order-history')?.addEventListener('click', () => {
+    void goToOrderHistory()
+  })
+
+  document.querySelector<HTMLButtonElement>('#history-back-pos')?.addEventListener('click', goToPos)
+
+  document.querySelector<HTMLButtonElement>('#refresh-order-history')?.addEventListener('click', () => {
+    void loadOrderHistory()
+  })
+
+  document.querySelector<HTMLInputElement>('#order-history-search')?.addEventListener('input', (event) => {
+    const input = event.currentTarget as HTMLInputElement
+    orderHistorySearch = input.value
+
+    const cursorPosition = input.selectionStart ?? orderHistorySearch.length
+
+    render()
+
+    const newInput =
+      document.querySelector<HTMLInputElement>('#order-history-search')
+
+    if (newInput) {
+      newInput.focus()
+      newInput.setSelectionRange(cursorPosition, cursorPosition)
+    }
+  })
+
   document.querySelector<HTMLButtonElement>('#go-orders')?.addEventListener('click', goToOrders)
   document.querySelector<HTMLButtonElement>('#go-kitchen')?.addEventListener('click', goToKitchen)
   document.querySelector<HTMLButtonElement>('#go-admin')?.addEventListener('click', goToAdmin)
@@ -7593,6 +7865,11 @@ window.addEventListener('popstate', async () => {
     return
   }
 
+  if (screen === 'order-history') {
+    await loadOrderHistory()
+    return
+  }
+
   if (screen === 'orders') {
     await loadOrders()
     startOrdersRealtime()
@@ -7640,6 +7917,11 @@ async function startApp() {
       loadPickupWaitSettings(),
     ])
     startPickupRealtime()
+    return
+  }
+
+  if (screen === 'order-history') {
+    await loadOrderHistory()
     return
   }
 
