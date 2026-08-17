@@ -506,6 +506,10 @@ let adminError = ''
 
 let adminTodayOrders: Order[] = []
 let adminTodayOrderItems: OrderItem[] = []
+let adminSalesOrders: Order[] = []
+let adminSalesOrderItems: OrderItem[] = []
+let adminSalesRange: 'today' | '7d' | '30d' | 'all' = 'today'
+let isLoadingAdminSales = false
 
 let bestSellerSales: Record<string, number> = {}
 
@@ -2765,9 +2769,8 @@ async function goToAdminSales() {
   adminError = ''
   updateModeInUrl('admin-sales')
 
-  await loadAllAdminData()
+  await loadAdminSalesData()
 }
-
 
 async function goToAdminAddProduct() {
   stopAutoRefresh()
@@ -3440,6 +3443,226 @@ function getTodayDateRange() {
     startIso: start.toISOString(),
     endIso: end.toISOString(),
   }
+}
+
+
+function getAdminSalesDateRange() {
+  if (adminSalesRange === 'all') {
+    return {
+      startIso: null as string | null,
+      endIso: null as string | null,
+    }
+  }
+
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+
+  if (adminSalesRange === '7d') {
+    start.setDate(start.getDate() - 6)
+  }
+
+  if (adminSalesRange === '30d') {
+    start.setDate(start.getDate() - 29)
+  }
+
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  }
+}
+
+function getAdminSalesRangeLabel() {
+  if (adminSalesRange === 'today') return 'Vandaag'
+  if (adminSalesRange === '7d') return 'Laatste 7 dagen'
+  if (adminSalesRange === '30d') return 'Laatste 30 dagen'
+  return 'Alle verkopen'
+}
+
+async function loadAdminSalesData() {
+  isLoadingAdminSales = true
+  adminError = ''
+  render()
+
+  const { startIso, endIso } = getAdminSalesDateRange()
+
+  let query = supabase
+    .from('orders')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (startIso && endIso) {
+    query = query
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
+  }
+
+  const { data: orderData, error: orderError } = await query
+
+  if (orderError) {
+    isLoadingAdminSales = false
+    adminError = `Verkoopdata laden mislukt: ${orderError.message}`
+    render()
+    return
+  }
+
+  adminSalesOrders = (orderData ?? []) as Order[]
+
+  const ids = adminSalesOrders.map((order) => String(order.id))
+
+  if (ids.length === 0) {
+    adminSalesOrderItems = []
+    isLoadingAdminSales = false
+    render()
+    return
+  }
+
+  const { data: itemData, error: itemError } = await supabase
+    .from('order_items')
+    .select('*')
+    .in('order_id', ids)
+
+  if (itemError) {
+    isLoadingAdminSales = false
+    adminError = `Orderregels laden mislukt: ${itemError.message}`
+    render()
+    return
+  }
+
+  adminSalesOrderItems = (itemData ?? []) as OrderItem[]
+  isLoadingAdminSales = false
+  render()
+}
+
+function getAdminSalesValidOrders() {
+  return adminSalesOrders.filter(
+    (order) => order.status !== 'cancelled'
+  )
+}
+
+function getAdminSalesPaidOrders() {
+  return adminSalesOrders.filter(
+    (order) =>
+      order.status !== 'cancelled' &&
+      order.payment_status === 'paid'
+  )
+}
+
+function getAdminSalesRevenue() {
+  return getAdminSalesPaidOrders().reduce(
+    (sum, order) => sum + getOrderTotal(order),
+    0
+  )
+}
+
+function getAdminSalesOrderCount() {
+  return getAdminSalesValidOrders().length
+}
+
+function getAdminSalesDrinkCount() {
+  const validIds = new Set(
+    getAdminSalesValidOrders().map((order) => String(order.id))
+  )
+
+  return adminSalesOrderItems
+    .filter((item) => validIds.has(String(item.order_id)))
+    .reduce(
+      (sum, item) => sum + Number(item.quantity ?? 0),
+      0
+    )
+}
+
+function getAdminAverageOrderValue() {
+  const paidOrders = getAdminSalesPaidOrders()
+
+  if (paidOrders.length === 0) return 0
+
+  return getAdminSalesRevenue() / paidOrders.length
+}
+
+function getAdminHistoricalDrinkSalesRows(): AdminDrinkSalesRow[] {
+  const validIds = new Set(
+    getAdminSalesValidOrders().map((order) => String(order.id))
+  )
+
+  const grouped: Record<string, AdminDrinkSalesRow> = {}
+
+  for (const item of adminSalesOrderItems) {
+    if (!validIds.has(String(item.order_id))) continue
+
+    const name =
+      item.product_name_snapshot ||
+      item.product_name ||
+      'Onbekend product'
+
+    if (!grouped[name]) {
+      grouped[name] = {
+        name,
+        quantity: 0,
+        revenue: 0,
+      }
+    }
+
+    grouped[name].quantity += Number(item.quantity ?? 0)
+    grouped[name].revenue += getOrderItemTotal(item)
+  }
+
+  return Object.values(grouped).sort((a, b) => {
+    if (b.quantity !== a.quantity) {
+      return b.quantity - a.quantity
+    }
+
+    return b.revenue - a.revenue
+  })
+}
+
+function getAdminHistoricalToppingSalesRows(): AdminToppingSalesRow[] {
+  const validIds = new Set(
+    getAdminSalesValidOrders().map((order) => String(order.id))
+  )
+
+  const grouped: Record<string, AdminToppingSalesRow> = {}
+
+  for (const item of adminSalesOrderItems) {
+    if (!validIds.has(String(item.order_id))) continue
+
+    const quantity = Number(item.quantity ?? 0)
+    const selectedToppings =
+      Array.isArray(item.toppings) ? item.toppings : []
+
+    for (const topping of selectedToppings) {
+      const name = topping.name || 'Onbekende topping'
+      const price = Number(topping.price ?? 0)
+
+      if (!grouped[name]) {
+        grouped[name] = {
+          name,
+          quantity: 0,
+          revenue: 0,
+        }
+      }
+
+      grouped[name].quantity += quantity
+      grouped[name].revenue += price * quantity
+    }
+  }
+
+  return Object.values(grouped).sort((a, b) => {
+    if (b.quantity !== a.quantity) {
+      return b.quantity - a.quantity
+    }
+
+    return b.revenue - a.revenue
+  })
+}
+
+function setAdminSalesRange(
+  range: 'today' | '7d' | '30d' | 'all'
+) {
+  adminSalesRange = range
+  void loadAdminSalesData()
 }
 
 function getAdminTodayCompletedOrders() {
@@ -5351,6 +5574,17 @@ function renderAdmin() {
 
           <span class="admin-dashboard-card-arrow">→</span>
         </button>
+
+        <button class="admin-dashboard-card admin-dashboard-card-sales" id="go-admin-sales-dashboard">
+          <span class="admin-dashboard-card-icon">📊</span>
+
+          <span class="admin-dashboard-card-content">
+            <strong>Verkoop & statistieken</strong>
+            <small>Omzet, cups, bestellingen en verkoophistorie bekijken</small>
+          </span>
+
+          <span class="admin-dashboard-card-arrow">→</span>
+        </button>
       </section>
     </div>
   `
@@ -6314,11 +6548,11 @@ function renderAdminCategoriesPage() {
 }
 
 function renderAdminSalesPage() {
-  const salesRows = getAdminDrinkSalesRows()
-  const toppingSalesRows = getAdminToppingSalesRows()
+  const salesRows = getAdminHistoricalDrinkSalesRows()
+  const toppingRows = getAdminHistoricalToppingSalesRows()
 
   return `
-    <div class="page admin-page">
+    <div class="page admin-page admin-sales-dashboard-page">
       ${renderNav()}
 
       <header class="header admin-products-header">
@@ -6326,8 +6560,8 @@ function renderAdminSalesPage() {
           <img class="tea-shop-logo" src="/logo.jpg" alt="Blue Cup logo" />
 
           <div>
-            <h1>Verkochte drankjes</h1>
-            <p class="sub">${escapeHtml(formatAdminTodayDate())}</p>
+            <h1>Verkoop & statistieken</h1>
+            <p class="sub">${escapeHtml(getAdminSalesRangeLabel())}</p>
           </div>
         </div>
 
@@ -6336,89 +6570,156 @@ function renderAdminSalesPage() {
         </button>
       </header>
 
-      <section class="admin-sales-summary">
-        <div>
-          <span>Totaal verkocht</span>
-          <strong>${getAdminTodayDrinkCount()} drankjes</strong>
+      ${
+        adminError
+          ? `<p class="error admin-error">${escapeHtml(adminError)}</p>`
+          : ''
+      }
+
+      <section class="admin-sales-toolbar">
+        <div class="admin-sales-range-tabs">
+          ${[
+            ['today', 'Vandaag'],
+            ['7d', '7 dagen'],
+            ['30d', '30 dagen'],
+            ['all', 'Alles'],
+          ]
+            .map(
+              ([value, label]) => `
+                <button
+                  type="button"
+                  class="admin-sales-range-btn ${adminSalesRange === value ? 'active' : ''}"
+                  data-admin-sales-range="${value}"
+                >
+                  ${label}
+                </button>
+              `
+            )
+            .join('')}
         </div>
 
-        <div>
-          <span>Omzet vandaag</span>
-          <strong>€ ${getAdminTodayRevenue().toFixed(2)}</strong>
-        </div>
+        <button
+          type="button"
+          class="admin-secondary-btn"
+          id="refresh-admin-sales"
+        >
+          Vernieuwen
+        </button>
       </section>
 
-      <div class="admin-sales-sections">
-        <section class="admin-panel admin-sales-panel">
-          <div class="admin-panel-header">
-            <div>
-              <h2>Verkoop per drankje</h2>
-              <p class="muted">Gesorteerd van meest naar minst verkocht.</p>
+      ${
+        isLoadingAdminSales
+          ? `
+            <section class="admin-sales-loading">
+              Verkoopstatistieken laden...
+            </section>
+          `
+          : `
+            <section class="admin-sales-kpi-grid">
+              <article class="admin-sales-kpi admin-sales-kpi-primary">
+                <span>Omzet</span>
+                <strong>€ ${getAdminSalesRevenue().toFixed(2)}</strong>
+                <small>Alleen betaalde orders</small>
+              </article>
+
+              <article class="admin-sales-kpi">
+                <span>Cups verkocht</span>
+                <strong>${getAdminSalesDrinkCount()}</strong>
+                <small>Aantal drankjes</small>
+              </article>
+
+              <article class="admin-sales-kpi">
+                <span>Bestellingen</span>
+                <strong>${getAdminSalesOrderCount()}</strong>
+                <small>Niet geannuleerd</small>
+              </article>
+
+              <article class="admin-sales-kpi">
+                <span>Gemiddeld per order</span>
+                <strong>€ ${getAdminAverageOrderValue().toFixed(2)}</strong>
+                <small>Betaalde orders</small>
+              </article>
+            </section>
+
+            <div class="admin-sales-history-grid">
+              <section class="admin-panel admin-sales-history-panel">
+                <div class="admin-panel-header">
+                  <div>
+                    <h2>Best verkochte drankjes</h2>
+                    <p class="muted">Aantal cups en omzet per drankje.</p>
+                  </div>
+                </div>
+
+                <div class="admin-sales-history-list">
+                  ${
+                    salesRows.length === 0
+                      ? `<p class="muted">Geen verkopen gevonden.</p>`
+                      : salesRows
+                          .slice(0, 12)
+                          .map(
+                            (row, index) => `
+                              <div class="admin-sales-history-row">
+                                <span class="admin-sales-history-rank">
+                                  ${index + 1}
+                                </span>
+
+                                <div class="admin-sales-history-info">
+                                  <strong>${escapeHtml(row.name)}</strong>
+                                  <span>€ ${row.revenue.toFixed(2)} omzet</span>
+                                </div>
+
+                                <div class="admin-sales-history-value">
+                                  <strong>${row.quantity}</strong>
+                                  <span>cups</span>
+                                </div>
+                              </div>
+                            `
+                          )
+                          .join('')
+                  }
+                </div>
+              </section>
+
+              <section class="admin-panel admin-sales-history-panel">
+                <div class="admin-panel-header">
+                  <div>
+                    <h2>Toppings</h2>
+                    <p class="muted">Meest verkochte toppings.</p>
+                  </div>
+                </div>
+
+                <div class="admin-sales-history-list">
+                  ${
+                    toppingRows.length === 0
+                      ? `<p class="muted">Geen toppingverkopen gevonden.</p>`
+                      : toppingRows
+                          .slice(0, 12)
+                          .map(
+                            (row, index) => `
+                              <div class="admin-sales-history-row">
+                                <span class="admin-sales-history-rank">
+                                  ${index + 1}
+                                </span>
+
+                                <div class="admin-sales-history-info">
+                                  <strong>${escapeHtml(row.name)}</strong>
+                                  <span>€ ${row.revenue.toFixed(2)} omzet</span>
+                                </div>
+
+                                <div class="admin-sales-history-value">
+                                  <strong>${row.quantity}</strong>
+                                  <span>verkocht</span>
+                                </div>
+                              </div>
+                            `
+                          )
+                          .join('')
+                  }
+                </div>
+              </section>
             </div>
-          </div>
-
-          <div class="admin-sales-list">
-            ${
-              salesRows.length === 0
-                ? `<p class="muted">Nog geen verkochte drankjes vandaag.</p>`
-                : salesRows
-                    .map(
-                      (row, index) => `
-                        <div class="admin-sales-row">
-                          <span class="admin-sales-rank">${index + 1}</span>
-
-                          <div class="admin-sales-product">
-                            <strong>${escapeHtml(row.name)}</strong>
-                            <span>€ ${row.revenue.toFixed(2)} omzet</span>
-                          </div>
-
-                          <div class="admin-sales-quantity">
-                            <strong>${row.quantity}</strong>
-                            <span>verkocht</span>
-                          </div>
-                        </div>
-                      `
-                    )
-                    .join('')
-            }
-          </div>
-        </section>
-
-        <section class="admin-panel admin-sales-panel">
-          <div class="admin-panel-header">
-            <div>
-              <h2>Verkoop per topping</h2>
-              <p class="muted">Hoe vaak elke topping vandaag is verkocht.</p>
-            </div>
-          </div>
-
-          <div class="admin-sales-list">
-            ${
-              toppingSalesRows.length === 0
-                ? `<p class="muted">Nog geen toppings verkocht vandaag.</p>`
-                : toppingSalesRows
-                    .map(
-                      (row, index) => `
-                        <div class="admin-sales-row">
-                          <span class="admin-sales-rank">${index + 1}</span>
-
-                          <div class="admin-sales-product">
-                            <strong>${escapeHtml(row.name)}</strong>
-                            <span>€ ${row.revenue.toFixed(2)} toppingomzet</span>
-                          </div>
-
-                          <div class="admin-sales-quantity">
-                            <strong>${row.quantity}</strong>
-                            <span>verkocht</span>
-                          </div>
-                        </div>
-                      `
-                    )
-                    .join('')
-            }
-          </div>
-        </section>
-      </div>
+          `
+      }
     </div>
   `
 }
@@ -7420,6 +7721,27 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#go-admin')?.addEventListener('click', goToAdmin)
   document.querySelector<HTMLButtonElement>('#go-admin-products')?.addEventListener('click', goToAdminProducts)
   document.querySelector<HTMLButtonElement>('#go-admin-sales')?.addEventListener('click', goToAdminSales)
+  document.querySelector<HTMLButtonElement>('#go-admin-sales-dashboard')?.addEventListener('click', goToAdminSales)
+
+  document.querySelector<HTMLButtonElement>('#refresh-admin-sales')?.addEventListener('click', () => {
+    void loadAdminSalesData()
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-sales-range]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const range = button.dataset.adminSalesRange as
+        | 'today'
+        | '7d'
+        | '30d'
+        | 'all'
+        | undefined
+
+      if (range) {
+        setAdminSalesRange(range)
+      }
+    })
+  })
+
   document.querySelector<HTMLButtonElement>('#go-admin-add-product')?.addEventListener('click', goToAdminAddProduct)
   document.querySelector<HTMLButtonElement>('#go-admin-add-topping')?.addEventListener('click', goToAdminAddTopping)
   document.querySelector<HTMLButtonElement>('#go-admin-categories')?.addEventListener('click', goToAdminCategories)
@@ -7891,7 +8213,12 @@ window.addEventListener('popstate', async () => {
     return
   }
 
-  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-sales' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
+  if (screen === 'admin-sales') {
+    await loadAdminSalesData()
+    return
+  }
+
+  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
     await loadAllAdminData()
     return
   }
@@ -7946,7 +8273,12 @@ async function startApp() {
     return
   }
 
-  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-sales' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
+  if (screen === 'admin-sales') {
+    await loadAdminSalesData()
+    return
+  }
+
+  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
     await loadAllAdminData()
     return
   }
