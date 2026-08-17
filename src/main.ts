@@ -2559,7 +2559,12 @@ async function goToAdminCategories() {
   removeCustomerScrollListeners()
 
   screen = 'admin-categories'
+
+  // Voorkom dat oude product/topping edit-state blijft hangen.
+  adminEditingProductId = null
+  adminEditingToppingId = null
   adminEditingCategoryId = null
+
   message = ''
   adminMessage = ''
   adminError = ''
@@ -3131,7 +3136,7 @@ async function saveAdminTopping() {
 
   adminEditingToppingId = null
 
-  if (screen === 'admin-add-topping' || screen === 'admin-categories') {
+  if (screen === 'admin-add-topping') {
     screen = 'admin-products'
     updateModeInUrl('admin-products')
   }
@@ -3477,7 +3482,14 @@ async function saveAdminCategory() {
 }
 
 function editAdminCategory(categoryId: string) {
+  // Alleen de categorie-editor mag actief zijn.
+  adminEditingProductId = null
+  adminEditingToppingId = null
   adminEditingCategoryId = categoryId
+
+  screen = 'admin-categories'
+  updateModeInUrl('admin-categories')
+
   adminMessage = ''
   adminError = ''
   render()
@@ -5431,7 +5443,7 @@ function renderAdminCategoryEditModal() {
         <div class="admin-modal-header">
           <div>
             <p class="muted">Categorie aanpassen</p>
-            <h2>${escapeHtml(categoryName)}</h2>
+            <h2>${escapeHtml(category.name)}</h2>
           </div>
 
           <button class="admin-modal-close" id="admin-close-category-modal" type="button">×</button>
@@ -5911,7 +5923,7 @@ function renderAdminCategoriesPage() {
           </div>
 
           <div class="admin-form-actions">
-            <button class="admin-primary-btn" id="admin-save-category">
+            <button class="admin-primary-btn" id="admin-save-category" type="button">
               Categorie toevoegen
             </button>
 
@@ -5994,6 +6006,8 @@ function renderAdminCategoriesPage() {
 
                           <div class="admin-list-actions admin-category-actions">
                             <button
+                              type="button"
+                              draggable="false"
                               class="admin-small-btn admin-category-products-btn"
                               data-admin-view-category-products="${
                                 isDiscountSystemCategory(category)
@@ -6016,13 +6030,20 @@ function renderAdminCategoriesPage() {
                               isDiscountSystemCategory(category) || isBestSellerSystemCategory(category)
                                 ? ''
                                 : `
-                                  <button class="admin-small-btn" data-admin-edit-category="${category.id}">
+                                  <button
+                                    type="button"
+                                    draggable="false"
+                                    class="admin-small-btn"
+                                    data-admin-edit-category="${category.id}"
+                                  >
                                     Bewerken
                                   </button>
                                 `
                             }
 
                             <button
+                              type="button"
+                              draggable="false"
                               class="admin-small-btn ${category.is_active ? 'danger' : 'success'}"
                               data-admin-toggle-category="${category.id}"
                               data-admin-next-category-active="${category.is_active ? 'false' : 'true'}"
@@ -6624,7 +6645,7 @@ function render() {
     app.innerHTML = renderAdminAddProductPage()
   }
 
-  if (screen === 'admin-add-topping' || screen === 'admin-categories') {
+  if (screen === 'admin-add-topping') {
     app.innerHTML = renderAdminAddToppingPage()
   }
 
@@ -6676,7 +6697,11 @@ function bindEvents() {
     row.addEventListener('dragstart', (event) => {
       const target = event.target as HTMLElement
 
-      if (target.closest('button')) {
+      if (
+        target.closest(
+          'button, input, select, textarea, label, a, [data-admin-edit-category], [data-admin-view-category-products], [data-admin-toggle-category]'
+        )
+      ) {
         event.preventDefault()
         return
       }
@@ -6772,6 +6797,24 @@ function bindEvents() {
       const categoryId = button.dataset.adminEditCategory
       if (categoryId) editAdminCategory(categoryId)
     })
+  })
+
+
+  // Fallback voor category edit clicks binnen draggable rows.
+  document.querySelector<HTMLElement>('.admin-category-layout')?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement
+    const editButton = target.closest<HTMLElement>('[data-admin-edit-category]')
+
+    if (!editButton) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const categoryId = editButton.dataset.adminEditCategory
+
+    if (categoryId) {
+      editAdminCategory(categoryId)
+    }
   })
 
   document.querySelectorAll<HTMLElement>('[data-admin-toggle-category]').forEach((button) => {
