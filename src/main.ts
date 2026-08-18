@@ -503,6 +503,9 @@ let orders: Order[] = []
 let orderItems: OrderItem[] = []
 let kitchenLabels: KitchenLabel[] = []
 
+// Payment records voor orderhistorie en admin
+let paymentRecords: Payment[] = []
+
 // Sticker preview: latest real order from Supabase
 let printPreviewLabels: KitchenLabel[] = []
 let printPreviewOrder: Order | null = null
@@ -521,6 +524,7 @@ let isSubmitting = false
 let isLoadingOrders = false
 let isLoadingOrderHistory = false
 let orderHistorySearch = ''
+let selectedOrderHistoryId: string | null = null
 let isLoadingKitchen = false
 let message = ''
 
@@ -997,21 +1001,28 @@ async function loadOrderHistory() {
   isLoadingOrderHistory = true
   render()
 
+  const { startIso, endIso } = getTodayDateRange()
+
   const { data, error } = await supabase
     .from('orders')
     .select('*')
+    .gte('created_at', startIso)
+    .lt('created_at', endIso)
     .order('created_at', { ascending: false })
 
   if (error) {
     isLoadingOrderHistory = false
-    message = `Orderhistorie laden mislukt: ${error.message}`
+    message = `Bonnen van vandaag laden mislukt: ${error.message}`
     render()
     return
   }
 
   orders = (data ?? []) as Order[]
 
-  await loadOrderItemsForOrders(orders)
+  await Promise.all([
+    loadOrderItemsForOrders(orders),
+    loadPaymentsForOrders(orders),
+  ])
 
   isLoadingOrderHistory = false
   render()
@@ -1127,6 +1138,70 @@ async function loadOrderItemsForOrders(orderList: Order[]) {
   }
 
   orderItems = (data ?? []) as OrderItem[]
+}
+
+
+async function loadPaymentsForOrders(orderList: Order[]) {
+  const orderIds = orderList.map((order) => String(order.id))
+
+  if (orderIds.length === 0) {
+    paymentRecords = []
+    return
+  }
+
+  const { data, error } = await supabase
+    .from('payments')
+    .select('*')
+    .in('order_id', orderIds)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('Payments laden mislukt:', error)
+    paymentRecords = []
+    return
+  }
+
+  paymentRecords = (data ?? []) as Payment[]
+}
+
+function getPaymentForOrder(orderId: string) {
+  return paymentRecords.find(
+    (payment) => String(payment.order_id) === String(orderId)
+  ) ?? null
+}
+
+function getPaymentProviderLabel(payment: Payment | null) {
+  if (!payment) return '-'
+
+  if (payment.provider === 'multisafepay') {
+    return 'MultiSafepay'
+  }
+
+  return payment.provider || '-'
+}
+
+function getPaymentRecordStatusLabel(payment: Payment | null) {
+  if (!payment) return '-'
+
+  if (payment.status === 'paid') return 'Betaald'
+  if (payment.status === 'pending') return 'Wacht op betaling'
+  if (payment.status === 'failed') return 'Mislukt'
+  if (payment.status === 'cancelled') return 'Geannuleerd'
+  if (payment.status === 'refunded') return 'Terugbetaald'
+
+  return payment.status
+}
+
+function getPaymentRecordStatusClass(payment: Payment | null) {
+  if (!payment) return 'order-payment-unpaid'
+
+  if (payment.status === 'paid') return 'order-payment-paid'
+  if (payment.status === 'pending') return 'order-payment-pending'
+  if (payment.status === 'failed') return 'order-payment-failed'
+  if (payment.status === 'cancelled') return 'order-payment-cancelled'
+  if (payment.status === 'refunded') return 'order-payment-refunded'
+
+  return 'order-payment-unpaid'
 }
 
 
@@ -3010,6 +3085,7 @@ async function goToOrderHistory() {
   screen = 'order-history'
   message = ''
   orderHistorySearch = ''
+  selectedOrderHistoryId = null
   updateModeInUrl('order-history')
 
   await loadOrderHistory()
@@ -4570,6 +4646,7 @@ async function loadAllAdminData() {
 
   if (todayOrderIds.length === 0) {
     adminTodayOrderItems = []
+    paymentRecords = []
     render()
     return
   }
@@ -4586,6 +4663,7 @@ async function loadAllAdminData() {
   }
 
   adminTodayOrderItems = (todayItemsData ?? []) as OrderItem[]
+  await loadPaymentsForOrders(adminTodayOrders)
   render()
 }
 
@@ -5126,11 +5204,12 @@ function renderCustomerCheckoutScreen() {
             ${escapeHtml(t('name'))}
           </label>
           <input
-            id="customer-name-input"
-            class="customer-checkout-input"
-            type="text"
-            placeholder="${escapeHtml(t('namePlaceholder'))}"
-            value="${escapeHtml(customerName)}"
+  id="customer-name-input"
+  class="customer-checkout-input"
+  type="text"
+  placeholder="${escapeHtml(t('namePlaceholder'))}"
+  value="chris"
+  <!-- value="${escapeHtml(customerName)}" -->
           />
 
           <label class="customer-checkout-label" for="customer-phone-input">
@@ -5141,7 +5220,8 @@ function renderCustomerCheckoutScreen() {
             class="customer-checkout-input"
             type="tel"
             placeholder="${escapeHtml(t('phonePlaceholder'))}"
-            value="${escapeHtml(customerPhone)}"
+             value="0612345678"
+            <!-- value="${escapeHtml(customerPhone)}"-->
           />
         </section>
 
@@ -5904,6 +5984,98 @@ function renderAdminDailyStats() {
   `
 }
 
+function renderAdminPaymentOverview() {
+  const todayOrderIds = new Set(
+    adminTodayOrders.map((order) => String(order.id))
+  )
+
+  const todaysPayments = paymentRecords
+    .filter((payment) => todayOrderIds.has(String(payment.order_id)))
+    .sort((a, b) => {
+      const timeA = new Date(a.created_at || 0).getTime()
+      const timeB = new Date(b.created_at || 0).getTime()
+      return timeB - timeA
+    })
+
+  if (todaysPayments.length === 0) {
+    return `
+      <section class="admin-payment-panel">
+        <div class="admin-payment-panel-header">
+          <div>
+            <h2>Betalingen vandaag</h2>
+            <p class="muted">MultiSafepay betalingen en transactiedetails.</p>
+          </div>
+        </div>
+
+        <div class="admin-payment-empty">
+          Nog geen MultiSafepay betalingen vandaag.
+        </div>
+      </section>
+    `
+  }
+
+  return `
+    <section class="admin-payment-panel">
+      <div class="admin-payment-panel-header">
+        <div>
+          <h2>Betalingen vandaag</h2>
+          <p class="muted">
+            ${todaysPayments.length} payment${todaysPayments.length === 1 ? '' : 's'} gevonden.
+          </p>
+        </div>
+      </div>
+
+      <div class="admin-payment-list">
+        ${todaysPayments
+          .map((payment) => {
+            const order = adminTodayOrders.find(
+              (item) => String(item.id) === String(payment.order_id)
+            )
+
+            return `
+              <article class="admin-payment-row">
+                <div class="admin-payment-row-main">
+                  <strong>
+                    ${escapeHtml(order?.order_number || `Order ${payment.order_id}`)}
+                  </strong>
+
+                  <span>
+                    ${escapeHtml(getPaymentProviderLabel(payment))}
+                    ·
+                    ${escapeHtml(formatPaymentAmount(payment.amount))}
+                  </span>
+                </div>
+
+                <span class="order-payment-badge ${getPaymentRecordStatusClass(payment)}">
+                  ${escapeHtml(getPaymentRecordStatusLabel(payment))}
+                </span>
+
+                <div class="admin-payment-row-meta">
+                  <span>
+                    Provider ID:
+                    <strong>${escapeHtml(payment.provider_order_id || '-')}</strong>
+                  </span>
+
+                  <span>
+                    Transaction:
+                    <strong>${escapeHtml(payment.provider_transaction_id || '-')}</strong>
+                  </span>
+
+                  <span>
+                    Betaald:
+                    <strong>${escapeHtml(formatDate(payment.paid_at))}</strong>
+                  </span>
+                </div>
+              </article>
+            `
+          })
+          .join('')}
+      </div>
+    </section>
+  `
+}
+
+
 function renderAdmin() {
   return `
     <div class="page admin-page">
@@ -5924,6 +6096,8 @@ function renderAdmin() {
       </header>
 
       ${renderAdminDailyStats()}
+
+      ${renderAdminPaymentOverview()}
 
       <section class="admin-dashboard-actions">
         <button class="admin-dashboard-card" id="go-admin-products">
@@ -7243,6 +7417,7 @@ function renderPos() {
 
 function getOrderHistorySearchText(order: Order) {
   const items = getOrderItems(order.id)
+  const payment = getPaymentForOrder(order.id)
 
   return [
     order.order_number,
@@ -7253,6 +7428,11 @@ function getOrderHistorySearchText(order: Order) {
     order.payment_status,
     order.payment_method,
     order.created_at,
+    payment?.provider,
+    payment?.provider_order_id,
+    payment?.provider_transaction_id,
+    payment?.status,
+    payment?.id,
     ...items.map((item) =>
       item.product_name_snapshot || item.product_name || ''
     ),
@@ -7276,72 +7456,283 @@ function getFilteredOrderHistory() {
 
 function renderOrderHistoryCard(order: Order) {
   const items = getOrderItems(order.id)
-  const customerText = getCustomerOrderText(order)
+  const payment = getPaymentForOrder(order.id)
+
+  const itemCount = items.reduce(
+    (sum, item) => sum + Number(item.quantity ?? 0),
+    0
+  )
+
+  const customerLabel =
+    order.customer_name ||
+    order.pickup_code ||
+    (order.order_type === 'staff' ? 'Balie / POS' : '-')
+
+  const timeLabel = order.created_at
+    ? new Date(order.created_at).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '-'
+
+  const isSelected =
+    String(selectedOrderHistoryId || '') === String(order.id)
 
   return `
-    <article class="history-order-card">
-      <div class="history-order-top">
-        <div>
-          <h3>${escapeHtml(getOrderName(order))}</h3>
-          <p>${escapeHtml(formatDate(order.created_at))}</p>
+    <button
+      type="button"
+      class="history-order-card history-list-row ${isSelected ? 'selected' : ''}"
+      data-history-order-id="${escapeHtml(String(order.id))}"
+      aria-pressed="${isSelected ? 'true' : 'false'}"
+    >
+      <div class="history-list-time">
+        <strong>${escapeHtml(timeLabel)}</strong>
+        <span>${itemCount} ${itemCount === 1 ? 'item' : 'items'}</span>
+      </div>
+
+      <div class="history-list-main">
+        <div class="history-list-order-line">
+          <strong>${escapeHtml(getOrderName(order))}</strong>
+
+          <span class="status-badge status-${order.status}">
+            ${escapeHtml(order.status)}
+          </span>
         </div>
 
-        <span class="status-badge status-${order.status}">
-          ${escapeHtml(order.status)}
+        <div class="history-list-customer">
+          ${escapeHtml(customerLabel)}
+          ${
+            order.pickup_code && order.customer_name
+              ? ` · ${escapeHtml(order.pickup_code)}`
+              : ''
+          }
+        </div>
+      </div>
+
+      <div class="history-list-payment">
+        <span class="order-payment-badge ${
+          payment
+            ? getPaymentRecordStatusClass(payment)
+            : getPaymentBadgeClass(order)
+        }">
+          ${escapeHtml(
+            payment
+              ? getPaymentRecordStatusLabel(payment)
+              : getPaymentBadgeText(order)
+          )}
         </span>
+
+        <small>
+          ${
+            payment
+              ? escapeHtml(getPaymentProviderLabel(payment))
+              : order.payment_method
+                ? escapeHtml(
+                    order.payment_method === 'online_fake'
+                      ? 'MultiSafepay test'
+                      : order.payment_method
+                  )
+                : '-'
+          }
+        </small>
       </div>
 
-      <div class="history-order-meta">
-        ${
-          order.pickup_code
-            ? `<span><strong>Pickup:</strong> ${escapeHtml(order.pickup_code)}</span>`
-            : ''
-        }
-
-        <span><strong>Betaling:</strong> ${escapeHtml(getPaymentText(order))}</span>
-
-        ${
-          customerText
-            ? `<span><strong>Klant:</strong> ${escapeHtml(customerText)}</span>`
-            : ''
-        }
-      </div>
-
-      <div class="history-order-items">
-        ${
-          items.length === 0
-            ? `<p class="muted">Geen orderregels gevonden.</p>`
-            : items
-                .map((item) => {
-                  const name =
-                    item.product_name_snapshot ||
-                    item.product_name ||
-                    'Onbekend product'
-
-                  return `
-                    <div class="history-order-item">
-                      <div>
-                        <strong>${item.quantity}× ${escapeHtml(name)}</strong>
-                        ${renderModifierSummary(
-                          item.ice_level,
-                          item.sugar_level,
-                          item.toppings
-                        )}
-                      </div>
-
-                      <span>€ ${getOrderItemTotal(item).toFixed(2)}</span>
-                    </div>
-                  `
-                })
-                .join('')
-        }
-      </div>
-
-      <div class="history-order-total">
+      <div class="history-list-total">
         <span>Totaal</span>
         <strong>€ ${getOrderTotal(order).toFixed(2)}</strong>
       </div>
-    </article>
+
+      <span class="history-list-chevron">›</span>
+    </button>
+  `
+}
+
+function renderOrderHistoryDetailPanel() {
+  if (!selectedOrderHistoryId) {
+    return `
+      <aside class="history-detail-panel history-detail-empty">
+        <div class="history-detail-empty-icon">☰</div>
+        <strong>Selecteer een bestelling</strong>
+        <span>Klik links op een order om de drankjes en betaalgegevens te bekijken.</span>
+      </aside>
+    `
+  }
+
+  const order = orders.find(
+    (item) => String(item.id) === String(selectedOrderHistoryId)
+  )
+
+  if (!order) {
+    return `
+      <aside class="history-detail-panel history-detail-empty">
+        <strong>Bestelling niet gevonden</strong>
+      </aside>
+    `
+  }
+
+  const items = getOrderItems(order.id)
+  const payment = getPaymentForOrder(order.id)
+
+  return `
+    <aside class="history-detail-panel open">
+      <div class="history-detail-header">
+        <div>
+          <span>Bestelling</span>
+          <h2>${escapeHtml(getOrderName(order))}</h2>
+          <p>${escapeHtml(formatDate(order.created_at))}</p>
+        </div>
+
+        <button
+          type="button"
+          class="history-detail-close"
+          id="history-detail-close"
+          aria-label="Sluiten"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="history-detail-status-row">
+        <span class="status-badge status-${order.status}">
+          ${escapeHtml(order.status)}
+        </span>
+
+        <span class="order-payment-badge ${
+          payment
+            ? getPaymentRecordStatusClass(payment)
+            : getPaymentBadgeClass(order)
+        }">
+          ${escapeHtml(
+            payment
+              ? getPaymentRecordStatusLabel(payment)
+              : getPaymentBadgeText(order)
+          )}
+        </span>
+      </div>
+
+      <div class="history-detail-section">
+        <h3>Klant & pickup</h3>
+
+        <div class="history-detail-info-grid">
+          <div>
+            <span>Naam</span>
+            <strong>${escapeHtml(order.customer_name || '-')}</strong>
+          </div>
+
+          <div>
+            <span>Telefoon</span>
+            <strong>${escapeHtml(order.customer_phone || '-')}</strong>
+          </div>
+
+          <div>
+            <span>Pickup code</span>
+            <strong>${escapeHtml(order.pickup_code || '-')}</strong>
+          </div>
+
+          <div>
+            <span>Kanaal</span>
+            <strong>${escapeHtml(order.channel || order.order_type || '-')}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="history-detail-section">
+        <div class="history-detail-section-title">
+          <h3>Drankjes</h3>
+          <span>${items.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0)} items</span>
+        </div>
+
+        <div class="history-detail-items">
+          ${
+            items.length === 0
+              ? `<div class="history-detail-no-items">Geen orderregels gevonden.</div>`
+              : items
+                  .map((item) => {
+                    const name =
+                      item.product_name_snapshot ||
+                      item.product_name ||
+                      'Onbekend product'
+
+                    return `
+                      <div class="history-detail-item">
+                        <div class="history-detail-item-main">
+                          <strong>${item.quantity}× ${escapeHtml(name)}</strong>
+
+                          ${renderModifierSummary(
+                            item.ice_level,
+                            item.sugar_level,
+                            item.toppings
+                          )}
+                        </div>
+
+                        <strong class="history-detail-item-price">
+                          € ${getOrderItemTotal(item).toFixed(2)}
+                        </strong>
+                      </div>
+                    `
+                  })
+                  .join('')
+          }
+        </div>
+      </div>
+
+      <div class="history-detail-section">
+        <h3>Betaling</h3>
+
+        <div class="history-detail-info-grid">
+          <div>
+            <span>Methode</span>
+            <strong>
+              ${
+                order.payment_method
+                  ? escapeHtml(
+                      order.payment_method === 'online_fake'
+                        ? 'MultiSafepay test'
+                        : order.payment_method
+                    )
+                  : '-'
+              }
+            </strong>
+          </div>
+
+          <div>
+            <span>Provider</span>
+            <strong>${escapeHtml(payment ? getPaymentProviderLabel(payment) : '-')}</strong>
+          </div>
+
+          <div>
+            <span>Provider order ID</span>
+            <strong class="history-detail-code">
+              ${escapeHtml(payment?.provider_order_id || '-')}
+            </strong>
+          </div>
+
+          <div>
+            <span>Transaction ID</span>
+            <strong class="history-detail-code">
+              ${escapeHtml(payment?.provider_transaction_id || '-')}
+            </strong>
+          </div>
+
+          <div>
+            <span>Betaald op</span>
+            <strong>${escapeHtml(formatDate(payment?.paid_at || order.paid_at))}</strong>
+          </div>
+
+          <div>
+            <span>Payment ID</span>
+            <strong class="history-detail-code">
+              ${escapeHtml(payment?.id || '-')}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="history-detail-total">
+        <span>Totaal</span>
+        <strong>€ ${getOrderTotal(order).toFixed(2)}</strong>
+      </div>
+    </aside>
   `
 }
 
@@ -7358,8 +7749,8 @@ function renderOrderHistory() {
           <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
 
           <div>
-            <h1>Bonnen & orderhistorie</h1>
-            <p class="sub">Zoek oude bestellingen en bonnen terug.</p>
+            <h1>Bonnen & orders van vandaag</h1>
+            <p class="sub">Alle bestellingen van vandaag in één overzichtelijke lijst.</p>
           </div>
         </div>
 
@@ -7380,7 +7771,7 @@ function renderOrderHistory() {
             <input
               id="order-history-search"
               type="search"
-              placeholder="Zoek order, pickupcode, klant, telefoon of drankje..."
+              placeholder="Zoek in de orders van vandaag..."
               value="${escapeHtml(orderHistorySearch)}"
               autocomplete="off"
             />
@@ -7398,8 +7789,8 @@ function renderOrderHistory() {
         <div class="history-result-count">
           ${
             isSearching
-              ? `${filteredOrders.length} van ${orders.length} orders`
-              : `${orders.length} orders`
+              ? `${filteredOrders.length} van ${orders.length} orders vandaag`
+              : `${orders.length} orders vandaag`
           }
         </div>
 
@@ -7418,8 +7809,12 @@ function renderOrderHistory() {
                 </div>
               `
               : `
-                <div class="history-orders-grid">
-                  ${filteredOrders.map(renderOrderHistoryCard).join('')}
+                <div class="history-master-detail">
+                  <div class="history-orders-list">
+                    ${filteredOrders.map(renderOrderHistoryCard).join('')}
+                  </div>
+
+                  ${renderOrderHistoryDetailPanel()}
                 </div>
               `
         }
@@ -8863,9 +9258,33 @@ function bindEvents() {
     void loadOrderHistory()
   })
 
+  document.querySelectorAll<HTMLElement>('[data-history-order-id]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const orderId = row.dataset.historyOrderId
+      if (!orderId) return
+
+      selectedOrderHistoryId = orderId
+      render()
+    })
+  })
+
+  document.querySelector<HTMLButtonElement>('#history-detail-close')?.addEventListener('click', () => {
+    selectedOrderHistoryId = null
+    render()
+  })
+
   document.querySelector<HTMLInputElement>('#order-history-search')?.addEventListener('input', (event) => {
     const input = event.currentTarget as HTMLInputElement
     orderHistorySearch = input.value
+
+    if (
+      selectedOrderHistoryId &&
+      !getFilteredOrderHistory().some(
+        (order) => String(order.id) === String(selectedOrderHistoryId)
+      )
+    ) {
+      selectedOrderHistoryId = null
+    }
 
     const cursorPosition = input.selectionStart ?? orderHistorySearch.length
 
