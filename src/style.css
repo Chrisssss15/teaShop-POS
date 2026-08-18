@@ -8813,3 +8813,335 @@ body,
     box-shadow: none;
   }
 }
+
+
+/* ========================================================= */
+/* PAYMENT TEST — MULTISAFEPAY PREPARATION                   */
+/* ========================================================= */
+
+.payment-test-page {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+  background:
+    radial-gradient(circle at top, #eef4fc 0, #f7f9fc 38%, #ffffff 75%);
+  color: #172033;
+}
+
+.payment-test-shell {
+  width: min(580px, 100%);
+}
+
+.payment-test-brand {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 16px;
+}
+
+.payment-test-logo {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(27, 71, 143, 0.08);
+}
+
+.payment-test-brand > div {
+  display: grid;
+  gap: 2px;
+}
+
+.payment-test-brand > div span {
+  color: #718097;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-test-brand > div strong {
+  color: #172033;
+  font-size: 20px;
+}
+
+.payment-test-environment {
+  padding: 7px 10px;
+  border: 1px solid #d4dfed;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #1B478F;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.payment-test-card {
+  overflow: hidden;
+  padding: 24px;
+  border: 1px solid #dce5f1;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgba(27, 71, 143, 0.10);
+}
+
+.payment-test-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.payment-test-heading p {
+  margin: 0 0 5px;
+  color: #75839a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.payment-test-heading h1 {
+  margin: 0;
+  color: #172033;
+  font-size: 28px;
+  letter-spacing: -0.6px;
+}
+
+.payment-test-status {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.payment-test-status-pending {
+  border: 1px solid #cfdbea;
+  background: #eef3fa;
+  color: #1B478F;
+}
+
+.payment-test-status-paid {
+  border: 1px solid #b9dfc2;
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.payment-test-status-failed {
+  border: 1px solid #efc0c0;
+  background: #fdeaea;
+  color: #a92a2a;
+}
+
+.payment-test-status-cancelled,
+.payment-test-status-refunded {
+  border: 1px solid #d8dfe8;
+  background: #f1f3f6;
+  color: #667184;
+}
+
+.payment-test-amount {
+  display: grid;
+  justify-items: center;
+  margin: 26px 0 22px;
+  padding: 25px 16px;
+  border: 1px solid #d9e4f2;
+  border-radius: 20px;
+  background: #f4f8fd;
+}
+
+.payment-test-amount span {
+  color: #74839a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-test-amount strong {
+  margin: 7px 0 4px;
+  color: #1B478F;
+  font-size: clamp(38px, 8vw, 54px);
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -1.4px;
+}
+
+.payment-test-amount small {
+  color: #8995a7;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.payment-test-details {
+  display: grid;
+  gap: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 17px;
+  overflow: hidden;
+}
+
+.payment-test-details > div {
+  display: grid;
+  grid-template-columns: 145px minmax(0, 1fr);
+  gap: 14px;
+  padding: 11px 13px;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.payment-test-details > div:last-child {
+  border-bottom: 0;
+}
+
+.payment-test-details span {
+  color: #7c899b;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.payment-test-details strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #27334a;
+  font-size: 11px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-test-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.payment-test-info,
+.payment-test-result {
+  margin-top: 18px;
+  padding: 14px 15px;
+  border-radius: 15px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.payment-test-info {
+  border: 1px solid #d9e4f2;
+  background: #f6f9fd;
+  color: #5f6f86;
+}
+
+.payment-test-result {
+  display: grid;
+  gap: 4px;
+}
+
+.payment-test-result strong {
+  font-size: 14px;
+}
+
+.payment-test-result span {
+  font-size: 11px;
+}
+
+.payment-test-actions {
+  display: grid;
+  gap: 9px;
+  margin-top: 18px;
+}
+
+.payment-test-primary-btn,
+.payment-test-secondary-btn,
+.payment-test-danger-btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.payment-test-primary-btn {
+  border: 1px solid #1B478F;
+  background: #1B478F;
+  color: #ffffff;
+}
+
+.payment-test-primary-btn:hover:not(:disabled) {
+  background: #153a76;
+}
+
+.payment-test-secondary-btn {
+  border: 1px solid #d5dfec;
+  background: #ffffff;
+  color: #1B478F;
+}
+
+.payment-test-secondary-btn:hover:not(:disabled) {
+  background: #f4f7fb;
+}
+
+.payment-test-danger-btn {
+  border: 1px solid #efcaca;
+  background: #fff7f7;
+  color: #b53131;
+}
+
+.payment-test-danger-btn:hover:not(:disabled) {
+  background: #fdeeee;
+}
+
+.payment-test-primary-btn:disabled,
+.payment-test-secondary-btn:disabled,
+.payment-test-danger-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.payment-test-loading {
+  padding: 46px 24px;
+  color: #78869a;
+  text-align: center;
+  font-weight: 800;
+}
+
+.payment-test-error {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #efcaca;
+  border-radius: 14px;
+  background: #fff4f4;
+  color: #a92a2a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.payment-test-footnote {
+  margin: 13px 0 0;
+  color: #8995a6;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+@media (max-width: 540px) {
+  .payment-test-page {
+    align-items: start;
+    padding-top: 18px;
+  }
+
+  .payment-test-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .payment-test-heading {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .payment-test-details > div {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .payment-test-details strong {
+    text-align: left;
+  }
+}

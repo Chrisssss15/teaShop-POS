@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview'
+type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -81,8 +81,35 @@ type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
 type LabelStatus = 'new' | 'preparing' | 'done' | 'cancelled'
 type PrintStatus = 'pending' | 'printing' | 'printed' | 'failed'
 type OrderFilter = 'all' | 'active' | 'preparation' | 'completed'
-type PaymentStatus = 'unpaid' | 'paid' | 'refunded'
+type PaymentStatus =
+  | 'unpaid'
+  | 'pending'
+  | 'paid'
+  | 'failed'
+  | 'cancelled'
+  | 'refunded'
+
 type PaymentMethod = 'cash' | 'card' | 'online_fake' | 'pay_at_counter'
+
+type PaymentRecordStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded'
+
+type Payment = {
+  id: string
+  order_id: string
+  provider: string
+  provider_order_id?: string | null
+  provider_transaction_id?: string | null
+  amount: number
+  currency: string
+  status: PaymentRecordStatus
+  payment_method?: string | null
+  payment_url?: string | null
+  failure_reason?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+  paid_at?: string | null
+  failed_at?: string | null
+}
 type CustomerLanguage = 'nl' | 'en' | 'cn'
 
 type Order = {
@@ -447,6 +474,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'admin-add-topping') return 'admin-add-topping'
   if (modeValue === 'admin-categories') return 'admin-categories'
   if (modeValue === 'print-preview') return 'print-preview'
+  if (modeValue === 'payment-test') return 'payment-test'
 
   return 'pos'
 }
@@ -481,6 +509,13 @@ let printPreviewOrder: Order | null = null
 let printPreviewQrDataUrl = ''
 let isLoadingPrintPreview = false
 let printPreviewError = ''
+
+// Payment simulator: voorbereiding op MultiSafepay
+let paymentTestPayment: Payment | null = null
+let paymentTestOrder: Order | null = null
+let isLoadingPaymentTest = false
+let isUpdatingPaymentTest = false
+let paymentTestError = ''
 
 let isSubmitting = false
 let isLoadingOrders = false
@@ -1981,9 +2016,9 @@ async function submitCustomerOrder() {
   const customerSessionId = getCustomerSessionId()
 
   const paymentStatus: PaymentStatus =
-    customerPaymentMethod === 'online_fake' ? 'paid' : 'unpaid'
+    customerPaymentMethod === 'online_fake' ? 'pending' : 'unpaid'
 
-  const paidAt = customerPaymentMethod === 'online_fake' ? now : null
+  const paidAt = null
 
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
@@ -2050,6 +2085,26 @@ async function submitCustomerOrder() {
     return
   }
 
+  let createdPayment: Payment | null = null
+
+  if (customerPaymentMethod === 'online_fake') {
+    try {
+      createdPayment = await createTestMultisafepayPayment(
+        String(orderData.id),
+        orderNumber,
+        total
+      )
+    } catch (error) {
+      isSubmitting = false
+      message =
+        error instanceof Error
+          ? error.message
+          : 'Payment aanmaken mislukt.'
+      render()
+      return
+    }
+  }
+
   cart = []
   customerOrderId = orderData.id
   customerPickupCode = pickupCode
@@ -2060,10 +2115,267 @@ async function submitCustomerOrder() {
   isSubmitting = false
 
   saveCustomerState()
+
+  if (createdPayment) {
+    await goToPaymentTest(createdPayment.id)
+    return
+  }
+
   await loadCustomerOrderProgress(false)
   startCustomerProgressRefresh()
   render()
 }
+
+
+// =============================
+// PAYMENTS: MULTISAFEPAY PREPARATION
+// Voorlopig nog een lokale simulator.
+// Kitchen-label gedrag blijft voor nu hetzelfde.
+// =============================
+
+function getPaymentTestIdFromUrl() {
+  const currentParams = new URLSearchParams(window.location.search)
+  return currentParams.get('payment') || ''
+}
+
+function formatPaymentAmount(amountInCents: number) {
+  return `€ ${(Number(amountInCents || 0) / 100).toFixed(2)}`
+}
+
+function getPaymentTestStatusText(status?: PaymentRecordStatus | null) {
+  if (status === 'paid') return 'Betaling geslaagd'
+  if (status === 'failed') return 'Betaling mislukt'
+  if (status === 'cancelled') return 'Betaling geannuleerd'
+  if (status === 'refunded') return 'Terugbetaald'
+  return 'Wacht op betaling'
+}
+
+function getPaymentTestStatusClass(status?: PaymentRecordStatus | null) {
+  if (status === 'paid') return 'payment-test-status-paid'
+  if (status === 'failed') return 'payment-test-status-failed'
+  if (status === 'cancelled') return 'payment-test-status-cancelled'
+  if (status === 'refunded') return 'payment-test-status-refunded'
+  return 'payment-test-status-pending'
+}
+
+async function createTestMultisafepayPayment(
+  orderId: string,
+  orderNumber: string,
+  total: number
+) {
+  const amountInCents = Math.max(0, Math.round(total * 100))
+
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      order_id: orderId,
+      provider: 'multisafepay',
+      provider_order_id: `MSP-TEST-${orderNumber}`,
+      amount: amountInCents,
+      currency: 'EUR',
+      status: 'pending',
+      payment_method: 'online_fake',
+      payment_url: null,
+      failure_reason: null,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    throw new Error(`Payment aanmaken mislukt: ${error.message}`)
+  }
+
+  return data as Payment
+}
+
+async function loadPaymentTestData(showLoading = true) {
+  const paymentId = getPaymentTestIdFromUrl()
+
+  if (!paymentId) {
+    isLoadingPaymentTest = false
+    paymentTestPayment = null
+    paymentTestOrder = null
+    paymentTestError = 'Geen payment-id gevonden in de URL.'
+    render()
+    return
+  }
+
+  if (showLoading) {
+    isLoadingPaymentTest = true
+    paymentTestError = ''
+    render()
+  }
+
+  const { data: paymentData, error: paymentError } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('id', paymentId)
+    .maybeSingle()
+
+  if (paymentError) {
+    isLoadingPaymentTest = false
+    paymentTestPayment = null
+    paymentTestOrder = null
+    paymentTestError = `Payment laden mislukt: ${paymentError.message}`
+    render()
+    return
+  }
+
+  if (!paymentData) {
+    isLoadingPaymentTest = false
+    paymentTestPayment = null
+    paymentTestOrder = null
+    paymentTestError = 'Deze betaling bestaat niet.'
+    render()
+    return
+  }
+
+  paymentTestPayment = paymentData as Payment
+
+  const { data: orderData, error: orderError } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('id', paymentTestPayment.order_id)
+    .maybeSingle()
+
+  if (orderError) {
+    isLoadingPaymentTest = false
+    paymentTestOrder = null
+    paymentTestError = `Order bij betaling laden mislukt: ${orderError.message}`
+    render()
+    return
+  }
+
+  paymentTestOrder = orderData ? (orderData as Order) : null
+  paymentTestError = ''
+  isLoadingPaymentTest = false
+  render()
+}
+
+async function updatePaymentTestStatus(nextStatus: PaymentRecordStatus) {
+  if (!paymentTestPayment || isUpdatingPaymentTest) return
+
+  isUpdatingPaymentTest = true
+  paymentTestError = ''
+  render()
+
+  const now = new Date().toISOString()
+
+  const paymentUpdate: Record<string, string | null> = {
+    status: nextStatus,
+    updated_at: now,
+    failure_reason: null,
+  }
+
+  if (nextStatus === 'paid') {
+    paymentUpdate.paid_at = now
+    paymentUpdate.failed_at = null
+  }
+
+  if (nextStatus === 'failed') {
+    paymentUpdate.failed_at = now
+    paymentUpdate.paid_at = null
+    paymentUpdate.failure_reason = 'Gesimuleerde mislukte betaling'
+  }
+
+  if (nextStatus === 'cancelled') {
+    paymentUpdate.failed_at = null
+    paymentUpdate.paid_at = null
+    paymentUpdate.failure_reason = 'Betaling geannuleerd in simulator'
+  }
+
+  if (nextStatus === 'pending') {
+    paymentUpdate.failed_at = null
+    paymentUpdate.paid_at = null
+  }
+
+  const { error: paymentError } = await supabase
+    .from('payments')
+    .update(paymentUpdate)
+    .eq('id', paymentTestPayment.id)
+
+  if (paymentError) {
+    isUpdatingPaymentTest = false
+    paymentTestError = `Paymentstatus aanpassen mislukt: ${paymentError.message}`
+    render()
+    return
+  }
+
+  const orderPaymentStatus: PaymentStatus =
+    nextStatus === 'paid'
+      ? 'paid'
+      : nextStatus === 'failed'
+        ? 'failed'
+        : nextStatus === 'cancelled'
+          ? 'cancelled'
+          : nextStatus === 'refunded'
+            ? 'refunded'
+            : 'pending'
+
+  const orderUpdate: Record<string, string | null> = {
+    payment_status: orderPaymentStatus,
+  }
+
+  if (nextStatus === 'paid') {
+    orderUpdate.paid_at = now
+  } else {
+    orderUpdate.paid_at = null
+  }
+
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update(orderUpdate)
+    .eq('id', paymentTestPayment.order_id)
+
+  if (orderError) {
+    isUpdatingPaymentTest = false
+    paymentTestError = `Order-betaalstatus aanpassen mislukt: ${orderError.message}`
+    render()
+    return
+  }
+
+  isUpdatingPaymentTest = false
+  await loadPaymentTestData(false)
+}
+
+async function goToPaymentTest(paymentId: string) {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'payment-test'
+  message = ''
+  paymentTestError = ''
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('mode', 'payment-test')
+  url.searchParams.set('payment', paymentId)
+  window.history.pushState({ screen: 'payment-test' }, '', url)
+
+  await loadPaymentTestData()
+}
+
+async function returnFromPaymentTestToCustomer() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'customer'
+  message = ''
+
+  const url = new URL(window.location.href)
+  url.searchParams.set('mode', 'customer')
+  url.searchParams.delete('payment')
+  window.history.pushState({ screen: 'customer' }, '', url)
+
+  if (customerOrderId) {
+    await loadCustomerOrderProgress(false)
+    startCustomerProgressRefresh()
+  }
+
+  render()
+}
+
 
 
 // =============================
@@ -2892,6 +3204,18 @@ function getOrderName(order: Order) {
 function getPaymentText(order: Order) {
   if (order.payment_status === 'paid') {
     return `Paid ${order.payment_method ? `(${order.payment_method})` : ''}`
+  }
+
+  if (order.payment_status === 'pending') {
+    return 'Payment pending'
+  }
+
+  if (order.payment_status === 'failed') {
+    return 'Payment failed'
+  }
+
+  if (order.payment_status === 'cancelled') {
+    return 'Payment cancelled'
   }
 
   if (order.payment_status === 'refunded') {
@@ -8140,6 +8464,207 @@ function renderPrintPreview() {
   `
 }
 
+
+function renderPaymentTest() {
+  const payment = paymentTestPayment
+  const order = paymentTestOrder
+  const status = payment?.status ?? 'pending'
+  const isFinished =
+    status === 'paid' ||
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'refunded'
+
+  return `
+    <div class="page payment-test-page">
+      <main class="payment-test-shell">
+        <section class="payment-test-brand">
+          <img
+            class="payment-test-logo"
+            src="/logo.jpg"
+            alt="Blue Cup logo"
+          />
+
+          <div>
+            <span>Blue Cup</span>
+            <strong>Payment Simulator</strong>
+          </div>
+
+          <span class="payment-test-environment">TEST</span>
+        </section>
+
+        ${
+          isLoadingPaymentTest
+            ? `
+              <section class="payment-test-card payment-test-loading">
+                Betaling laden...
+              </section>
+            `
+            : paymentTestError
+              ? `
+                <section class="payment-test-card">
+                  <div class="payment-test-error">
+                    ${escapeHtml(paymentTestError)}
+                  </div>
+
+                  <button
+                    class="payment-test-secondary-btn"
+                    id="payment-test-back-customer"
+                    type="button"
+                  >
+                    Terug naar bestelling
+                  </button>
+                </section>
+              `
+              : payment
+                ? `
+                  <section class="payment-test-card">
+                    <div class="payment-test-heading">
+                      <div>
+                        <p>MultiSafepay voorbereiding</p>
+                        <h1>Online betaling</h1>
+                      </div>
+
+                      <span class="payment-test-status ${getPaymentTestStatusClass(status)}">
+                        ${escapeHtml(getPaymentTestStatusText(status))}
+                      </span>
+                    </div>
+
+                    <div class="payment-test-amount">
+                      <span>Te betalen</span>
+                      <strong>${escapeHtml(formatPaymentAmount(payment.amount))}</strong>
+                      <small>${escapeHtml(payment.currency || 'EUR')}</small>
+                    </div>
+
+                    <div class="payment-test-details">
+                      <div>
+                        <span>Order</span>
+                        <strong>
+                          ${escapeHtml(
+                            order?.order_number ||
+                            `Order ${payment.order_id}`
+                          )}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Provider</span>
+                        <strong>MultiSafepay</strong>
+                      </div>
+
+                      <div>
+                        <span>Provider order ID</span>
+                        <strong>
+                          ${escapeHtml(payment.provider_order_id || '-')}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Payment ID</span>
+                        <strong class="payment-test-id">
+                          ${escapeHtml(payment.id)}
+                        </strong>
+                      </div>
+                    </div>
+
+                    ${
+                      status === 'pending'
+                        ? `
+                          <div class="payment-test-info">
+                            Dit is nog geen echte MultiSafepay-betaling.
+                            Met deze knoppen testen we alvast wat er gebeurt
+                            bij een succesvolle, mislukte of geannuleerde betaling.
+                          </div>
+
+                          <div class="payment-test-actions">
+                            <button
+                              class="payment-test-primary-btn"
+                              id="payment-test-success"
+                              type="button"
+                              ${isUpdatingPaymentTest ? 'disabled' : ''}
+                            >
+                              ✓ Betaling succesvol
+                            </button>
+
+                            <button
+                              class="payment-test-danger-btn"
+                              id="payment-test-failed"
+                              type="button"
+                              ${isUpdatingPaymentTest ? 'disabled' : ''}
+                            >
+                              Betaling mislukt
+                            </button>
+
+                            <button
+                              class="payment-test-secondary-btn"
+                              id="payment-test-cancelled"
+                              type="button"
+                              ${isUpdatingPaymentTest ? 'disabled' : ''}
+                            >
+                              Annuleren
+                            </button>
+                          </div>
+                        `
+                        : `
+                          <div class="payment-test-result ${getPaymentTestStatusClass(status)}">
+                            <strong>${escapeHtml(getPaymentTestStatusText(status))}</strong>
+                            <span>
+                              ${
+                                status === 'paid'
+                                  ? 'De payment én de betaalstatus van de order staan nu op betaald.'
+                                  : status === 'failed'
+                                    ? 'De testbetaling is als mislukt opgeslagen.'
+                                    : status === 'cancelled'
+                                      ? 'De testbetaling is geannuleerd.'
+                                      : 'De betaling is bijgewerkt.'
+                              }
+                            </span>
+                          </div>
+
+                          <div class="payment-test-actions">
+                            ${
+                              status !== 'paid' && status !== 'refunded'
+                                ? `
+                                  <button
+                                    class="payment-test-secondary-btn"
+                                    id="payment-test-retry"
+                                    type="button"
+                                    ${isUpdatingPaymentTest ? 'disabled' : ''}
+                                  >
+                                    Opnieuw proberen
+                                  </button>
+                                `
+                                : ''
+                            }
+
+                            <button
+                              class="payment-test-primary-btn"
+                              id="payment-test-back-customer"
+                              type="button"
+                            >
+                              Terug naar bestelling
+                            </button>
+                          </div>
+                        `
+                    }
+                  </section>
+                `
+                : `
+                  <section class="payment-test-card">
+                    Geen payment gevonden.
+                  </section>
+                `
+        }
+
+        <p class="payment-test-footnote">
+          Testomgeving — er wordt geen echt geld afgeschreven.
+        </p>
+      </main>
+    </div>
+  `
+}
+
+
 // =============================
 // APP RENDER
 // =============================
@@ -8199,6 +8724,10 @@ function render() {
     app.innerHTML = renderPrintPreview()
   }
 
+  if (screen === 'payment-test') {
+    app.innerHTML = renderPaymentTest()
+  }
+
   bindEvents()
 }
 
@@ -8208,6 +8737,26 @@ function render() {
 // =============================
 
 function bindEvents() {
+  document.querySelector<HTMLButtonElement>('#payment-test-success')?.addEventListener('click', () => {
+    void updatePaymentTestStatus('paid')
+  })
+
+  document.querySelector<HTMLButtonElement>('#payment-test-failed')?.addEventListener('click', () => {
+    void updatePaymentTestStatus('failed')
+  })
+
+  document.querySelector<HTMLButtonElement>('#payment-test-cancelled')?.addEventListener('click', () => {
+    void updatePaymentTestStatus('cancelled')
+  })
+
+  document.querySelector<HTMLButtonElement>('#payment-test-retry')?.addEventListener('click', () => {
+    void updatePaymentTestStatus('pending')
+  })
+
+  document.querySelector<HTMLButtonElement>('#payment-test-back-customer')?.addEventListener('click', () => {
+    void returnFromPaymentTestToCustomer()
+  })
+
   document.querySelector<HTMLButtonElement>('#print-sticker-preview')?.addEventListener('click', () => {
     window.print()
   })
@@ -8770,6 +9319,11 @@ window.addEventListener('popstate', async () => {
     return
   }
 
+  if (screen === 'payment-test') {
+    await loadPaymentTestData()
+    return
+  }
+
   if (screen === 'pickup') {
     await Promise.all([
       loadOrders(),
@@ -8823,6 +9377,11 @@ getCustomerSessionId()
 async function startApp() {
   if (screen === 'print-preview') {
     await loadPrintPreviewData()
+    return
+  }
+
+  if (screen === 'payment-test') {
+    await loadPaymentTestData()
     return
   }
 
