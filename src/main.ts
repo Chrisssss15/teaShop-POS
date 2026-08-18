@@ -3225,6 +3225,24 @@ function getPaymentText(order: Order) {
   return 'Unpaid'
 }
 
+function getPaymentBadgeText(order: Order) {
+  if (order.payment_status === 'paid') return 'Betaald'
+  if (order.payment_status === 'pending') return 'Wacht op betaling'
+  if (order.payment_status === 'failed') return 'Betaling mislukt'
+  if (order.payment_status === 'cancelled') return 'Betaling geannuleerd'
+  if (order.payment_status === 'refunded') return 'Terugbetaald'
+  return 'Niet betaald'
+}
+
+function getPaymentBadgeClass(order: Order) {
+  if (order.payment_status === 'paid') return 'order-payment-paid'
+  if (order.payment_status === 'pending') return 'order-payment-pending'
+  if (order.payment_status === 'failed') return 'order-payment-failed'
+  if (order.payment_status === 'cancelled') return 'order-payment-cancelled'
+  if (order.payment_status === 'refunded') return 'order-payment-refunded'
+  return 'order-payment-unpaid'
+}
+
 function getCustomerPaymentMethodText(method: PaymentMethod) {
   if (method === 'online_fake') return t('onlinePayment')
   if (method === 'pay_at_counter') return t('payAtCounter')
@@ -7574,7 +7592,26 @@ function renderOrderCard(order: Order) {
         <div>
           <h3>${escapeHtml(getOrderName(order))}</h3>
           <p class="muted">${formatDate(order.created_at)}</p>
-          <p class="muted">${escapeHtml(getPaymentText(order))}</p>
+          <div class="order-payment-row">
+            <span class="order-payment-badge ${getPaymentBadgeClass(order)}">
+              ${escapeHtml(getPaymentBadgeText(order))}
+            </span>
+
+            ${
+              order.payment_method
+                ? `
+                  <span class="order-payment-method">
+                    ${escapeHtml(
+                      order.payment_method === 'online_fake'
+                        ? 'MultiSafepay test'
+                        : order.payment_method
+                    )}
+                  </span>
+                `
+                : ''
+            }
+          </div>
+
           ${customerText ? `<p class="muted">${escapeHtml(customerText)}</p>` : ''}
         </div>
 

@@ -9145,3 +9145,122 @@ body,
     text-align: left;
   }
 }
+
+
+/* ========================================================= */
+/* ORDERS — PAYMENT STATUS BADGES                            */
+/* ========================================================= */
+
+.order-payment-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.order-payment-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 24px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.order-payment-method {
+  color: #78869a;
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.order-payment-paid {
+  border-color: #b9dfc2;
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.order-payment-pending {
+  border-color: #cfdbea;
+  background: #eef3fa;
+  color: #1B478F;
+}
+
+.order-payment-failed {
+  border-color: #efc0c0;
+  background: #fdeaea;
+  color: #a92a2a;
+}
+
+.order-payment-cancelled {
+  border-color: #d8dfe8;
+  background: #f1f3f6;
+  color: #667184;
+}
+
+.order-payment-refunded {
+  border-color: #d9cdef;
+  background: #f3eefb;
+  color: #684b95;
+}
+
+.order-payment-unpaid {
+  border-color: #ead9b1;
+  background: #fff7df;
+  color: #84620d;
+}
+
+/* ========================================================= */
+/* PAYMENT TEST — MOBILE SAFARI SAFE AREA FIX                */
+/* ========================================================= */
+
+.payment-test-page {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 90px);
+}
+
+.payment-test-card {
+  margin-bottom: 12px;
+}
+
+.payment-test-actions {
+  padding-bottom: 4px;
+}
+
+@media (max-width: 540px) {
+  .payment-test-page {
+    min-height: 100dvh;
+    padding:
+      18px
+      14px
+      calc(env(safe-area-inset-bottom, 0px) + 120px);
+  }
+
+  .payment-test-shell {
+    padding-bottom: 18px;
+  }
+
+  .payment-test-card {
+    margin-bottom: 18px;
+  }
+
+  .payment-test-actions {
+    gap: 10px;
+    margin-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .payment-test-primary-btn,
+  .payment-test-secondary-btn,
+  .payment-test-danger-btn {
+    min-height: 52px;
+  }
+
+  .payment-test-footnote {
+    margin-bottom: 30px;
+  }
+}
