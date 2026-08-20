@@ -592,6 +592,11 @@ let ordersRealtimeReloadTimer: number | null = null
 let kitchenRealtimeReloadTimer: number | null = null
 let pickupRealtimeReloadTimer: number | null = null
 
+let autoPrintRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
+let autoPrintReloadTimer: number | null = null
+let isAutoPrintProcessing = false
+let ignoredPendingLabelIds = new Set<string>()
+
 let pickupWaitVisible = true
 let pickupWaitMinutes = 10
 let isPosWaitSettingsOpen = false
@@ -3066,6 +3071,7 @@ function removeCustomerScrollListeners() {
 }
 
 function goToPos() {
+  void startAutomaticPrintWorker()
   stopAutoRefresh()
   stopCustomerProgressRefresh()
   removeCustomerScrollListeners()
@@ -8383,6 +8389,500 @@ function bindCustomerCategoryClicks() {
 // Open with: ?mode=print-preview
 // =============================
 
+// Lokale print bridge op dezelfde Mac als de POS.
+// De browser kan niet rechtstreeks TCP poort 9100 openen,
+// daarom sturen we ZPL via een kleine lokale Node print-service.
+const ZEBRA_PRINT_BRIDGE_URL = 'http://127.0.0.1:3001/print'
+
+// 50 mm x 43 mm op 203 dpi ≈ 400 x 344 dots.
+const ZEBRA_LABEL_WIDTH_DOTS = 400
+const ZEBRA_LABEL_HEIGHT_DOTS = 344
+
+function sanitizeZplText(value: string) {
+  return String(value || '')
+    .replace(/[\^~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function truncateZplText(value: string, maxLength: number) {
+  const clean = sanitizeZplText(value)
+
+  if (clean.length <= maxLength) {
+    return clean
+  }
+
+  return `${clean.slice(0, Math.max(0, maxLength - 3))}...`
+}
+
+function buildStickerZpl(
+  label: KitchenLabel,
+  index: number,
+  totalLabels: number,
+  order?: Order | null
+) {
+  const stickerTimeSource = order?.created_at || label.created_at
+
+  const time = stickerTimeSource
+    ? new Date(stickerTimeSource).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '--:--'
+
+  const toppingNames = (label.toppings ?? [])
+    .map((topping) => topping.name)
+    .filter(Boolean)
+
+  const modifierText = [
+    getStickerIceText(label.ice_level),
+    getStickerSugarText(label.sugar_level),
+    ...toppingNames,
+  ].join(', ')
+
+  const orderNumber =
+    order?.order_number ||
+    label.order_number ||
+    label.order_id
+
+  const productName = truncateZplText(label.product_name, 24)
+  const safeOrderNumber = truncateZplText(orderNumber, 28)
+  const safeChannel = truncateZplText(getStickerChannelText(order), 18)
+  const safeModifiers = truncateZplText(modifierText, 90)
+  const qrValue = sanitizeZplText('|116|L,S000,LES')
+
+  return [
+    '^XA',
+    `^PW${ZEBRA_LABEL_WIDTH_DOTS}`,
+    `^LL${ZEBRA_LABEL_HEIGHT_DOTS}`,
+    '^LH0,0',
+    '^CI28',
+
+    // Nieuw outline-logo + strakker uitgelijnde header
+    '^FO24,18^GFA,176,176,4,000000380000F07C0007F8C4003E0E4C01F0077C0F8001B01C000F0030007E3C2001EF6C600F19FC407C11B8C3E011809F001F80F8000F0047FFFF803F8000C0600000C0C00000C0C00000C040000080400000806000018060000180600001806000018020000100200001003000030030000300300003003000020010000200100006001800060018000600180006001800040008000C0008000C000C000C000600380003FFF00000FFC00000000000^FS',
+    '^FO62,19^A0N,16,16^FDBlue Cup^FS',
+    `^FO62,39^A0N,19,19^FB230,1,0,L,0^FD#${safeOrderNumber}^FS`,
+    `^FO334,19^A0N,22,22^FD${index}/${totalLabels}^FS`,
+    `^FO334,45^A0N,17,17^FD${sanitizeZplText(time)}^FS`,
+    '^FO22,76^GB356,2,2^FS',
+
+    // Drankinformatie
+    `^FO24,90^A0N,32,32^FB352,2,2,L,0^FD${productName}^FS`,
+    `^FO24,136^A0N,18,18^FB240,3,4,L,0^FD${safeModifiers}^FS`,
+
+    // Onderkant
+    `^FO24,242^A0N,18,18^FD${safeChannel}^FS`,
+    `^FO252,178^BQN,2,4^FDLA,${qrValue}^FS`,
+    '^FO22,306^GB356,1,1^FS',
+    '^FO24,318^A0N,13,13^FDPowered by Blue Cup POS^FS',
+    '^XZ',
+  ].join('\n')
+}
+
+
+function isOrderReadyForAutomaticPrint(order: Order) {
+  if (order.status === 'cancelled') {
+    return false
+  }
+
+  // Normale betaalde orders mogen direct naar de keuken.
+  if (order.payment_status === 'paid') {
+    return true
+  }
+
+  // Bij "betalen aan de balie" is unpaid bewust toegestaan:
+  // de bestelling moet wel alvast in de keuken terechtkomen.
+  if (order.payment_method === 'pay_at_counter') {
+    return true
+  }
+
+  // Online betalingen die nog pending/failed/cancelled zijn printen we niet.
+  return false
+}
+
+async function sendZplToPrintBridge(
+  label: KitchenLabel,
+  zpl: string,
+  order?: Order | null
+) {
+  const response = await fetch(ZEBRA_PRINT_BRIDGE_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      labelId: label.id,
+      orderNumber:
+        order?.order_number ||
+        label.order_number ||
+        label.order_id,
+      zpl,
+    }),
+  })
+
+  const result = await response.json().catch(() => ({})) as {
+    ok?: boolean
+    error?: string
+  }
+
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || `Print bridge gaf HTTP ${response.status}`)
+  }
+}
+
+async function claimAndAutoPrintLabel(
+  label: KitchenLabel,
+  index: number,
+  totalLabels: number,
+  order: Order
+) {
+  const nextAttempts = Number(label.print_attempts ?? 0) + 1
+
+  // Atomisch claimen: alleen een label dat nog pending is mag worden opgepakt.
+  // Dit voorkomt dubbele prints wanneer meerdere tabs openstaan.
+  const { data: claimedRows, error: claimError } = await supabase
+    .from('kitchen_labels')
+    .update({
+      print_status: 'printing',
+      print_attempts: nextAttempts,
+      printed_at: null,
+      print_error: null,
+    })
+    .eq('id', label.id)
+    .eq('print_status', 'pending')
+    .select('*')
+
+  if (claimError) {
+    console.error('Automatische print claim mislukt:', claimError)
+    return
+  }
+
+  const claimedLabel = (claimedRows ?? [])[0] as KitchenLabel | undefined
+
+  if (!claimedLabel) {
+    // Een andere tab/worker heeft hem al opgepakt.
+    return
+  }
+
+  try {
+    const zpl = buildStickerZpl(
+      claimedLabel,
+      index,
+      totalLabels,
+      order
+    )
+
+    await sendZplToPrintBridge(claimedLabel, zpl, order)
+
+    const { error: successError } = await supabase
+      .from('kitchen_labels')
+      .update({
+        print_status: 'printed',
+        printed_at: new Date().toISOString(),
+        print_error: null,
+      })
+      .eq('id', claimedLabel.id)
+      .eq('print_status', 'printing')
+
+    if (successError) {
+      throw new Error(
+        `Sticker is verstuurd, maar status opslaan mislukt: ${successError.message}`
+      )
+    }
+
+    console.log(
+      `Sticker automatisch geprint: ${order.order_number || order.id} | ${index}/${totalLabels}`
+    )
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : 'Onbekende printerfout'
+
+    await supabase
+      .from('kitchen_labels')
+      .update({
+        print_status: 'failed',
+        printed_at: null,
+        print_error: errorMessage,
+      })
+      .eq('id', claimedLabel.id)
+
+    console.error('Automatisch printen mislukt:', errorMessage)
+  }
+}
+
+async function processPendingPrintJobs() {
+  if (isAutoPrintProcessing) {
+    return
+  }
+
+  isAutoPrintProcessing = true
+
+  try {
+    const { data: pendingData, error: pendingError } = await supabase
+      .from('kitchen_labels')
+      .select('*')
+      .eq('print_status', 'pending')
+      .order('created_at', { ascending: true })
+
+    if (pendingError) {
+      console.error('Pending printlabels laden mislukt:', pendingError)
+      return
+    }
+
+    const pendingLabels = ((pendingData ?? []) as KitchenLabel[]).filter(
+      (label) => !ignoredPendingLabelIds.has(String(label.id))
+    )
+
+    if (pendingLabels.length === 0) {
+      return
+    }
+
+    const orderIds = Array.from(
+      new Set(
+        pendingLabels
+          .map((label) => String(label.order_id))
+          .filter(Boolean)
+      )
+    )
+
+    if (orderIds.length === 0) {
+      return
+    }
+
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .in('id', orderIds)
+
+    if (orderError) {
+      console.error('Orders voor automatische print laden mislukt:', orderError)
+      return
+    }
+
+    const orderMap = new Map(
+      ((orderData ?? []) as Order[]).map((order) => [
+        String(order.id),
+        order,
+      ])
+    )
+
+    // Per order werken, zodat 1/2, 2/2 enz. altijd klopt.
+    for (const orderId of orderIds) {
+      const order = orderMap.get(String(orderId))
+
+      if (!order || !isOrderReadyForAutomaticPrint(order)) {
+        continue
+      }
+
+      const { data: allLabelData, error: allLabelError } = await supabase
+        .from('kitchen_labels')
+        .select('*')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: true })
+
+      if (allLabelError) {
+        console.error(
+          `Labels van order ${orderId} laden mislukt:`,
+          allLabelError
+        )
+        continue
+      }
+
+      const allOrderLabels = (allLabelData ?? []) as KitchenLabel[]
+
+      for (let i = 0; i < allOrderLabels.length; i++) {
+        const label = allOrderLabels[i]
+
+        if ((label.print_status || 'pending') !== 'pending') {
+          continue
+        }
+
+        await claimAndAutoPrintLabel(
+          label,
+          i + 1,
+          allOrderLabels.length,
+          order
+        )
+      }
+    }
+
+    if (screen === 'print-preview') {
+      await loadPrintPreviewData(false)
+    }
+  } finally {
+    isAutoPrintProcessing = false
+  }
+}
+
+function scheduleAutomaticPrintCheck() {
+  if (autoPrintReloadTimer !== null) {
+    window.clearTimeout(autoPrintReloadTimer)
+  }
+
+  autoPrintReloadTimer = window.setTimeout(() => {
+    autoPrintReloadTimer = null
+    void processPendingPrintJobs()
+  }, 250)
+}
+
+async function startAutomaticPrintWorker() {
+  if (autoPrintRealtimeChannel) {
+    return
+  }
+
+  // Onthoud alleen de labels die AL pending waren vóórdat de worker startte.
+  // Nieuwe labels krijgen nieuwe IDs en worden dus wel automatisch geprint.
+  const { data: oldPendingData, error: oldPendingError } = await supabase
+    .from('kitchen_labels')
+    .select('id')
+    .eq('print_status', 'pending')
+
+  if (oldPendingError) {
+    console.error('Oude pending labels bepalen mislukt:', oldPendingError)
+  } else {
+    ignoredPendingLabelIds = new Set(
+      (oldPendingData ?? []).map((label: { id: string }) => String(label.id))
+    )
+  }
+
+  console.log(
+    `Automatische Zebra printer gestart. ${ignoredPendingLabelIds.size} oude pending label(s) worden genegeerd.`
+  )
+
+  autoPrintRealtimeChannel = supabase
+    .channel('blue-cup-auto-printer')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'kitchen_labels',
+      },
+      () => {
+        scheduleAutomaticPrintCheck()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+      },
+      () => {
+        // Nodig voor online betaling:
+        // zodra payment_status naar paid verandert, printen pending labels alsnog.
+        scheduleAutomaticPrintCheck()
+      }
+    )
+    .subscribe((status, error) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Automatische Zebra printer verbonden')
+        scheduleAutomaticPrintCheck()
+      }
+
+      if (error) {
+        console.error('Automatische Zebra printer realtime fout:', error)
+      }
+    })
+}
+
+async function printStickerOnZebra(labelId: string) {
+  const labelIndex = printPreviewLabels.findIndex(
+    (item) => String(item.id) === String(labelId)
+  )
+
+  if (labelIndex < 0) return
+
+  const label = printPreviewLabels[labelIndex]
+  const nextAttempts = Number(label.print_attempts ?? 0) + 1
+
+  // Eerst claimen als printing. Zo zien we in Supabase dat een print bezig is.
+  const { error: printingError } = await supabase
+    .from('kitchen_labels')
+    .update({
+      print_status: 'printing',
+      print_attempts: nextAttempts,
+      printed_at: null,
+      print_error: null,
+    })
+    .eq('id', labelId)
+
+  if (printingError) {
+    printPreviewError = `Print starten mislukt: ${printingError.message}`
+    render()
+    return
+  }
+
+  await loadPrintPreviewData(false)
+
+  try {
+    const zpl = buildStickerZpl(
+      label,
+      labelIndex + 1,
+      printPreviewLabels.length,
+      printPreviewOrder
+    )
+
+    const response = await fetch(ZEBRA_PRINT_BRIDGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        labelId: label.id,
+        orderNumber:
+          printPreviewOrder?.order_number ||
+          label.order_number ||
+          label.order_id,
+        zpl,
+      }),
+    })
+
+    const result = await response.json().catch(() => ({})) as {
+      ok?: boolean
+      error?: string
+    }
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.error || `Print bridge gaf HTTP ${response.status}`)
+    }
+
+    const { error: successError } = await supabase
+      .from('kitchen_labels')
+      .update({
+        print_status: 'printed',
+        printed_at: new Date().toISOString(),
+        print_error: null,
+      })
+      .eq('id', labelId)
+
+    if (successError) {
+      throw new Error(`Sticker is verstuurd, maar status opslaan mislukt: ${successError.message}`)
+    }
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : 'Onbekende printerfout'
+
+    await supabase
+      .from('kitchen_labels')
+      .update({
+        print_status: 'failed',
+        printed_at: null,
+        print_error: errorMessage,
+      })
+      .eq('id', labelId)
+
+    printPreviewError = `Printen mislukt: ${errorMessage}`
+  }
+
+  await loadPrintPreviewData(false)
+}
+
 function getStickerIceText(level?: IceLevel | null) {
   if (level === 'no_ice') return 'No ice'
   if (level === 'less_ice') return 'Less ice'
@@ -8596,7 +9096,7 @@ async function loadPrintPreviewData(showLoading = true) {
 
   try {
     printPreviewQrDataUrl = await QRCode.toDataURL(
-      `Blue Cup Order: ${qrOrderNumber}`,
+      '|116|L,S000,LES',
       {
         errorCorrectionLevel: 'M',
         margin: 1,
@@ -8654,7 +9154,7 @@ function renderStickerPreview(
           <div class="drink-sticker-brand">
             <img
               class="drink-sticker-logo"
-              src="/logo.jpg"
+              src="/logo-outline.jpg"
               alt="Blue Cup logo"
             />
             <div class="drink-sticker-brand-text">
@@ -8762,10 +9262,10 @@ function renderStickerPreview(
                 <button
                   type="button"
                   class="small-btn"
-                  data-simulate-print-success="${label.id}"
-                  style="font-size:11px;padding:7px 10px;"
+                  data-real-zebra-print="${label.id}"
+                  style="font-size:11px;padding:7px 10px;background:#1f6b34;"
                 >
-                  Simuleer print
+                  Echt printen op Zebra
                 </button>
 
                 <button
@@ -8781,15 +9281,30 @@ function renderStickerPreview(
           }
 
           ${
+            printStatus === 'printing'
+              ? `
+                <button
+                  type="button"
+                  class="nav-btn"
+                  disabled
+                  style="font-size:11px;padding:7px 10px;"
+                >
+                  Bezig met printen...
+                </button>
+              `
+              : ''
+          }
+
+          ${
             printStatus === 'failed'
               ? `
                 <button
                   type="button"
                   class="small-btn"
-                  data-simulate-print-success="${label.id}"
-                  style="font-size:11px;padding:7px 10px;"
+                  data-real-zebra-print="${label.id}"
+                  style="font-size:11px;padding:7px 10px;background:#1f6b34;"
                 >
-                  Opnieuw printen
+                  Opnieuw echt printen
                 </button>
 
                 <button
@@ -8810,10 +9325,10 @@ function renderStickerPreview(
                 <button
                   type="button"
                   class="nav-btn"
-                  data-simulate-print-success="${label.id}"
+                  data-real-zebra-print="${label.id}"
                   style="font-size:11px;padding:7px 10px;"
                 >
-                  Reprint simuleren
+                  Reprint op Zebra
                 </button>
               `
               : ''
@@ -8853,7 +9368,7 @@ function renderPrintPreview() {
             type="button"
             ${printPreviewLabels.length === 0 ? 'disabled' : ''}
           >
-            Print test
+            Browser print preview
           </button>
         </div>
       </div>
@@ -9195,6 +9710,15 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#refresh-sticker-preview')?.addEventListener('click', () => {
     void loadPrintPreviewData()
+  })
+
+  document.querySelectorAll<HTMLElement>('[data-real-zebra-print]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const labelId = button.dataset.realZebraPrint
+      if (!labelId) return
+
+      void printStickerOnZebra(labelId)
+    })
   })
 
   document.querySelectorAll<HTMLElement>('[data-simulate-print-success]').forEach((button) => {
@@ -9831,6 +10355,13 @@ window.addEventListener('popstate', async () => {
 getCustomerSessionId()
 
 async function startApp() {
+  // Alleen op de shop-computer starten.
+  // Customer/payment-test pagina's kunnen op telefoons draaien en mogen niet
+  // proberen te verbinden met de lokale printer bridge van de winkel.
+  if (screen !== 'customer' && screen !== 'payment-test') {
+    void startAutomaticPrintWorker()
+  }
+
   if (screen === 'print-preview') {
     await loadPrintPreviewData()
     return
