@@ -62,7 +62,7 @@ button:disabled {
   display: inline-block;
   margin-top: 12px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 9px;
   background: #dff7df;
   color: #185c18;
   font-weight: 700;
@@ -230,12 +230,12 @@ button:disabled {
 .qty-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 3px;
 }
 
 .qty-controls button {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 10px;
   background: #24160f;
@@ -385,7 +385,9 @@ button:disabled {
 .status-badge {
   padding: 6px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
   font-weight: 800;
   text-transform: uppercase;
   background: #eee;
@@ -486,7 +488,7 @@ button:disabled {
 
 .kitchen-order-card {
   border: 2px solid #222;
-  border-radius: 20px;
+  border-radius: 20px 20px 0 0;
   padding: 20px;
   background: #fffaf2;
 }
@@ -826,7 +828,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 950;
   border: 2px solid white;
 }
@@ -2714,8 +2716,8 @@ body,
 }
 
 .customer-page .customer-header .tea-shop-logo {
-  width: 48px;
-  height: 48px;
+  width: 22px;
+  height: 22px;
   flex-basis: 48px;
   border-radius: 12px;
 }
@@ -4082,8 +4084,8 @@ body,
 }
 
 .admin-modal-close {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   flex: 0 0 38px;
   border: none;
   border-radius: 50%;
@@ -8215,15 +8217,17 @@ body,
 
 .pos-action-dock {
   position: fixed;
+  width: auto;
   left: 50%;
-  bottom: 18px;
+  bottom: 0;
   z-index: 80;
 
   display: grid;
-  grid-template-columns: repeat(2, minmax(190px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, 72px);
+  justify-content: center;
+  gap: 6px;
 
-  width: min(520px, calc(100vw - 40px));
+  width: auto;
   padding: 10px;
 
   transform: translateX(-50%);
@@ -8238,21 +8242,24 @@ body,
 
 .pos-action-tile {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
 
-  min-width: 0;
-  min-height: 70px;
-  padding: 10px 14px;
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  min-height: 72px;
+  padding: 6px;
 
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 8px;
 
-  background: rgba(255, 255, 255, 0.06);
+  background: transparent;
   color: #ffffff;
 
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 
   transition:
@@ -8289,7 +8296,11 @@ body,
 .pos-action-copy {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
+  text-align: center;
+  line-height: 1;
 }
 
 .pos-action-copy strong {
@@ -8318,13 +8329,17 @@ body,
   }
 
   .pos-action-dock {
-    grid-template-columns: 1fr;
-    width: min(420px, calc(100vw - 24px));
-    bottom: 12px;
+    grid-template-columns: repeat(2, 72px);
+    justify-content: center;
+    width: auto;
+    bottom: 0;
   }
 
   .pos-action-tile {
-    min-height: 62px;
+    width: 72px;
+    height: 72px;
+    min-width: 72px;
+    min-height: 72px;
   }
 
   .pos-action-icon {
@@ -9975,5 +9990,161 @@ body,
 
   .history-detail-info-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ========================================================= */
+/* POS FOOTER — CLEANER / SUBTIELER                          */
+/* ========================================================= */
+
+.pos-page .pos-action-dock {
+  gap: 0;
+  padding: 5px 7px 4px;
+}
+
+.pos-page .pos-action-tile {
+  width: 72px;
+  height: 64px;
+  min-width: 72px;
+  min-height: 64px;
+  padding: 5px 8px;
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pos-page .pos-action-tile + .pos-action-tile {
+  border-left: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 0 8px 8px 0;
+}
+
+.pos-page .pos-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.pos-page .pos-action-copy {
+  gap: 0;
+}
+
+.pos-page .pos-action-copy strong {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.pos-page .pos-action-copy small {
+  display: none;
+}
+
+.pos-page .pos-action-tile:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: none;
+}
+
+
+/* ========================================================= */
+/* POS FOOTER — VOLLEDIGE BALK ONDERAAN                      */
+/* Alleen voor mode=pos / .pos-page                          */
+/* ========================================================= */
+
+.page.pos-page {
+  padding-bottom: 110px;
+}
+
+.pos-page .pos-action-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 8px 20px calc(env(safe-area-inset-bottom, 0px) + 8px);
+  border-radius: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #1e2a44;
+  box-shadow: 0 -8px 22px rgba(15, 23, 42, 0.18);
+  z-index: 100;
+}
+
+.pos-page .pos-action-tile {
+  width: 72px;
+  height: 64px;
+  min-width: 72px;
+  min-height: 64px;
+  padding: 5px 8px;
+  gap: 3px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pos-page .pos-action-tile + .pos-action-tile {
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  padding-left: 18px;
+  margin-left: 2px;
+  border-radius: 0;
+}
+
+.pos-page .pos-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-size: 14px;
+}
+
+.pos-page .pos-action-copy {
+  gap: 0;
+}
+
+.pos-page .pos-action-copy strong {
+  margin: 0;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pos-page .pos-action-copy small {
+  display: none;
+}
+
+.pos-page .pos-action-tile:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: none;
+}
+
+@media (max-width: 700px) {
+  .page.pos-page {
+    padding-bottom: 96px;
+  }
+
+  .pos-page .pos-action-dock {
+    gap: 14px;
+    padding: 7px 14px calc(env(safe-area-inset-bottom, 0px) + 7px);
+  }
+
+  .pos-page .pos-action-tile {
+    width: 68px;
+    height: 60px;
+    min-width: 68px;
+    min-height: 60px;
+  }
+
+  .pos-page .pos-action-tile + .pos-action-tile {
+    padding-left: 14px;
   }
 }

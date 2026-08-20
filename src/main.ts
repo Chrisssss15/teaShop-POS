@@ -7399,7 +7399,7 @@ function renderPos() {
           <span class="pos-action-icon" aria-hidden="true">⏱</span>
           <span class="pos-action-copy">
             <strong>Wachttijd</strong>
-            <small>Pickup scherm instellen</small>
+
           </span>
         </button>
 
@@ -7410,14 +7410,16 @@ function renderPos() {
         >
           <span class="pos-action-icon" aria-hidden="true">🧾</span>
           <span class="pos-action-copy">
-            <strong>Bonnen / Orders</strong>
-            <small>Zoek oude bestellingen</small>
+            <strong>Orders</strong>
+
           </span>
         </button>
       </nav>
     </div>
   `
 }
+
+            // <small>Zoek oude bestellingen</small>
 
 
 
