@@ -9132,74 +9132,144 @@ function renderStickerPreview(
     .map((topping) => topping.name)
     .filter(Boolean)
 
-  const modifiers = [
+  // De browserpreview gebruikt exact dezelfde teksten/truncatie als de ZPL.
+  // Alleen deze HTML-preview is aangepast; buildStickerZpl() blijft onaangeraakt.
+  const modifierText = [
     getStickerIceText(label.ice_level),
     getStickerSugarText(label.sugar_level),
     ...toppingNames,
-  ]
+  ].join(', ')
 
   const orderNumber =
     order?.order_number ||
     label.order_number ||
     label.order_id
 
-  const channelText = getStickerChannelText(order)
+  const productName = truncateZplText(label.product_name, 24)
+  const safeOrderNumber = truncateZplText(orderNumber, 28)
+  const safeChannel = truncateZplText(getStickerChannelText(order), 18)
+  const safeModifiers = truncateZplText(modifierText, 90)
   const printStatus = (label.print_status || 'pending') as PrintStatus
   const attempts = Number(label.print_attempts ?? 0)
 
   return `
     <div class="sticker-preview-item">
-      <article class="drink-sticker">
-        <div class="drink-sticker-top">
-          <div class="drink-sticker-brand">
-            <img
-              class="drink-sticker-logo"
-              src="/logo-outline.jpg"
-              alt="Blue Cup logo"
-            />
-            <div class="drink-sticker-brand-text">
-              <span>Blue Cup</span>
-              <strong>#${escapeHtml(orderNumber)}</strong>
-            </div>
-          </div>
+      <!--
+        Digitale 1-op-1 layoutweergave van de huidige Zebra ZPL:
+        canvas 400 x 344 = 50 x 43 mm @ 203 dpi.
+        De x/y-posities hieronder volgen rechtstreeks de bestaande ^FO waarden.
+      -->
+      <article
+        class="drink-sticker"
+        style="
+          position:relative;
+          display:block;
+          width:${ZEBRA_LABEL_WIDTH_DOTS}px;
+          height:${ZEBRA_LABEL_HEIGHT_DOTS}px;
+          min-width:${ZEBRA_LABEL_WIDTH_DOTS}px;
+          max-width:${ZEBRA_LABEL_WIDTH_DOTS}px;
+          min-height:${ZEBRA_LABEL_HEIGHT_DOTS}px;
+          max-height:${ZEBRA_LABEL_HEIGHT_DOTS}px;
+          margin:0;
+          padding:0;
+          overflow:hidden;
+          box-sizing:border-box;
+          background:#fff;
+          color:#000;
+          border:1px solid #d4d4d4;
+          border-radius:0;
+          font-family:Arial,Helvetica,sans-serif;
+          box-shadow:none;
+        "
+      >
+        <!-- ^FO24,18 logo: 32 x 44 dots uit dezelfde outline-afbeelding -->
+        <img
+          src="/logo-outline.jpg"
+          alt="Blue Cup logo"
+          style="
+            position:absolute;
+            left:24px;
+            top:18px;
+            width:32px;
+            height:44px;
+            display:block;
+            object-fit:contain;
+            filter:grayscale(1) contrast(2);
+          "
+        />
 
-          <div class="drink-sticker-top-right">
-            <strong>${index}/${totalLabels}</strong>
-            <span>${escapeHtml(time)}</span>
-          </div>
+        <!-- ^FO62,19^A0N,16,16 -->
+        <div style="position:absolute;left:62px;top:19px;font-size:16px;line-height:16px;font-weight:400;white-space:nowrap;">
+          Blue Cup
         </div>
 
-        <div class="drink-sticker-main">
-          <div class="drink-sticker-product">
-            ${escapeHtml(label.product_name)}
-          </div>
-
-          <div class="drink-sticker-modifiers">
-            ${modifiers.map((modifier) => escapeHtml(modifier)).join(', ')}
-          </div>
+        <!-- ^FO62,39^A0N,19,19 -->
+        <div style="position:absolute;left:62px;top:39px;width:230px;height:19px;overflow:hidden;font-size:19px;line-height:19px;font-weight:400;white-space:nowrap;">
+          #${escapeHtml(safeOrderNumber)}
         </div>
 
-        <div class="drink-sticker-lower">
-          <span class="drink-sticker-order-type">
-            ${escapeHtml(channelText)}
-          </span>
-
-          <div class="drink-sticker-qr-placeholder" aria-label="QR code">
-            ${
-              printPreviewQrDataUrl
-                ? `
-                  <img
-                    src="${printPreviewQrDataUrl}"
-                    alt="QR-code voor order ${escapeHtml(orderNumber)}"
-                    style="width:100%;height:100%;display:block;object-fit:contain;background:#fff;"
-                  />
-                `
-                : `<span>QR</span>`
-            }
-          </div>
+        <!-- ^FO334,19^A0N,22,22 -->
+        <div style="position:absolute;left:334px;top:19px;font-size:22px;line-height:22px;font-weight:400;white-space:nowrap;">
+          ${index}/${totalLabels}
         </div>
 
-        <div class="drink-sticker-footer">
+        <!-- ^FO334,45^A0N,17,17 -->
+        <div style="position:absolute;left:334px;top:45px;font-size:17px;line-height:17px;font-weight:400;white-space:nowrap;">
+          ${escapeHtml(time)}
+        </div>
+
+        <!-- ^FO22,76^GB356,2,2 -->
+        <div style="position:absolute;left:22px;top:76px;width:356px;height:2px;background:#000;"></div>
+
+        <!-- ^FO24,90^A0N,32,32^FB352,2,2 -->
+        <div style="position:absolute;left:24px;top:90px;width:352px;max-height:68px;overflow:hidden;font-size:32px;line-height:34px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
+          ${escapeHtml(productName)}
+        </div>
+
+        <!-- ^FO24,136^A0N,18,18^FB240,3,4 -->
+        <div style="position:absolute;left:24px;top:136px;width:240px;max-height:66px;overflow:hidden;font-size:18px;line-height:22px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
+          ${escapeHtml(safeModifiers)}
+        </div>
+
+        <!-- ^FO24,242^A0N,18,18 -->
+        <div style="position:absolute;left:24px;top:242px;font-size:18px;line-height:18px;font-weight:400;white-space:nowrap;">
+          ${escapeHtml(safeChannel)}
+        </div>
+
+        <!-- ^FO252,178^BQN,2,4 -->
+        <div
+          aria-label="QR code"
+          style="
+            position:absolute;
+            left:252px;
+            top:178px;
+            width:116px;
+            height:116px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            background:#fff;
+            overflow:hidden;
+          "
+        >
+          ${
+            printPreviewQrDataUrl
+              ? `
+                <img
+                  src="${printPreviewQrDataUrl}"
+                  alt="QR-code voor sticker"
+                  style="width:116px;height:116px;display:block;object-fit:fill;image-rendering:pixelated;background:#fff;"
+                />
+              `
+              : `<span style="font-size:16px;">QR</span>`
+          }
+        </div>
+
+        <!-- ^FO22,306^GB356,1,1 -->
+        <div style="position:absolute;left:22px;top:306px;width:356px;height:1px;background:#000;"></div>
+
+        <!-- ^FO24,318^A0N,13,13 -->
+        <div style="position:absolute;left:24px;top:318px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
           Powered by Blue Cup POS
         </div>
       </article>
