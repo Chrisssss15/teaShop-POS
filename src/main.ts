@@ -8529,6 +8529,164 @@ function buildStickerZpl(
 }
 
 
+function buildStickerZplFooterDesign(
+  label: KitchenLabel,
+  index: number,
+  totalLabels: number,
+  order?: Order | null,
+  flowerGraphicZpl = ''
+) {
+  const stickerTimeSource = order?.created_at || label.created_at
+
+  const time = stickerTimeSource
+    ? new Date(stickerTimeSource).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '--:--'
+
+  const toppingNames = (label.toppings ?? [])
+    .map((topping) => topping.name)
+    .filter(Boolean)
+
+  const modifierText = [
+    getStickerIceText(label.ice_level),
+    getStickerSugarText(label.sugar_level),
+    ...toppingNames,
+  ].join(', ')
+
+  const orderNumber =
+    order?.order_number ||
+    label.order_number ||
+    label.order_id
+
+  const productName = truncateZplText(label.product_name, 24)
+  const safeOrderNumber = truncateZplText(orderNumber, 28)
+  const safeChannel = truncateZplText(getStickerChannelText(order), 18)
+  const safeModifiers = truncateZplText(modifierText, 90)
+  const qrValue = sanitizeZplText('|116|L,S000,LES')
+
+  return [
+    '^XA',
+    `^PW${ZEBRA_LABEL_WIDTH_DOTS}`,
+    `^LL${ZEBRA_LABEL_HEIGHT_DOTS}`,
+    '^LH0,0',
+    '^CI28',
+
+    // Design 2/3/4: productinformatie bovenin, zonder originele header.
+    `^FO24,28^A0N,32,32^FB352,2,2,L,0^FD${productName}^FS`,
+    `^FO24,68^A0N,18,18^FB240,3,4,L,0^FD${safeModifiers}^FS`,
+
+    // Kanaal + QR.
+    `^FO24,188^A0N,18,18^FD${safeChannel}^FS`,
+    `^FO252,122^BQN,2,4^FDLA,${qrValue}^FS`,
+
+    // Optionele decoratie voor design 4.
+    flowerGraphicZpl,
+
+    // Onderste scheidingslijn en orderinformatie.
+    '^FO22,270^GB356,1,1^FS',
+    '^FO24,278^GFA,176,176,4,000000380000F07C0007F8C4003E0E4C01F0077C0F8001B01C000F0030007E3C2001EF6C600F19FC407C11B8C3E011809F001F80F8000F0047FFFF803F8000C0600000C0C00000C0C00000C040000080400000806000018060000180600001806000018020000100200001003000030030000300300003003000020010000200100006001800060018000600180006001800040008000C0008000C000C000C000600380003FFF00000FFC00000000000^FS',
+    '^FO64,278^A0N,12,12^FDBlue Cup^FS',
+    `^FO64,296^A0N,12,12^FB230,1,0,L,0^FD#${safeOrderNumber}^FS`,
+    `^FO340,278^A0N,12,12^FD${index}/${totalLabels}^FS`,
+    `^FO332,296^A0N,12,12^FD${sanitizeZplText(time)}^FS`,
+    '^FO24,320^A0N,13,13^FDPowered by Blue Cup POS^FS',
+    '^XZ',
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+async function buildFlowerGraphicZpl() {
+  const image = new Image()
+  image.src = '/flower1-removebg.jpg'
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error('flower1-removebg.jpg kon niet worden geladen.'))
+  })
+
+  const width = 54
+  const height = 54
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Canvas voor flower-afbeelding kon niet worden gemaakt.')
+  }
+
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+  context.drawImage(image, 0, 0, width, height)
+
+  const pixels = context.getImageData(0, 0, width, height).data
+  const bytesPerRow = Math.ceil(width / 8)
+  let hex = ''
+
+  for (let y = 0; y < height; y += 1) {
+    for (let byteIndex = 0; byteIndex < bytesPerRow; byteIndex += 1) {
+      let value = 0
+
+      for (let bit = 0; bit < 8; bit += 1) {
+        const x = byteIndex * 8 + bit
+        if (x >= width) continue
+
+        const pixelIndex = (y * width + x) * 4
+        const red = pixels[pixelIndex]
+        const green = pixels[pixelIndex + 1]
+        const blue = pixels[pixelIndex + 2]
+        const alpha = pixels[pixelIndex + 3]
+        const brightness = (red + green + blue) / 3
+
+        if (alpha > 30 && brightness < 210) {
+          value |= 1 << (7 - bit)
+        }
+      }
+
+      hex += value.toString(16).padStart(2, '0').toUpperCase()
+    }
+  }
+
+  const totalBytes = bytesPerRow * height
+  return `^FO198,132^GFA,${totalBytes},${totalBytes},${bytesPerRow},${hex}^FS`
+}
+
+async function buildPreviewStickerZpl(
+  design: number,
+  label: KitchenLabel,
+  index: number,
+  totalLabels: number,
+  order?: Order | null
+) {
+  // BELANGRIJK: Design 1 blijft exact de bestaande productiesticker gebruiken.
+  if (design === 1) {
+    return buildStickerZpl(label, index, totalLabels, order)
+  }
+
+  // Design 2 gebruikt de footer-layout.
+  if (design === 2) {
+    return buildStickerZplFooterDesign(label, index, totalLabels, order)
+  }
+
+  // Design 3 gebruikt dezelfde footer-layout plus de flower-afbeelding naast de QR.
+  if (design === 3) {
+    const flowerGraphicZpl = await buildFlowerGraphicZpl()
+    return buildStickerZplFooterDesign(
+      label,
+      index,
+      totalLabels,
+      order,
+      flowerGraphicZpl
+    )
+  }
+
+  return buildStickerZpl(label, index, totalLabels, order)
+}
+
+
 function isOrderReadyForAutomaticPrint(order: Order) {
   if (order.status === 'cancelled') {
     return false
@@ -8838,7 +8996,7 @@ async function startAutomaticPrintWorker() {
     })
 }
 
-async function printStickerOnZebra(labelId: string) {
+async function printStickerOnZebra(labelId: string, design = 1) {
   const labelIndex = printPreviewLabels.findIndex(
     (item) => String(item.id) === String(labelId)
   )
@@ -8868,7 +9026,8 @@ async function printStickerOnZebra(labelId: string) {
   await loadPrintPreviewData(false)
 
   try {
-    const zpl = buildStickerZpl(
+    const zpl = await buildPreviewStickerZpl(
+      design,
       label,
       labelIndex + 1,
       printPreviewLabels.length,
@@ -9166,7 +9325,8 @@ function renderStickerPreview(
   label: KitchenLabel,
   index: number,
   totalLabels: number,
-  order?: Order | null
+  order?: Order | null,
+  variant: 'default' | 'footer-info' | 'footer-info-flower' = 'default'
 ) {
   const stickerTimeSource = order?.created_at || label.created_at
 
@@ -9200,6 +9360,12 @@ function renderStickerPreview(
   const safeModifiers = truncateZplText(modifierText, 90)
   const printStatus = (label.print_status || 'pending') as PrintStatus
   const attempts = Number(label.print_attempts ?? 0)
+  const previewDesign =
+    variant === 'default'
+      ? 1
+      : variant === 'footer-info'
+        ? 2
+        : 3
 
   return `
     <div class="sticker-preview-item">
@@ -9231,57 +9397,59 @@ function renderStickerPreview(
           box-shadow:none;
         "
       >
-        <!-- ^FO24,18 logo: 32 x 44 dots uit dezelfde outline-afbeelding -->
-        <img
-          src="/logo-outline.jpg"
-          alt="Blue Cup logo"
-          style="
-            position:absolute;
-            left:24px;
-            top:18px;
-            width:32px;
-            height:44px;
-            display:block;
-            object-fit:contain;
-            filter:grayscale(1) contrast(2);
-          "
-        />
+        ${
+          variant === 'default'
+            ? `
+              <!-- Originele header -->
+              <img
+                src="/logo-outline.jpg"
+                alt="Blue Cup logo"
+                style="
+                  position:absolute;
+                  left:24px;
+                  top:18px;
+                  width:32px;
+                  height:44px;
+                  display:block;
+                  object-fit:contain;
+                  filter:grayscale(1) contrast(2);
+                "
+              />
 
-        <!-- ^FO62,19^A0N,16,16 -->
-        <div style="position:absolute;left:62px;top:19px;font-size:16px;line-height:16px;font-weight:400;white-space:nowrap;">
-          Blue Cup
-        </div>
+              <div style="position:absolute;left:62px;top:19px;font-size:16px;line-height:16px;font-weight:400;white-space:nowrap;">
+                Blue Cup
+              </div>
 
-        <!-- ^FO62,39^A0N,19,19 -->
-        <div style="position:absolute;left:62px;top:39px;width:230px;height:19px;overflow:hidden;font-size:19px;line-height:19px;font-weight:400;white-space:nowrap;">
-          #${escapeHtml(safeOrderNumber)}
-        </div>
+              <div style="position:absolute;left:62px;top:39px;width:230px;height:19px;overflow:hidden;font-size:19px;line-height:19px;font-weight:400;white-space:nowrap;">
+                #${escapeHtml(safeOrderNumber)}
+              </div>
 
-        <!-- ^FO334,19^A0N,22,22 -->
-        <div style="position:absolute;left:334px;top:19px;font-size:22px;line-height:22px;font-weight:400;white-space:nowrap;">
-          ${index}/${totalLabels}
-        </div>
+              <div style="position:absolute;left:334px;top:19px;font-size:22px;line-height:22px;font-weight:400;white-space:nowrap;">
+                ${index}/${totalLabels}
+              </div>
 
-        <!-- ^FO334,45^A0N,17,17 -->
-        <div style="position:absolute;left:334px;top:45px;font-size:17px;line-height:17px;font-weight:400;white-space:nowrap;">
-          ${escapeHtml(time)}
-        </div>
+              <div style="position:absolute;left:334px;top:45px;font-size:17px;line-height:17px;font-weight:400;white-space:nowrap;">
+                ${escapeHtml(time)}
+              </div>
+            `
+            : ''
+        }
 
         <!-- ^FO22,76^GB356,2,2 -->
-        <div style="position:absolute;left:22px;top:76px;width:356px;height:2px;background:#000;"></div>
+        ${variant === 'footer-info' || variant === 'footer-info-flower' ? '' : '<div style="position:absolute;left:22px;top:76px;width:356px;height:2px;background:#000;"></div>'}
 
         <!-- ^FO24,90^A0N,32,32^FB352,2,2 -->
-        <div style="position:absolute;left:24px;top:90px;width:352px;max-height:68px;overflow:hidden;font-size:32px;line-height:34px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
+        <div style="position:absolute;left:24px;top:${variant === 'footer-info' || variant === 'footer-info-flower' ? 28 : 90}px;width:352px;max-height:68px;overflow:hidden;font-size:32px;line-height:34px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
           ${escapeHtml(productName)}
         </div>
 
         <!-- ^FO24,136^A0N,18,18^FB240,3,4 -->
-        <div style="position:absolute;left:24px;top:136px;width:240px;max-height:66px;overflow:hidden;font-size:18px;line-height:22px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
+        <div style="position:absolute;left:24px;top:${variant === 'footer-info' || variant === 'footer-info-flower' ? 68 : 136}px;width:240px;max-height:66px;overflow:hidden;font-size:18px;line-height:22px;font-weight:400;white-space:normal;overflow-wrap:break-word;">
           ${escapeHtml(safeModifiers)}
         </div>
 
         <!-- ^FO24,242^A0N,18,18 -->
-        <div style="position:absolute;left:24px;top:242px;font-size:18px;line-height:18px;font-weight:400;white-space:nowrap;">
+        <div style="position:absolute;left:24px;top:${variant === 'footer-info' || variant === 'footer-info-flower' ? 188 : 242}px;font-size:18px;line-height:18px;font-weight:400;white-space:nowrap;">
           ${escapeHtml(safeChannel)}
         </div>
 
@@ -9291,7 +9459,7 @@ function renderStickerPreview(
           style="
             position:absolute;
             left:252px;
-            top:178px;
+            top:${variant === 'footer-info' || variant === 'footer-info-flower' ? 122 : 178}px;
             width:116px;
             height:116px;
             display:flex;
@@ -9314,13 +9482,103 @@ function renderStickerPreview(
           }
         </div>
 
-        <!-- ^FO22,306^GB356,1,1 -->
-        <div style="position:absolute;left:22px;top:306px;width:356px;height:1px;background:#000;"></div>
+        ${
+          variant === 'footer-info-flower'
+            ? `
+              <img
+                src="/flower1-removebg.jpg"
+                alt="Flower decor"
+                style="
+                  position:absolute;
+                  left:202px;
+                  top:132px;
+                  width:54px;
+                  height:54px;
+                  display:block;
+                  object-fit:contain;
+                "
+              />
+            `
+            : ''
+        }
 
-        <!-- ^FO24,318^A0N,13,13 -->
-        <div style="position:absolute;left:24px;top:318px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
-          Powered by Blue Cup POS
-        </div>
+        ${
+          variant === 'footer-info' || variant === 'footer-info-flower'
+            ? `
+              <!-- Design 2: zwarte lijn hoger, orderinformatie eronder -->
+              <div style="position:absolute;left:22px;top:270px;width:356px;height:1px;background:#000;"></div>
+
+              <div
+                style="
+                  position:absolute;
+                  left:24px;
+                  right:24px;
+                  top:278px;
+                  display:flex;
+                  align-items:flex-start;
+                  justify-content:space-between;
+                  gap:16px;
+                "
+              >
+                <div style="display:flex;align-items:flex-start;gap:8px;min-width:0;">
+                  <img
+                    src="/logo-outline.jpg"
+                    alt="Blue Cup logo"
+                    style="
+                      width:24px;
+                      height:32px;
+                      display:block;
+                      object-fit:contain;
+                      filter:grayscale(1) contrast(2);
+                      flex:0 0 auto;
+                    "
+                  />
+
+                  <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+                    <div style="font-size:12px;line-height:12px;font-weight:400;white-space:nowrap;">
+                      Blue Cup
+                    </div>
+
+                    <div style="max-width:210px;overflow:hidden;text-overflow:clip;font-size:12px;line-height:13px;font-weight:400;white-space:nowrap;">
+                      #${escapeHtml(safeOrderNumber)}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  style="
+                    display:flex;
+                    flex-direction:column;
+                    align-items:flex-end;
+                    justify-content:flex-start;
+                    gap:4px;
+                    flex:0 0 auto;
+                    min-width:42px;
+                  "
+                >
+                  <div style="font-size:12px;line-height:12px;font-weight:400;white-space:nowrap;">
+                    ${index}/${totalLabels}
+                  </div>
+
+                  <div style="font-size:12px;line-height:13px;font-weight:400;white-space:nowrap;">
+                    ${escapeHtml(time)}
+                  </div>
+                </div>
+              </div>
+
+              <div style="position:absolute;left:24px;top:320px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
+                Powered by Blue Cup POS
+              </div>
+            `
+            : `
+              <!-- Originele footer van design 1 -->
+              <div style="position:absolute;left:22px;top:306px;width:356px;height:1px;background:#000;"></div>
+
+              <div style="position:absolute;left:24px;top:318px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
+                Powered by Blue Cup POS
+              </div>
+            `
+        }
       </article>
 
       <div
@@ -9382,6 +9640,7 @@ function renderStickerPreview(
                   type="button"
                   class="small-btn"
                   data-real-zebra-print="${label.id}"
+                  data-sticker-design="${previewDesign}"
                   style="font-size:11px;padding:7px 10px;background:#1f6b34;"
                 >
                   Echt printen op Zebra
@@ -9421,6 +9680,7 @@ function renderStickerPreview(
                   type="button"
                   class="small-btn"
                   data-real-zebra-print="${label.id}"
+                  data-sticker-design="${previewDesign}"
                   style="font-size:11px;padding:7px 10px;background:#1f6b34;"
                 >
                   Opnieuw echt printen
@@ -9445,6 +9705,7 @@ function renderStickerPreview(
                   type="button"
                   class="nav-btn"
                   data-real-zebra-print="${label.id}"
+                  data-sticker-design="${previewDesign}"
                   style="font-size:11px;padding:7px 10px;"
                 >
                   Reprint op Zebra
@@ -9514,14 +9775,29 @@ function renderPrintPreview() {
               : `
                 <div class="sticker-preview-grid">
                   ${printPreviewLabels
-                    .map((label, index) =>
+                    .flatMap((label, index) => [
                       renderStickerPreview(
                         label,
                         index + 1,
                         printPreviewLabels.length,
-                        printPreviewOrder
-                      )
-                    )
+                        printPreviewOrder,
+                        'default'
+                      ),
+                      renderStickerPreview(
+                        label,
+                        index + 1,
+                        printPreviewLabels.length,
+                        printPreviewOrder,
+                        'footer-info'
+                      ),
+                      renderStickerPreview(
+                        label,
+                        index + 1,
+                        printPreviewLabels.length,
+                        printPreviewOrder,
+                        'footer-info-flower'
+                      ),
+                    ])
                     .join('')}
                 </div>
               `
@@ -9834,9 +10110,10 @@ function bindEvents() {
   document.querySelectorAll<HTMLElement>('[data-real-zebra-print]').forEach((button) => {
     button.addEventListener('click', () => {
       const labelId = button.dataset.realZebraPrint
+      const design = Number(button.dataset.stickerDesign || 1)
       if (!labelId) return
 
-      void printStickerOnZebra(labelId)
+      void printStickerOnZebra(labelId, design)
     })
   })
 
