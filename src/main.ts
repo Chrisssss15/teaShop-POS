@@ -7275,8 +7275,8 @@ function renderPosWaitSettingsModal() {
       <div class="pos-wait-modal" role="dialog" aria-modal="true">
         <div class="pos-wait-modal-header">
           <div>
-            <p class="eyebrow">Pickup scherm</p>
-            <h2>Wachttijd instellen</h2>
+            <p class="eyebrow">POS</p>
+            <h2>Instellingen</h2>
           </div>
 
           <button
@@ -7290,6 +7290,11 @@ function renderPosWaitSettingsModal() {
         </div>
 
         <div class="pos-wait-modal-body">
+          <div class="pos-settings-section-heading">
+            <strong>Pickup & wachttijd</strong>
+            <p>Beheer wat klanten op het pickup-scherm zien.</p>
+          </div>
+
           <div class="pos-wait-setting-row">
             <div>
               <strong>Wachttijd zichtbaar</strong>
@@ -7353,6 +7358,77 @@ function renderPosWaitSettingsModal() {
   `
 }
 
+function renderStaffBottomBar(grouped?: Record<string, Product[]>) {
+  const categoryButtons = grouped
+    ? getOrderedCategoryNames(grouped)
+        .filter(
+          (category) =>
+            category !== DISCOUNT_CATEGORY_KEY &&
+            category !== BESTSELLER_CATEGORY_KEY &&
+            getCategoryDisplayName(category).trim().toLowerCase() !== 'test'
+        )
+        .map((category) => {
+          const originalIndex = getOrderedCategoryNames(grouped).indexOf(category)
+
+          return `
+            <button
+              type="button"
+              class="pos-footer-category-btn"
+              data-pos-footer-category="${originalIndex}"
+              title="${escapeHtml(getCategoryDisplayName(category))}"
+            >
+              <span class="pos-footer-category-icon" aria-hidden="true">🧋</span>
+              <strong>${escapeHtml(getCategoryDisplayName(category))}</strong>
+            </button>
+          `
+        })
+        .join('')
+    : ''
+
+  return `
+    <nav class="pos-action-dock" aria-label="POS snelmenu">
+      ${
+        categoryButtons
+          ? `
+            <div class="pos-footer-categories" aria-label="Categorieën">
+              ${categoryButtons}
+            </div>
+          `
+          : ''
+      }
+
+      <div class="pos-footer-actions">
+        <button
+          type="button"
+          class="pos-action-tile"
+          id="go-order-history"
+          aria-label="Orders"
+        >
+          <span class="pos-action-icon" aria-hidden="true">🧾</span>
+          <span class="pos-action-copy">
+            <strong>Orders</strong>
+            <small>Zoek oude bestellingen</small>
+          </span>
+        </button>
+
+        <button
+          type="button"
+          class="pos-action-tile"
+          id="pos-wait-settings"
+          aria-label="Instellingen"
+        >
+          <span class="pos-action-icon" aria-hidden="true">⚙️</span>
+          <span class="pos-action-copy">
+            <strong>Instellingen</strong>
+            <small>POS instellingen</small>
+          </span>
+        </button>
+      </div>
+    </nav>
+  `
+}
+
+
 // =============================
 // RENDER: STAFF POS
 // =============================
@@ -7390,36 +7466,10 @@ function renderPos() {
         ${renderCart(false)}
       </main>
 
-      <nav class="pos-action-dock" aria-label="POS snelmenu">
-        <button
-          type="button"
-          class="pos-action-tile"
-          id="pos-wait-settings"
-        >
-          <span class="pos-action-icon" aria-hidden="true">⏱</span>
-          <span class="pos-action-copy">
-            <strong>Wachttijd</strong>
-
-          </span>
-        </button>
-
-        <button
-          type="button"
-          class="pos-action-tile"
-          id="go-order-history"
-        >
-          <span class="pos-action-icon" aria-hidden="true">🧾</span>
-          <span class="pos-action-copy">
-            <strong>Orders</strong>
-
-          </span>
-        </button>
-      </nav>
+      ${renderStaffBottomBar(grouped)}
     </div>
   `
 }
-
-            // <small>Zoek oude bestellingen</small>
 
 
 
@@ -7762,13 +7812,7 @@ function renderOrderHistory() {
           </div>
         </div>
 
-        <button
-          type="button"
-          class="secondary-btn"
-          id="history-back-pos"
-        >
-          ← Terug naar POS
-        </button>
+
       </header>
 
       <section class="history-panel">
@@ -7827,6 +7871,9 @@ function renderOrderHistory() {
               `
         }
       </section>
+
+      ${renderPosWaitSettingsModal()}
+      ${renderStaffBottomBar()}
     </div>
   `
 }
@@ -9827,6 +9874,21 @@ function bindEvents() {
       if (!language) return
 
       setCustomerLanguage(language)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-pos-footer-category]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const categoryIndex = button.dataset.posFooterCategory
+      if (categoryIndex === undefined) return
+
+      const target = document.querySelector<HTMLElement>(`#category-${categoryIndex}`)
+      if (!target) return
+
+      target.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
     })
   })
 
