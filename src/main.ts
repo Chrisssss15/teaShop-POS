@@ -21,6 +21,7 @@ type Product = {
   name: string
   category: string
   base_price: number
+  vat_rate: number
   is_active: boolean
   is_bestseller: boolean
   is_sold_out: boolean
@@ -129,7 +130,59 @@ type Payment = {
   updated_at?: string | null
   paid_at?: string | null
   failed_at?: string | null
+  refund_amount?: number | null
+  refund_reason?: string | null
+  refunded_at?: string | null
+  refunded_by?: string | null
 }
+type CashSession = {
+  id: string
+  opened_at: string
+  closed_at?: string | null
+  opening_amount: number
+  expected_amount?: number | null
+  counted_amount?: number | null
+  difference_amount?: number | null
+  opened_by?: string | null
+  closed_by?: string | null
+  status: string
+  created_at?: string | null
+}
+
+
+type DailyClosing = {
+  id: string
+  business_date: string
+  closed_at: string
+  closed_by?: string | null
+  cash_session_id?: string | null
+  order_count?: number | null
+  gross_sales?: number | null
+  net_sales?: number | null
+  vat_total?: number | null
+  cash_sales?: number | null
+  card_sales?: number | null
+  online_sales?: number | null
+  refund_total?: number | null
+  cash_in?: number | null
+  cash_out?: number | null
+  opening_amount?: number | null
+  expected_amount?: number | null
+  counted_amount?: number | null
+  difference_amount?: number | null
+  created_at?: string | null
+}
+
+type DailyClosingVat = {
+  id?: string
+  daily_closing_id: string
+  vat_rate: number
+  gross_amount: number
+  net_amount: number
+  vat_amount: number
+  created_at?: string | null
+}
+
 type CustomerLanguage = 'nl' | 'en' | 'cn'
 
 type Order = {
@@ -141,6 +194,9 @@ type Order = {
   subtotal?: number | null
   total?: number | null
   total_amount?: number | null
+  net_total?: number | null
+  vat_total?: number | null
+  gross_total?: number | null
   payment_status?: PaymentStatus | null
   payment_method?: PaymentMethod | null
   paid_at?: string | null
@@ -152,6 +208,8 @@ type Order = {
   updated_at?: string | null
   completed_at?: string | null
   cancelled_at?: string | null
+  cancel_reason?: string | null
+  cancelled_by?: string | null
 }
 
 type OrderItem = {
@@ -160,9 +218,17 @@ type OrderItem = {
   product_id?: string | null
   product_name?: string | null
   product_name_snapshot?: string | null
+  original_unit_price?: number | null
   unit_price?: number | null
+  discount_type_snapshot?: DiscountType | null
+  discount_value_snapshot?: number | null
+  discount_amount?: number | null
   quantity: number
   line_total?: number | null
+  vat_rate?: number | null
+  net_amount?: number | null
+  vat_amount?: number | null
+  gross_amount?: number | null
   cup_size?: CupSize | null
   ice_level?: IceLevel | null
   sugar_level?: SugarLevel | null
@@ -590,6 +656,14 @@ let adminTodayOrderItems: OrderItem[] = []
 let adminSalesOrders: Order[] = []
 let adminSalesOrderItems: OrderItem[] = []
 let adminSalesRange: 'today' | '7d' | '30d' | 'all' = 'today'
+let activeCashSession: CashSession | null = null
+let adminDailyClosing: DailyClosing | null = null
+let adminDailyClosingVat: DailyClosingVat[] = []
+let adminDailyClosingHistory: DailyClosing[] = []
+let adminDailyClosingDateFilter = ''
+let adminSelectedDailyClosing: DailyClosing | null = null
+let adminSelectedDailyClosingVat: DailyClosingVat[] = []
+let isLoadingDailyClosingHistory = false
 let isLoadingAdminSales = false
 
 let bestSellerSales: Record<string, number> = {}
@@ -1212,6 +1286,10 @@ function getPaymentProviderLabel(payment: Payment | null) {
     return 'MultiSafepay'
   }
 
+  if (payment.provider === 'pos') {
+    return 'POS'
+  }
+
   return payment.provider || '-'
 }
 
@@ -1745,6 +1823,79 @@ function getCartItemLineTotal(item: CartItem) {
   return getCartItemUnitPrice(item) * item.quantity
 }
 
+// =============================
+// FISCAL / VAT HELPERS
+// Prices in the POS are stored and shown including VAT.
+// =============================
+
+function roundMoney(value: number) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100
+}
+
+function getProductVatRate(product: Product) {
+  const rate = Number(product.vat_rate ?? 9)
+
+  if (!Number.isFinite(rate) || rate < 0) {
+    return 9
+  }
+
+  return rate
+}
+
+function getCartItemOriginalUnitPrice(item: CartItem) {
+  const originalSizePrice = getProductSizePrice(item.product, item.cupSize)
+  const toppingsTotal = getToppingsTotal(item)
+
+  return roundMoney(originalSizePrice + toppingsTotal)
+}
+
+function getCartItemDiscountAmount(item: CartItem) {
+  const originalUnitPrice = getCartItemOriginalUnitPrice(item)
+  const finalUnitPrice = roundMoney(getCartItemUnitPrice(item))
+
+  return roundMoney(Math.max(0, originalUnitPrice - finalUnitPrice))
+}
+
+function getCartItemTaxAmounts(item: CartItem) {
+  const grossAmount = roundMoney(getCartItemLineTotal(item))
+  const vatRate = getProductVatRate(item.product)
+
+  const vatAmount =
+    vatRate > 0
+      ? roundMoney(grossAmount * (vatRate / (100 + vatRate)))
+      : 0
+
+  const netAmount = roundMoney(grossAmount - vatAmount)
+
+  return {
+    vatRate,
+    grossAmount,
+    vatAmount,
+    netAmount,
+  }
+}
+
+function getCartTaxTotals() {
+  const totals = cart.reduce(
+    (result, item) => {
+      const amounts = getCartItemTaxAmounts(item)
+
+      result.netTotal += amounts.netAmount
+      result.vatTotal += amounts.vatAmount
+      result.grossTotal += amounts.grossAmount
+
+      return result
+    },
+    { netTotal: 0, vatTotal: 0, grossTotal: 0 }
+  )
+
+  return {
+    netTotal: roundMoney(totals.netTotal),
+    vatTotal: roundMoney(totals.vatTotal),
+    grossTotal: roundMoney(totals.grossTotal),
+  }
+}
+
 function getTotal() {
   return cart.reduce((sum, item) => sum + getCartItemLineTotal(item), 0)
 }
@@ -2248,11 +2399,40 @@ function makePickupCode() {
 async function submitOrder(paymentMethod: PaymentMethod) {
   if (cart.length === 0 || isSubmitting) return
 
+  // Cashbetalingen mogen alleen wanneer er een kassasessie open staat.
+  // We lezen dit rechtstreeks uit Supabase zodat dit ook werkt als de POS
+  // net is geopend en Admin nog niet bezocht is.
+  let cashSessionForSale: CashSession | null = null
+
+  if (paymentMethod === 'cash') {
+    const { data: cashSessionData, error: cashSessionError } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (cashSessionError) {
+      message = `Open kas controleren mislukt: ${cashSessionError.message}`
+      render()
+      return
+    }
+
+    if (!cashSessionData) {
+      window.alert('Open eerst de kas in Admin voordat je contant afrekent.')
+      return
+    }
+
+    cashSessionForSale = cashSessionData as CashSession
+  }
+
   isSubmitting = true
   message = ''
   render()
 
-  const total = getTotal()
+  const taxTotals = getCartTaxTotals()
+  const total = taxTotals.grossTotal
   const orderNumber = makeOrderNumber()
   const now = new Date().toISOString()
 
@@ -2265,6 +2445,9 @@ async function submitOrder(paymentMethod: PaymentMethod) {
       channel: 'pos',
       subtotal: total,
       total: total,
+      net_total: taxTotals.netTotal,
+      vat_total: taxTotals.vatTotal,
+      gross_total: taxTotals.grossTotal,
       payment_status: 'paid',
       payment_method: paymentMethod,
       paid_at: now,
@@ -2279,19 +2462,34 @@ async function submitOrder(paymentMethod: PaymentMethod) {
     return
   }
 
-  const orderItemsPayload = cart.map((item) => ({
-    order_id: orderData.id,
-    product_id: item.product.id,
-    product_name: item.product.name,
-    product_name_snapshot: item.product.name,
-    unit_price: getCartItemUnitPrice(item),
-    quantity: item.quantity,
-    line_total: getCartItemLineTotal(item),
-    cup_size: item.cupSize,
-    ice_level: item.iceLevel,
-    sugar_level: item.sugarLevel,
-    toppings: item.toppings,
-  }))
+  const orderItemsPayload = cart.map((item) => {
+    const tax = getCartItemTaxAmounts(item)
+    const discount = getProductDiscount(item.product)
+
+    return {
+      order_id: orderData.id,
+      product_id: item.product.id,
+      product_name: item.product.name,
+      product_name_snapshot: item.product.name,
+      original_unit_price: getCartItemOriginalUnitPrice(item),
+      unit_price: roundMoney(getCartItemUnitPrice(item)),
+      discount_type_snapshot: discount.type,
+      discount_value_snapshot: roundMoney(discount.value),
+      discount_amount: roundMoney(
+        getCartItemDiscountAmount(item) * item.quantity
+      ),
+      quantity: item.quantity,
+      line_total: tax.grossAmount,
+      vat_rate: tax.vatRate,
+      net_amount: tax.netAmount,
+      vat_amount: tax.vatAmount,
+      gross_amount: tax.grossAmount,
+      cup_size: item.cupSize,
+      ice_level: item.iceLevel,
+      sugar_level: item.sugarLevel,
+      toppings: item.toppings,
+    }
+  })
 
   const { data: savedOrderItems, error: itemsError } = await supabase
     .from('order_items')
@@ -2303,6 +2501,52 @@ async function submitOrder(paymentMethod: PaymentMethod) {
     message = `Fout bij opslaan orderregels: ${itemsError.message}`
     render()
     return
+  }
+
+  const paymentAmountCents = Math.max(0, Math.round(total * 100))
+
+  const { data: paymentRecord, error: paymentRecordError } = await supabase
+    .from('payments')
+    .insert({
+      order_id: orderData.id,
+      provider: 'pos',
+      provider_order_id: `POS-${orderNumber}`,
+      amount: paymentAmountCents,
+      currency: 'EUR',
+      status: 'paid',
+      payment_method: paymentMethod,
+      payment_url: null,
+      failure_reason: null,
+      paid_at: now,
+    })
+    .select('*')
+    .single()
+
+  if (paymentRecordError) {
+    console.error('POS payment-record opslaan mislukt:', paymentRecordError)
+  }
+
+  // Bij een cashbetaling registreren we de geldbeweging in de open kas.
+  if (paymentMethod === 'cash' && cashSessionForSale) {
+    if (!paymentRecord) {
+      console.error('Cash movement niet opgeslagen: payment-record ontbreekt.')
+    } else {
+      const { error: cashMovementError } = await supabase
+        .from('cash_movements')
+        .insert({
+          cash_session_id: cashSessionForSale.id,
+          movement_type: 'sale',
+          amount: paymentAmountCents,
+          order_id: orderData.id,
+          payment_id: paymentRecord.id,
+          reason: `Contante verkoop ${orderNumber}`,
+          actor: 'staff',
+        })
+
+      if (cashMovementError) {
+        console.error('Cash movement opslaan mislukt:', cashMovementError)
+      }
+    }
   }
 
   const labelError = await createKitchenLabelsForOrder(
@@ -2351,7 +2595,8 @@ async function submitCustomerOrder() {
   message = ''
   render()
 
-  const total = getTotal()
+  const taxTotals = getCartTaxTotals()
+  const total = taxTotals.grossTotal
   const orderNumber = makeOrderNumber()
   const pickupCode = makePickupCode()
   const now = new Date().toISOString()
@@ -2371,6 +2616,9 @@ async function submitCustomerOrder() {
       channel: 'qr',
       subtotal: total,
       total: total,
+      net_total: taxTotals.netTotal,
+      vat_total: taxTotals.vatTotal,
+      gross_total: taxTotals.grossTotal,
       payment_status: paymentStatus,
       payment_method: customerPaymentMethod,
       paid_at: paidAt,
@@ -2389,19 +2637,34 @@ async function submitCustomerOrder() {
     return
   }
 
-  const orderItemsPayload = cart.map((item) => ({
-    order_id: orderData.id,
-    product_id: item.product.id,
-    product_name: item.product.name,
-    product_name_snapshot: item.product.name,
-    unit_price: getCartItemUnitPrice(item),
-    quantity: item.quantity,
-    line_total: getCartItemLineTotal(item),
-    cup_size: item.cupSize,
-    ice_level: item.iceLevel,
-    sugar_level: item.sugarLevel,
-    toppings: item.toppings,
-  }))
+  const orderItemsPayload = cart.map((item) => {
+    const tax = getCartItemTaxAmounts(item)
+    const discount = getProductDiscount(item.product)
+
+    return {
+      order_id: orderData.id,
+      product_id: item.product.id,
+      product_name: item.product.name,
+      product_name_snapshot: item.product.name,
+      original_unit_price: getCartItemOriginalUnitPrice(item),
+      unit_price: roundMoney(getCartItemUnitPrice(item)),
+      discount_type_snapshot: discount.type,
+      discount_value_snapshot: roundMoney(discount.value),
+      discount_amount: roundMoney(
+        getCartItemDiscountAmount(item) * item.quantity
+      ),
+      quantity: item.quantity,
+      line_total: tax.grossAmount,
+      vat_rate: tax.vatRate,
+      net_amount: tax.netAmount,
+      vat_amount: tax.vatAmount,
+      gross_amount: tax.grossAmount,
+      cup_size: item.cupSize,
+      ice_level: item.iceLevel,
+      sugar_level: item.sugarLevel,
+      toppings: item.toppings,
+    }
+  })
 
   const { data: savedOrderItems, error: itemsError } = await supabase
     .from('order_items')
@@ -2781,7 +3044,115 @@ async function createKitchenLabelsForOrder(
 // ORDERS: STATUS UPDATES
 // =============================
 
+async function cancelOrderWithAudit(orderId: string) {
+  const currentOrder = orders.find(
+    (order) => String(order.id) === String(orderId)
+  )
+
+  if (!currentOrder) {
+    message = 'Order niet gevonden.'
+    render()
+    return
+  }
+
+  if (currentOrder.status === 'cancelled') {
+    message = 'Deze order is al geannuleerd.'
+    render()
+    return
+  }
+
+  const reasonInput = window.prompt(
+    'Waarom wordt deze bestelling geannuleerd?\n\nVul een korte reden in.'
+  )
+
+  if (reasonInput === null) {
+    return
+  }
+
+  const reason = reasonInput.trim()
+
+  if (!reason) {
+    message = 'Annuleren gestopt: een reden is verplicht.'
+    render()
+    return
+  }
+
+  const now = new Date().toISOString()
+  const actor = 'staff'
+  const previousStatus = currentOrder.status
+
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update({
+      status: 'cancelled',
+      cancelled_at: now,
+      cancel_reason: reason,
+      cancelled_by: actor,
+      updated_at: now,
+    })
+    .eq('id', orderId)
+
+  if (orderError) {
+    message = `Order annuleren mislukt: ${orderError.message}`
+    render()
+    return
+  }
+
+  // Zorg dat kitchen labels niet later de orderstatus opnieuw veranderen.
+  const { error: labelError } = await supabase
+    .from('kitchen_labels')
+    .update({
+      status: 'cancelled',
+      cancelled_at: now,
+    })
+    .eq('order_id', orderId)
+    .neq('status', 'cancelled')
+
+  if (labelError) {
+    console.error('Kitchen labels annuleren mislukt:', labelError)
+  }
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: 'ORDER_CANCELLED',
+      entity_type: 'order',
+      entity_id: orderId,
+      old_data: {
+        status: previousStatus,
+      },
+      new_data: {
+        status: 'cancelled',
+        cancelled_at: now,
+        cancel_reason: reason,
+        cancelled_by: actor,
+      },
+      reason,
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Auditlog opslaan mislukt:', auditError)
+    message = `Order is geannuleerd, maar auditlog opslaan mislukte: ${auditError.message}`
+  } else if (labelError) {
+    message = 'Order is geannuleerd. Let op: kitchen labels konden niet allemaal worden bijgewerkt.'
+  } else {
+    message = 'Order geannuleerd en auditlog opgeslagen.'
+  }
+
+  if (screen === 'orders') {
+    await loadOrders()
+  } else {
+    render()
+  }
+}
+
 async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
+  if (nextStatus === 'cancelled') {
+    await cancelOrderWithAudit(orderId)
+    return
+  }
+
   const currentOrder = orders.find(
     (order) => String(order.id) === String(orderId)
   )
@@ -2820,11 +3191,7 @@ async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
     updateData.completed_at = null
   }
 
-  if (nextStatus === 'cancelled') {
-    updateData.cancelled_at = new Date().toISOString()
-  } else {
-    updateData.cancelled_at = null
-  }
+  updateData.cancelled_at = null
 
   const { error } = await supabase
     .from('orders')
@@ -3841,6 +4208,7 @@ async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
+  const vatRateInput = document.querySelector<HTMLSelectElement>('#admin-product-vat-rate')
   const mediumSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-medium')
   const largeSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-large')
   const mediumPriceInput = document.querySelector<HTMLInputElement>('#admin-product-medium-price')
@@ -3861,6 +4229,7 @@ async function saveAdminProduct() {
 
   const name = nameInput?.value.trim() || ''
   const category = categoryInput?.value.trim() || ''
+  const vatRate = Number(vatRateInput?.value ?? 9)
 
   const availableSizes: CupSize[] = []
 
@@ -3927,6 +4296,12 @@ async function saveAdminProduct() {
 
   if (!category) {
     adminError = 'Vul een categorie in.'
+    render()
+    return
+  }
+
+  if (vatRate !== 9 && vatRate !== 21) {
+    adminError = 'Kies een geldig BTW-tarief: 9% of 21%.'
     render()
     return
   }
@@ -4014,6 +4389,7 @@ async function saveAdminProduct() {
           name,
           category,
           base_price: basePrice,
+          vat_rate: vatRate,
           discount_type: discountType,
           discount_value: discountValue,
           available_sizes: availableSizes,
@@ -4046,6 +4422,7 @@ async function saveAdminProduct() {
           name,
           category,
           base_price: basePrice,
+          vat_rate: vatRate,
           discount_type: discountType,
           discount_value: discountValue,
           available_sizes: availableSizes,
@@ -4923,6 +5300,1146 @@ async function handleAdminCategoryDrop(targetCategoryId: string) {
 }
 
 // =============================
+// ADMIN: DAILY CLOSING / Z-REPORT
+// =============================
+
+function getBusinessDateLocal(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function moneyToCents(value: number | null | undefined) {
+  return Math.round(Number(value ?? 0) * 100)
+}
+
+function getOrderGrossCents(order: Order) {
+  const gross = order.gross_total ?? order.total ?? order.total_amount ?? order.subtotal ?? 0
+  return moneyToCents(Number(gross))
+}
+
+function getOrderNetCents(order: Order) {
+  if (order.net_total != null) {
+    return moneyToCents(Number(order.net_total))
+  }
+
+  const gross = Number(order.gross_total ?? order.total ?? order.total_amount ?? order.subtotal ?? 0)
+  const vat = Number(order.vat_total ?? 0)
+  return moneyToCents(Math.max(0, gross - vat))
+}
+
+function getOrderVatCents(order: Order) {
+  return moneyToCents(Number(order.vat_total ?? 0))
+}
+
+async function loadAdminDailyClosing() {
+  const businessDate = getBusinessDateLocal()
+
+  const { data, error } = await supabase
+    .from('daily_closings')
+    .select('*')
+    .eq('business_date', businessDate)
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    adminDailyClosing = null
+    adminDailyClosingVat = []
+    adminError = `Z-rapport laden mislukt: ${error.message}`
+    return
+  }
+
+  adminDailyClosing = data ? (data as DailyClosing) : null
+
+  if (!adminDailyClosing) {
+    adminDailyClosingVat = []
+    return
+  }
+
+  const { data: vatData, error: vatError } = await supabase
+    .from('daily_closing_vat')
+    .select('*')
+    .eq('daily_closing_id', adminDailyClosing.id)
+    .order('vat_rate', { ascending: true })
+
+  if (vatError) {
+    adminDailyClosingVat = []
+    console.error('BTW-uitsplitsing Z-rapport laden mislukt:', vatError)
+    return
+  }
+
+  adminDailyClosingVat = (vatData ?? []) as DailyClosingVat[]
+}
+
+function centsToCsvMoney(value?: number | null) {
+  return (Number(value ?? 0) / 100).toFixed(2).replace('.', ',')
+}
+
+function escapeCsvValue(value: string | number) {
+  const text = String(value)
+
+  if (text.includes(';') || text.includes('\n') || text.includes('"')) {
+    return `"${text.replaceAll('"', '""')}"`
+  }
+
+  return text
+}
+
+function downloadDailyClosingCsvFile(
+  closing: DailyClosing,
+  vatRows: DailyClosingVat[]
+) {
+  const rows: Array<[string, string | number]> = [
+    ['Blue Cup POS Z-rapport', closing.business_date],
+    ['Afgesloten op', formatDate(closing.closed_at)],
+    ['Afgesloten door', closing.closed_by || 'staff'],
+    ['Aantal orders', Number(closing.order_count ?? 0)],
+    ['Omzet incl. BTW', centsToCsvMoney(closing.gross_sales)],
+    ['Omzet excl. BTW', centsToCsvMoney(closing.net_sales)],
+    ['BTW totaal', centsToCsvMoney(closing.vat_total)],
+    ['Contante omzet', centsToCsvMoney(closing.cash_sales)],
+    ['Kaartomzet', centsToCsvMoney(closing.card_sales)],
+    ['Online omzet', centsToCsvMoney(closing.online_sales)],
+    ['Refunds', centsToCsvMoney(closing.refund_total)],
+    ['Kas stortingen', centsToCsvMoney(closing.cash_in)],
+    ['Kas opnames', centsToCsvMoney(closing.cash_out)],
+    ['Begin kas', centsToCsvMoney(closing.opening_amount)],
+    ['Verwachte kas', centsToCsvMoney(closing.expected_amount)],
+    ['Getelde kas', centsToCsvMoney(closing.counted_amount)],
+    ['Kasverschil', centsToCsvMoney(closing.difference_amount)],
+  ]
+
+  const summaryCsv = [
+    'Kenmerk;Waarde',
+    ...rows.map(([label, value]) => `${escapeCsvValue(label)};${escapeCsvValue(value)}`),
+  ]
+
+  const vatCsv = [
+    '',
+    'BTW-tarief;Omzet incl. BTW;Omzet excl. BTW;BTW-bedrag',
+    ...vatRows.map((row) =>
+      [
+        `${Number(row.vat_rate).toFixed(2).replace('.', ',')}%`,
+        centsToCsvMoney(row.gross_amount),
+        centsToCsvMoney(row.net_amount),
+        centsToCsvMoney(row.vat_amount),
+      ]
+        .map(escapeCsvValue)
+        .join(';')
+    ),
+  ]
+
+  const csv = '\uFEFF' + [...summaryCsv, ...vatCsv].join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `blue-cup-z-rapport-${closing.business_date}.csv`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function downloadDailyClosingCsv() {
+  if (!adminDailyClosing) {
+    window.alert('Er is nog geen Z-rapport om te exporteren.')
+    return
+  }
+
+  downloadDailyClosingCsvFile(adminDailyClosing, adminDailyClosingVat)
+}
+
+async function downloadHistoricalDailyClosingCsv(closingId: string) {
+  const closing = adminDailyClosingHistory.find(
+    (item) => String(item.id) === String(closingId)
+  )
+
+  if (!closing) {
+    window.alert('Z-rapport niet gevonden.')
+    return
+  }
+
+  const { data, error } = await supabase
+    .from('daily_closing_vat')
+    .select('*')
+    .eq('daily_closing_id', closing.id)
+    .order('vat_rate', { ascending: true })
+
+  if (error) {
+    window.alert(`BTW-regels laden mislukt: ${error.message}`)
+    return
+  }
+
+  downloadDailyClosingCsvFile(
+    closing,
+    (data ?? []) as DailyClosingVat[]
+  )
+}
+
+
+async function loadAdminDailyClosingHistory() {
+  isLoadingDailyClosingHistory = true
+
+  const { data, error } = await supabase
+    .from('daily_closings')
+    .select('*')
+    .order('business_date', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    adminDailyClosingHistory = []
+    isLoadingDailyClosingHistory = false
+    console.error('Z-rapport historie laden mislukt:', error)
+    return
+  }
+
+  adminDailyClosingHistory = (data ?? []) as DailyClosing[]
+  isLoadingDailyClosingHistory = false
+
+  if (adminSelectedDailyClosing) {
+    const refreshedSelected = adminDailyClosingHistory.find(
+      (item) => String(item.id) === String(adminSelectedDailyClosing?.id)
+    )
+
+    if (!refreshedSelected) {
+      adminSelectedDailyClosing = null
+      adminSelectedDailyClosingVat = []
+    } else {
+      adminSelectedDailyClosing = refreshedSelected
+    }
+  }
+}
+
+async function openAdminDailyClosingHistoryItem(closingId: string) {
+  const closing = adminDailyClosingHistory.find(
+    (item) => String(item.id) === String(closingId)
+  )
+
+  if (!closing) {
+    adminError = 'Z-rapport niet gevonden.'
+    render()
+    return
+  }
+
+  const { data, error } = await supabase
+    .from('daily_closing_vat')
+    .select('*')
+    .eq('daily_closing_id', closing.id)
+    .order('vat_rate', { ascending: true })
+
+  if (error) {
+    adminError = `BTW-details laden mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  adminSelectedDailyClosing = closing
+  adminSelectedDailyClosingVat = (data ?? []) as DailyClosingVat[]
+  adminError = ''
+  render()
+}
+
+function closeAdminDailyClosingHistoryItem() {
+  adminSelectedDailyClosing = null
+  adminSelectedDailyClosingVat = []
+  render()
+}
+
+async function createDailyClosing() {
+  if (activeCashSession) {
+    window.alert('Sluit eerst de kas af. Daarna kun je het Z-rapport / de dagafsluiting maken.')
+    return
+  }
+
+  const businessDate = getBusinessDateLocal()
+  const { startIso, endIso } = getTodayDateRange()
+  const actor = 'staff'
+
+  const { data: existingClosing, error: existingClosingError } = await supabase
+    .from('daily_closings')
+    .select('id,business_date')
+    .eq('business_date', businessDate)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingClosingError) {
+    window.alert(`Controleren van bestaande dagafsluiting mislukt: ${existingClosingError.message}`)
+    return
+  }
+
+  if (existingClosing) {
+    window.alert(`De dag ${businessDate} is al afgesloten. Er wordt geen tweede Z-rapport gemaakt.`)
+    return
+  }
+
+  const { data: closedSessions, error: closedSessionError } = await supabase
+    .from('cash_sessions')
+    .select('*')
+    .eq('status', 'closed')
+    .gte('opened_at', startIso)
+    .lt('opened_at', endIso)
+    .order('closed_at', { ascending: false })
+    .limit(1)
+
+  if (closedSessionError) {
+    window.alert(`Afgesloten kassasessie laden mislukt: ${closedSessionError.message}`)
+    return
+  }
+
+  const closedCashSession = (closedSessions?.[0] ?? null) as CashSession | null
+
+  if (!closedCashSession) {
+    window.alert('Er is voor vandaag nog geen afgesloten kassasessie gevonden. Open en sluit eerst de kas voordat je de dag afsluit.')
+    return
+  }
+
+  const [ordersResult, itemsResult, paymentsResult, movementsResult] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('*')
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+    supabase
+      .from('order_items')
+      .select('*')
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+    supabase
+      .from('payments')
+      .select('*')
+      .gte('created_at', startIso)
+      .lt('created_at', endIso),
+    supabase
+      .from('cash_movements')
+      .select('*')
+      .eq('cash_session_id', closedCashSession.id),
+  ])
+
+  if (ordersResult.error) {
+    window.alert(`Orders voor dagafsluiting laden mislukt: ${ordersResult.error.message}`)
+    return
+  }
+
+  if (itemsResult.error) {
+    window.alert(`Orderregels voor dagafsluiting laden mislukt: ${itemsResult.error.message}`)
+    return
+  }
+
+  if (paymentsResult.error) {
+    window.alert(`Betalingen voor dagafsluiting laden mislukt: ${paymentsResult.error.message}`)
+    return
+  }
+
+  if (movementsResult.error) {
+    window.alert(`Kasbewegingen voor dagafsluiting laden mislukt: ${movementsResult.error.message}`)
+    return
+  }
+
+  const dayOrders = (ordersResult.data ?? []) as Order[]
+  const dayItems = (itemsResult.data ?? []) as OrderItem[]
+  const dayPayments = (paymentsResult.data ?? []) as Payment[]
+  const dayMovements = movementsResult.data ?? []
+
+  // Een betaalde én later volledig terugbetaalde order telt fiscaal netto als 0 omzet.
+  // Geannuleerde orders tellen niet mee.
+  const fiscalOrders = dayOrders.filter(
+    (order) =>
+      order.status !== 'cancelled' &&
+      (order.payment_status === 'paid' || order.payment_status === 'refunded')
+  )
+
+  const refundedOrderIds = new Set(
+    fiscalOrders
+      .filter((order) => order.payment_status === 'refunded')
+      .map((order) => String(order.id))
+  )
+
+  const fiscalOrderIds = new Set(fiscalOrders.map((order) => String(order.id)))
+
+  let grossSales = 0
+  let netSales = 0
+  let vatTotal = 0
+  let cashSales = 0
+  let cardSales = 0
+  let onlineSales = 0
+
+  for (const order of fiscalOrders) {
+    const sign = refundedOrderIds.has(String(order.id)) ? -1 : 1
+    const gross = getOrderGrossCents(order)
+    const net = getOrderNetCents(order)
+    const vat = getOrderVatCents(order)
+
+    grossSales += sign * gross
+    netSales += sign * net
+    vatTotal += sign * vat
+
+    if (order.payment_method === 'cash') cashSales += sign * gross
+    if (order.payment_method === 'card') cardSales += sign * gross
+    if (order.payment_method === 'online_fake') onlineSales += sign * gross
+  }
+
+  const refundTotal = dayPayments
+    .filter((payment) => payment.status === 'refunded')
+    .reduce(
+      (sum, payment) => sum + Number(payment.refund_amount ?? payment.amount ?? 0),
+      0
+    )
+
+  const cashIn = dayMovements
+    .filter((movement: any) => movement.movement_type === 'cash_in')
+    .reduce((sum: number, movement: any) => sum + Math.max(0, Number(movement.amount ?? 0)), 0)
+
+  const cashOut = dayMovements
+    .filter((movement: any) => movement.movement_type === 'cash_out')
+    .reduce((sum: number, movement: any) => sum + Math.abs(Math.min(0, Number(movement.amount ?? 0))), 0)
+
+  const vatByRate = new Map<number, { gross: number; net: number; vat: number }>()
+
+  for (const item of dayItems) {
+    if (!fiscalOrderIds.has(String(item.order_id))) continue
+
+    const sign = refundedOrderIds.has(String(item.order_id)) ? -1 : 1
+    const vatRate = Number(item.vat_rate ?? 0)
+    const gross = moneyToCents(Number(item.gross_amount ?? item.line_total ?? 0))
+    const net = moneyToCents(Number(item.net_amount ?? 0))
+    const vat = moneyToCents(Number(item.vat_amount ?? 0))
+
+    const current = vatByRate.get(vatRate) ?? { gross: 0, net: 0, vat: 0 }
+    current.gross += sign * gross
+    current.net += sign * net
+    current.vat += sign * vat
+    vatByRate.set(vatRate, current)
+  }
+
+  const confirmed = window.confirm(
+    `Dag ${businessDate} afsluiten?\n\n` +
+      `Orders: ${fiscalOrders.length}\n` +
+      `Omzet incl. BTW: ${formatPaymentAmount(grossSales)}\n` +
+      `Omzet excl. BTW: ${formatPaymentAmount(netSales)}\n` +
+      `BTW totaal: ${formatPaymentAmount(vatTotal)}\n` +
+      `Refunds: ${formatPaymentAmount(refundTotal)}\n\n` +
+      `Na bevestigen wordt het Z-rapport definitief opgeslagen.`
+  )
+
+  if (!confirmed) return
+
+  const closedAt = new Date().toISOString()
+
+  const { data: dailyClosing, error: closingError } = await supabase
+    .from('daily_closings')
+    .insert({
+      business_date: businessDate,
+      closed_at: closedAt,
+      closed_by: actor,
+      cash_session_id: closedCashSession.id,
+      order_count: fiscalOrders.length,
+      gross_sales: grossSales,
+      net_sales: netSales,
+      vat_total: vatTotal,
+      cash_sales: cashSales,
+      card_sales: cardSales,
+      online_sales: onlineSales,
+      refund_total: refundTotal,
+      cash_in: cashIn,
+      cash_out: cashOut,
+      opening_amount: Number(closedCashSession.opening_amount ?? 0),
+      expected_amount: Number(closedCashSession.expected_amount ?? 0),
+      counted_amount: Number(closedCashSession.counted_amount ?? 0),
+      difference_amount: Number(closedCashSession.difference_amount ?? 0),
+    })
+    .select('*')
+    .single()
+
+  if (closingError) {
+    window.alert(`Dagafsluiting opslaan mislukt: ${closingError.message}`)
+    return
+  }
+
+  const vatRows = Array.from(vatByRate.entries())
+    .filter(([, amounts]) => amounts.gross !== 0 || amounts.net !== 0 || amounts.vat !== 0)
+    .map(([vatRate, amounts]) => ({
+      daily_closing_id: dailyClosing.id,
+      vat_rate: vatRate,
+      gross_amount: amounts.gross,
+      net_amount: amounts.net,
+      vat_amount: amounts.vat,
+    }))
+
+  if (vatRows.length > 0) {
+    const { error: vatInsertError } = await supabase
+      .from('daily_closing_vat')
+      .insert(vatRows)
+
+    if (vatInsertError) {
+      // Rollback van de hoofdregel zodat je veilig opnieuw kunt proberen.
+      await supabase.from('daily_closings').delete().eq('id', dailyClosing.id)
+      window.alert(`BTW-uitsplitsing opslaan mislukt: ${vatInsertError.message}`)
+      return
+    }
+  }
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: 'DAILY_CLOSING_CREATED',
+      entity_type: 'daily_closing',
+      entity_id: String(dailyClosing.id),
+      old_data: null,
+      new_data: {
+        business_date: businessDate,
+        cash_session_id: closedCashSession.id,
+        order_count: fiscalOrders.length,
+        gross_sales: grossSales,
+        net_sales: netSales,
+        vat_total: vatTotal,
+        cash_sales: cashSales,
+        card_sales: cardSales,
+        online_sales: onlineSales,
+        refund_total: refundTotal,
+        cash_in: cashIn,
+        cash_out: cashOut,
+      },
+      reason: `Dagafsluiting / Z-rapport ${businessDate}`,
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Dagafsluiting auditlog opslaan mislukt:', auditError)
+  }
+
+  adminMessage =
+    `Dag ${businessDate} afgesloten. Z-rapport opgeslagen: ` +
+    `${formatPaymentAmount(grossSales)} incl. BTW, ${formatPaymentAmount(vatTotal)} BTW.`
+  adminError = ''
+
+  await loadAllAdminData()
+}
+
+function renderAdminDailyClosing() {
+  if (activeCashSession) {
+    return `
+      <section class="admin-payment-panel">
+        <div class="admin-payment-panel-header">
+          <div>
+            <h2>Dagafsluiting / Z-rapport</h2>
+            <p class="muted">Sluit eerst de open kas af.</p>
+          </div>
+        </div>
+
+        <div class="admin-payment-empty">
+          Zodra de kas gesloten is, kun je hier de dag definitief afsluiten.
+        </div>
+      </section>
+    `
+  }
+
+  if (adminDailyClosing) {
+    const closing = adminDailyClosing
+
+    return `
+      <section class="admin-payment-panel">
+        <div class="admin-payment-panel-header">
+          <div>
+            <h2>Z-rapport ${escapeHtml(closing.business_date)}</h2>
+            <p class="muted">
+              Dag definitief afgesloten op ${escapeHtml(formatDate(closing.closed_at))}.
+            </p>
+          </div>
+
+          <button class="admin-secondary-btn" id="admin-export-daily-closing-csv" type="button">
+            CSV exporteren
+          </button>
+        </div>
+
+        <div class="admin-payment-row-meta" style="margin-bottom:12px;">
+          <span>Orders: <strong>${Number(closing.order_count ?? 0)}</strong></span>
+          <span>Omzet incl. BTW: <strong>${escapeHtml(formatPaymentAmount(Number(closing.gross_sales ?? 0)))}</strong></span>
+          <span>Omzet excl. BTW: <strong>${escapeHtml(formatPaymentAmount(Number(closing.net_sales ?? 0)))}</strong></span>
+          <span>BTW: <strong>${escapeHtml(formatPaymentAmount(Number(closing.vat_total ?? 0)))}</strong></span>
+        </div>
+
+        <div class="admin-payment-row-meta" style="margin-bottom:12px;">
+          <span>Cash: <strong>${escapeHtml(formatPaymentAmount(Number(closing.cash_sales ?? 0)))}</strong></span>
+          <span>Card: <strong>${escapeHtml(formatPaymentAmount(Number(closing.card_sales ?? 0)))}</strong></span>
+          <span>Online: <strong>${escapeHtml(formatPaymentAmount(Number(closing.online_sales ?? 0)))}</strong></span>
+          <span>Refunds: <strong>${escapeHtml(formatPaymentAmount(Number(closing.refund_total ?? 0)))}</strong></span>
+        </div>
+
+        <div class="admin-payment-row-meta" style="margin-bottom:12px;">
+          <span>Begin kas: <strong>${escapeHtml(formatPaymentAmount(Number(closing.opening_amount ?? 0)))}</strong></span>
+          <span>Verwacht: <strong>${escapeHtml(formatPaymentAmount(Number(closing.expected_amount ?? 0)))}</strong></span>
+          <span>Geteld: <strong>${escapeHtml(formatPaymentAmount(Number(closing.counted_amount ?? 0)))}</strong></span>
+          <span>Verschil: <strong>${escapeHtml(formatPaymentAmount(Number(closing.difference_amount ?? 0)))}</strong></span>
+        </div>
+
+        ${
+          adminDailyClosingVat.length === 0
+            ? `<div class="admin-payment-empty">Geen aparte BTW-regels opgeslagen.</div>`
+            : `
+              <div class="admin-payment-list">
+                ${adminDailyClosingVat.map((vatRow) => `
+                  <article class="admin-payment-row">
+                    <div>
+                      <strong>${Number(vatRow.vat_rate).toFixed(0)}% BTW</strong>
+                      <div class="admin-payment-row-meta">
+                        <span>Incl.: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.gross_amount ?? 0)))}</strong></span>
+                        <span>Excl.: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.net_amount ?? 0)))}</strong></span>
+                        <span>BTW: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.vat_amount ?? 0)))}</strong></span>
+                      </div>
+                    </div>
+                  </article>
+                `).join('')}
+              </div>
+            `
+        }
+      </section>
+    `
+  }
+
+  return `
+    <section class="admin-payment-panel">
+      <div class="admin-payment-panel-header">
+        <div>
+          <h2>Dagafsluiting / Z-rapport</h2>
+          <p class="muted">Sla omzet, BTW, betaalmethodes, refunds en kasgegevens definitief op.</p>
+        </div>
+
+        <button class="admin-secondary-btn" id="admin-create-daily-closing">
+          Dag afsluiten
+        </button>
+      </div>
+
+      <div class="admin-payment-empty">
+        Dit kan maar één keer per kalenderdag. Controleer eerst of de kas correct is afgesloten.
+      </div>
+    </section>
+  `
+}
+
+
+function getFilteredAdminDailyClosingHistory() {
+  const sorted = [...adminDailyClosingHistory].sort((a, b) => {
+    return String(b.business_date).localeCompare(String(a.business_date))
+  })
+
+  if (!adminDailyClosingDateFilter) {
+    return sorted
+  }
+
+  return sorted.filter(
+    (closing) => closing.business_date === adminDailyClosingDateFilter
+  )
+}
+
+function clearAdminDailyClosingDateFilter() {
+  adminDailyClosingDateFilter = ''
+  render()
+}
+
+function renderAdminDailyClosingHistory() {
+  const filteredHistory = getFilteredAdminDailyClosingHistory()
+
+  return `
+    <section class="admin-payment-panel">
+      <div class="admin-payment-panel-header">
+        <div>
+          <h2>Z-rapport historie</h2>
+          <p class="muted">Bekijk en exporteer eerdere dagafsluitingen. Nieuwste rapport staat bovenaan.</p>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-bottom:14px;">
+        <label style="display:flex; flex-direction:column; gap:5px; min-width:190px;">
+          <span class="muted">Filter op datum</span>
+          <input
+            id="admin-daily-closing-date-filter"
+            class="admin-input"
+            type="date"
+            value="${escapeHtml(adminDailyClosingDateFilter)}"
+          />
+        </label>
+
+        <button
+          class="admin-secondary-btn"
+          id="admin-clear-daily-closing-date-filter"
+          type="button"
+          ${adminDailyClosingDateFilter ? '' : 'disabled'}
+        >
+          Filter wissen
+        </button>
+      </div>
+
+      ${
+        isLoadingDailyClosingHistory
+          ? `<div class="admin-payment-empty">Z-rapporten laden...</div>`
+          : adminDailyClosingHistory.length === 0
+            ? `<div class="admin-payment-empty">Nog geen opgeslagen Z-rapporten.</div>`
+            : filteredHistory.length === 0
+              ? `<div class="admin-payment-empty">Geen Z-rapport gevonden voor deze datum.</div>`
+              : `
+              <div class="admin-payment-list">
+                ${filteredHistory.map((closing) => `
+                  <article class="admin-payment-row">
+                    <div style="flex:1; min-width:0;">
+                      <strong>${escapeHtml(closing.business_date)}</strong>
+
+                      <div class="admin-payment-row-meta">
+                        <span>Orders: <strong>${Number(closing.order_count ?? 0)}</strong></span>
+                        <span>Bruto: <strong>${escapeHtml(formatPaymentAmount(Number(closing.gross_sales ?? 0)))}</strong></span>
+                        <span>BTW: <strong>${escapeHtml(formatPaymentAmount(Number(closing.vat_total ?? 0)))}</strong></span>
+                        <span>Kasverschil: <strong>${escapeHtml(formatPaymentAmount(Number(closing.difference_amount ?? 0)))}</strong></span>
+                      </div>
+                    </div>
+
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+                      <button
+                        class="admin-secondary-btn"
+                        type="button"
+                        data-admin-view-daily-closing="${escapeHtml(String(closing.id))}"
+                      >
+                        Bekijken
+                      </button>
+
+                      <button
+                        class="admin-secondary-btn"
+                        type="button"
+                        data-admin-export-history-closing="${escapeHtml(String(closing.id))}"
+                      >
+                        CSV exporteren
+                      </button>
+                    </div>
+                  </article>
+                `).join('')}
+              </div>
+            `
+      }
+
+      ${
+        adminSelectedDailyClosing
+          ? `
+            <article class="admin-payment-row" style="margin-top:16px; align-items:flex-start;">
+              <div style="flex:1; min-width:0;">
+                <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap;">
+                  <div>
+                    <strong>Z-rapport ${escapeHtml(adminSelectedDailyClosing.business_date)}</strong>
+                    <div class="admin-payment-row-meta">
+                      <span>Afgesloten: <strong>${escapeHtml(formatDate(adminSelectedDailyClosing.closed_at))}</strong></span>
+                      <span>Door: <strong>${escapeHtml(adminSelectedDailyClosing.closed_by || 'staff')}</strong></span>
+                    </div>
+                  </div>
+
+                  <button
+                    class="admin-secondary-btn"
+                    type="button"
+                    id="admin-close-daily-closing-history-detail"
+                  >
+                    Sluiten
+                  </button>
+                </div>
+
+                <div class="admin-payment-row-meta" style="margin-top:12px;">
+                  <span>Orders: <strong>${Number(adminSelectedDailyClosing.order_count ?? 0)}</strong></span>
+                  <span>Omzet incl. BTW: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.gross_sales ?? 0)))}</strong></span>
+                  <span>Omzet excl. BTW: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.net_sales ?? 0)))}</strong></span>
+                  <span>BTW: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.vat_total ?? 0)))}</strong></span>
+                </div>
+
+                <div class="admin-payment-row-meta" style="margin-top:8px;">
+                  <span>Cash: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.cash_sales ?? 0)))}</strong></span>
+                  <span>Card: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.card_sales ?? 0)))}</strong></span>
+                  <span>Online: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.online_sales ?? 0)))}</strong></span>
+                  <span>Refunds: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.refund_total ?? 0)))}</strong></span>
+                </div>
+
+                <div class="admin-payment-row-meta" style="margin-top:8px;">
+                  <span>Begin kas: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.opening_amount ?? 0)))}</strong></span>
+                  <span>Verwacht: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.expected_amount ?? 0)))}</strong></span>
+                  <span>Geteld: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.counted_amount ?? 0)))}</strong></span>
+                  <span>Verschil: <strong>${escapeHtml(formatPaymentAmount(Number(adminSelectedDailyClosing.difference_amount ?? 0)))}</strong></span>
+                </div>
+
+                <div style="margin-top:12px;">
+                  ${
+                    adminSelectedDailyClosingVat.length === 0
+                      ? `<div class="admin-payment-empty">Geen aparte BTW-regels opgeslagen.</div>`
+                      : `
+                        <div class="admin-payment-list">
+                          ${adminSelectedDailyClosingVat.map((vatRow) => `
+                            <article class="admin-payment-row">
+                              <div>
+                                <strong>${Number(vatRow.vat_rate).toFixed(0)}% BTW</strong>
+                                <div class="admin-payment-row-meta">
+                                  <span>Incl.: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.gross_amount ?? 0)))}</strong></span>
+                                  <span>Excl.: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.net_amount ?? 0)))}</strong></span>
+                                  <span>BTW: <strong>${escapeHtml(formatPaymentAmount(Number(vatRow.vat_amount ?? 0)))}</strong></span>
+                                </div>
+                              </div>
+                            </article>
+                          `).join('')}
+                        </div>
+                      `
+                  }
+                </div>
+              </div>
+            </article>
+          `
+          : ''
+      }
+    </section>
+  `
+}
+
+// =============================
+// ADMIN: CASH SESSION
+
+// =============================
+
+async function loadActiveCashSession() {
+  const { data, error } = await supabase
+    .from('cash_sessions')
+    .select('*')
+    .eq('status', 'open')
+    .order('opened_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    adminError = `Open kas laden mislukt: ${error.message}`
+    activeCashSession = null
+    return
+  }
+
+  activeCashSession = data ? (data as CashSession) : null
+}
+
+function parseEuroAmountToCents(value: string) {
+  const normalized = value.trim().replace(',', '.')
+  const amount = Number(normalized)
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    return null
+  }
+
+  return Math.round(amount * 100)
+}
+
+
+async function addManualCashMovement(movementType: 'cash_in' | 'cash_out') {
+  if (!activeCashSession) {
+    window.alert('Open eerst de kas voordat je een kasbeweging registreert.')
+    return
+  }
+
+  const label = movementType === 'cash_in' ? 'storting' : 'opname'
+  const amountInput = window.prompt(
+    `Welk bedrag wil je als kas${label} registreren? Bijvoorbeeld 20,00`
+  )
+
+  if (amountInput === null) return
+
+  const amountCents = parseEuroAmountToCents(amountInput)
+
+  if (amountCents === null || amountCents <= 0) {
+    window.alert('Vul een bedrag groter dan €0,00 in, bijvoorbeeld 20,00.')
+    return
+  }
+
+  const reasonInput = window.prompt(
+    movementType === 'cash_in'
+      ? 'Wat is de reden van deze kasstorting? Bijvoorbeeld: Extra wisselgeld'
+      : 'Wat is de reden van deze kasopname? Bijvoorbeeld: Geld naar kluis'
+  )
+
+  if (reasonInput === null) return
+
+  const reason = reasonInput.trim()
+
+  if (!reason) {
+    window.alert('Vul een reden in. Een kasstorting of kasopname moet herleidbaar zijn.')
+    return
+  }
+
+  const actor = 'staff'
+  const signedAmount = movementType === 'cash_in' ? amountCents : -amountCents
+
+  const { data: movement, error } = await supabase
+    .from('cash_movements')
+    .insert({
+      cash_session_id: activeCashSession.id,
+      movement_type: movementType,
+      amount: signedAmount,
+      order_id: null,
+      payment_id: null,
+      reason,
+      actor,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    window.alert(`Kasbeweging opslaan mislukt: ${error.message}`)
+    return
+  }
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: movementType === 'cash_in' ? 'CASH_IN' : 'CASH_OUT',
+      entity_type: 'cash_movement',
+      entity_id: String(movement.id),
+      old_data: null,
+      new_data: {
+        cash_session_id: activeCashSession.id,
+        movement_type: movementType,
+        amount: signedAmount,
+      },
+      reason,
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Kasbeweging auditlog opslaan mislukt:', auditError)
+  }
+
+  adminMessage = `${movementType === 'cash_in' ? 'Kasstorting' : 'Kasopname'} van ${formatPaymentAmount(amountCents)} geregistreerd.`
+  adminError = ''
+  render()
+}
+
+async function closeCashSession() {
+  if (!activeCashSession) {
+    window.alert('Er is geen open kas om af te sluiten.')
+    return
+  }
+
+  const { data: movements, error: movementsError } = await supabase
+    .from('cash_movements')
+    .select('amount')
+    .eq('cash_session_id', activeCashSession.id)
+
+  if (movementsError) {
+    window.alert(`Kasbewegingen laden mislukt: ${movementsError.message}`)
+    return
+  }
+
+  const movementTotal = (movements || []).reduce(
+    (sum, movement) => sum + Number(movement.amount || 0),
+    0
+  )
+
+  const expectedAmount =
+    Number(activeCashSession.opening_amount || 0) + movementTotal
+
+  const countedInput = window.prompt(
+    `Verwacht kasbedrag: ${formatPaymentAmount(expectedAmount)}\n\nHoeveel contant geld heb je werkelijk geteld? Bijvoorbeeld 164,90`
+  )
+
+  if (countedInput === null) return
+
+  const countedAmount = parseEuroAmountToCents(countedInput)
+
+  if (countedAmount === null) {
+    window.alert('Vul een geldig geteld bedrag in, bijvoorbeeld 164,90.')
+    return
+  }
+
+  const differenceAmount = countedAmount - expectedAmount
+
+  const confirmed = window.confirm(
+    `Kas afsluiten?\n\n` +
+      `Verwacht: ${formatPaymentAmount(expectedAmount)}\n` +
+      `Geteld: ${formatPaymentAmount(countedAmount)}\n` +
+      `Verschil: ${formatPaymentAmount(differenceAmount)}\n\n` +
+      `Na bevestigen wordt deze kassasessie afgesloten.`
+  )
+
+  if (!confirmed) return
+
+  const actor = 'staff'
+  const closedAt = new Date().toISOString()
+  const oldData = {
+    status: activeCashSession.status,
+    opening_amount: activeCashSession.opening_amount,
+  }
+
+  const { data: closedSession, error: closeError } = await supabase
+    .from('cash_sessions')
+    .update({
+      closed_at: closedAt,
+      expected_amount: expectedAmount,
+      counted_amount: countedAmount,
+      difference_amount: differenceAmount,
+      closed_by: actor,
+      status: 'closed',
+    })
+    .eq('id', activeCashSession.id)
+    .eq('status', 'open')
+    .select('*')
+    .single()
+
+  if (closeError) {
+    window.alert(`Kas afsluiten mislukt: ${closeError.message}`)
+    return
+  }
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: 'CASH_SESSION_CLOSED',
+      entity_type: 'cash_session',
+      entity_id: String(activeCashSession.id),
+      old_data: oldData,
+      new_data: {
+        status: 'closed',
+        closed_at: closedAt,
+        expected_amount: expectedAmount,
+        counted_amount: countedAmount,
+        difference_amount: differenceAmount,
+      },
+      reason: 'Kas afgesloten',
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Kas-afsluit auditlog opslaan mislukt:', auditError)
+  }
+
+  activeCashSession = null
+  adminMessage =
+    `Kas afgesloten. Verwacht ${formatPaymentAmount(expectedAmount)}, ` +
+    `geteld ${formatPaymentAmount(countedAmount)}, ` +
+    `verschil ${formatPaymentAmount(differenceAmount)}.`
+  adminError = ''
+
+  console.log('Kas afgesloten:', closedSession)
+  render()
+}
+
+async function openCashSession() {
+  if (activeCashSession) {
+    window.alert('Er staat al een kas open.')
+    return
+  }
+
+  const input = window.prompt(
+    'Hoeveel contant wisselgeld zit er nu in de kassalade? Bijvoorbeeld 150,00'
+  )
+
+  if (input === null) return
+
+  const openingAmount = parseEuroAmountToCents(input)
+
+  if (openingAmount === null) {
+    window.alert('Vul een geldig bedrag in, bijvoorbeeld 150,00.')
+    return
+  }
+
+  const actor = 'staff'
+
+  const { data, error } = await supabase
+    .from('cash_sessions')
+    .insert({
+      opening_amount: openingAmount,
+      opened_by: actor,
+      status: 'open',
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    window.alert(`Kas openen mislukt: ${error.message}`)
+    return
+  }
+
+  activeCashSession = data as CashSession
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: 'CASH_SESSION_OPENED',
+      entity_type: 'cash_session',
+      entity_id: String(activeCashSession.id),
+      old_data: null,
+      new_data: {
+        status: 'open',
+        opening_amount: openingAmount,
+      },
+      reason: 'Kas geopend',
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Kas-open auditlog opslaan mislukt:', auditError)
+  }
+
+  adminMessage = `Kas geopend met ${formatPaymentAmount(openingAmount)} wisselgeld.`
+  adminError = ''
+  render()
+}
+
+function renderAdminCashSession() {
+  if (!activeCashSession) {
+    return `
+      <section class="admin-payment-panel">
+        <div class="admin-payment-panel-header">
+          <div>
+            <h2>Kasadministratie</h2>
+            <p class="muted">Er is momenteel geen kassasessie geopend.</p>
+          </div>
+
+          <button class="admin-secondary-btn" id="admin-open-cash-session">
+            Kas openen
+          </button>
+        </div>
+
+        <div class="admin-payment-empty">
+          Open de kas voordat je contante verkopen automatisch gaat registreren.
+        </div>
+      </section>
+    `
+  }
+
+  return `
+    <section class="admin-payment-panel">
+      <div class="admin-payment-panel-header">
+        <div>
+          <h2>Kasadministratie</h2>
+          <p class="muted">Kassasessie is geopend.</p>
+        </div>
+
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="admin-secondary-btn" id="admin-cash-in">Kas storten</button>
+          <button class="admin-secondary-btn" id="admin-cash-out">Kas opnemen</button>
+          <button class="admin-secondary-btn" id="admin-close-cash-session">Kas afsluiten</button>
+          <span class="order-payment-badge order-payment-paid">Open</span>
+        </div>
+      </div>
+
+      <div class="admin-payment-row-meta">
+        <span>
+          Geopend:
+          <strong>${escapeHtml(formatDate(activeCashSession.opened_at))}</strong>
+        </span>
+
+        <span>
+          Beginbedrag:
+          <strong>${escapeHtml(formatPaymentAmount(activeCashSession.opening_amount))}</strong>
+        </span>
+
+        <span>
+          Geopend door:
+          <strong>${escapeHtml(activeCashSession.opened_by || 'staff')}</strong>
+        </span>
+      </div>
+    </section>
+  `
+}
+
+// =============================
 // ADMIN: LOAD ALL DATA
 // Admin must also see inactive products/toppings.
 // =============================
@@ -4930,6 +6447,10 @@ async function handleAdminCategoryDrop(targetCategoryId: string) {
 async function loadAllAdminData() {
   const { startIso, endIso } = getTodayDateRange()
 
+  adminError = ''
+  await loadActiveCashSession()
+  await loadAdminDailyClosing()
+  await loadAdminDailyClosingHistory()
   await loadBestSellerSales()
 
   const [
@@ -6355,6 +7876,20 @@ function renderAdminProductForm() {
           </small>
         </label>
 
+        <label>
+          <span>BTW-tarief</span>
+          <select
+            id="admin-product-vat-rate"
+            class="admin-input admin-select"
+          >
+            <option value="9" ${Number(editingProduct?.vat_rate ?? 9) === 9 ? 'selected' : ''}>9%</option>
+            <option value="21" ${Number(editingProduct?.vat_rate ?? 9) === 21 ? 'selected' : ''}>21%</option>
+          </select>
+          <small class="admin-field-help">
+            Voor normale niet-alcoholische drankjes gebruik je meestal 9%.
+          </small>
+        </label>
+
         <div class="admin-product-image-field">
           <div class="admin-product-image-heading">
             <strong>Productfoto</strong>
@@ -6871,6 +8406,164 @@ function renderAdminDailyStats() {
   `
 }
 
+async function refundAdminPayment(paymentId: string) {
+  const payment = paymentRecords.find(
+    (item) => String(item.id) === String(paymentId)
+  )
+
+  if (!payment) {
+    window.alert('Betaling niet gevonden.')
+    return
+  }
+
+  if (payment.status !== 'paid') {
+    window.alert('Alleen een betaalde betaling kan worden terugbetaald.')
+    return
+  }
+
+  const order = adminTodayOrders.find(
+    (item) => String(item.id) === String(payment.order_id)
+  )
+
+  const reasonInput = window.prompt(
+    `Reden voor terugbetaling van ${formatPaymentAmount(payment.amount)}?`
+  )
+
+  if (reasonInput === null) return
+
+  const reason = reasonInput.trim()
+
+  if (!reason) {
+    window.alert('Vul een reden voor de terugbetaling in.')
+    return
+  }
+
+  const confirmed = window.confirm(
+    `Weet je zeker dat je ${formatPaymentAmount(payment.amount)} wilt terugbetalen?`
+  )
+
+  if (!confirmed) return
+
+  const now = new Date().toISOString()
+  const actor = 'staff'
+
+  // Voor een cash-refund moet er een open kassasessie zijn, zodat de
+  // terugbetaling ook echt uit de kasadministratie wordt geboekt.
+  let cashSessionForRefund: CashSession | null = null
+
+  if (payment.payment_method === 'cash') {
+    const { data: cashSessionData, error: cashSessionError } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'open')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (cashSessionError) {
+      window.alert(`Open kas controleren mislukt: ${cashSessionError.message}`)
+      return
+    }
+
+    if (!cashSessionData) {
+      window.alert(
+        'Open eerst de kas in Admin voordat je een contante betaling terugbetaalt.'
+      )
+      return
+    }
+
+    cashSessionForRefund = cashSessionData as CashSession
+  }
+
+  const { error: paymentError } = await supabase
+    .from('payments')
+    .update({
+      status: 'refunded',
+      refund_amount: payment.amount,
+      refund_reason: reason,
+      refunded_at: now,
+      refunded_by: actor,
+      updated_at: now,
+    })
+    .eq('id', payment.id)
+
+  if (paymentError) {
+    window.alert(`Terugbetaling opslaan mislukt: ${paymentError.message}`)
+    return
+  }
+
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update({
+      payment_status: 'refunded',
+    })
+    .eq('id', payment.order_id)
+
+  if (orderError) {
+    window.alert(`Orderstatus bijwerken mislukt: ${orderError.message}`)
+    return
+  }
+
+  // Een contante refund verlaagt de verwachte kas. We bewaren daarom een
+  // negatieve kasbeweging gekoppeld aan dezelfde order en betaling.
+  if (payment.payment_method === 'cash' && cashSessionForRefund) {
+    const refundAmountCents = Math.abs(Number(payment.amount || 0))
+
+    const { error: cashMovementError } = await supabase
+      .from('cash_movements')
+      .insert({
+        cash_session_id: cashSessionForRefund.id,
+        movement_type: 'refund',
+        amount: -refundAmountCents,
+        order_id: payment.order_id,
+        payment_id: payment.id,
+        reason: `Contante terugbetaling: ${reason}`,
+        actor,
+      })
+
+    if (cashMovementError) {
+      console.error('Cash refund movement opslaan mislukt:', cashMovementError)
+      window.alert(
+        `De terugbetaling is geregistreerd, maar de kasbeweging kon niet worden opgeslagen: ${cashMovementError.message}`
+      )
+      await loadAllAdminData()
+      return
+    }
+  }
+
+  const { error: auditError } = await supabase
+    .from('audit_logs')
+    .insert({
+      event_type: 'PAYMENT_REFUNDED',
+      entity_type: 'payment',
+      entity_id: String(payment.id),
+      old_data: {
+        status: payment.status,
+        amount: payment.amount,
+        order_id: payment.order_id,
+      },
+      new_data: {
+        status: 'refunded',
+        refund_amount: payment.amount,
+        refunded_at: now,
+        order_payment_status: 'refunded',
+      },
+      reason,
+      actor,
+    })
+
+  if (auditError) {
+    console.error('Refund auditlog opslaan mislukt:', auditError)
+  }
+
+  window.alert(
+    `Terugbetaling van ${formatPaymentAmount(payment.amount)} is geregistreerd.`
+  )
+
+  await loadAllAdminData()
+}
+
+
 function renderAdminPaymentOverview() {
   const todayOrderIds = new Set(
     adminTodayOrders.map((order) => String(order.id))
@@ -6890,12 +8583,12 @@ function renderAdminPaymentOverview() {
         <div class="admin-payment-panel-header">
           <div>
             <h2>Betalingen vandaag</h2>
-            <p class="muted">MultiSafepay betalingen en transactiedetails.</p>
+            <p class="muted">Betalingen en transactiedetails.</p>
           </div>
         </div>
 
         <div class="admin-payment-empty">
-          Nog geen MultiSafepay betalingen vandaag.
+          Nog geen betalingen vandaag.
         </div>
       </section>
     `
@@ -6952,7 +8645,37 @@ function renderAdminPaymentOverview() {
                     Betaald:
                     <strong>${escapeHtml(formatDate(payment.paid_at))}</strong>
                   </span>
+
+                  ${
+                    payment.status === 'refunded'
+                      ? `
+                        <span>
+                          Terugbetaald:
+                          <strong>${escapeHtml(formatDate(payment.refunded_at))}</strong>
+                        </span>
+
+                        <span>
+                          Reden:
+                          <strong>${escapeHtml(payment.refund_reason || '-')}</strong>
+                        </span>
+                      `
+                      : ''
+                  }
                 </div>
+
+                ${
+                  payment.status === 'paid'
+                    ? `
+                      <button
+                        class="admin-secondary-btn"
+                        type="button"
+                        data-admin-refund-payment="${escapeHtml(payment.id)}"
+                      >
+                        Terugbetalen
+                      </button>
+                    `
+                    : ''
+                }
               </article>
             `
           })
@@ -6983,6 +8706,12 @@ function renderAdmin() {
       </header>
 
       ${renderAdminDailyStats()}
+
+      ${renderAdminCashSession()}
+
+      ${renderAdminDailyClosing()}
+
+      ${renderAdminDailyClosingHistory()}
 
       ${renderAdminPaymentOverview()}
 
@@ -7079,6 +8808,20 @@ function renderAdminProductEditModal() {
             />
             <small class="admin-field-help">
               Wordt automatisch Medium, of Large als alleen Large beschikbaar is.
+            </small>
+          </label>
+
+          <label class="admin-modal-field">
+            <span>BTW-tarief</span>
+            <select
+              id="admin-product-vat-rate"
+              class="admin-input admin-select"
+            >
+              <option value="9" ${Number(product.vat_rate ?? 9) === 9 ? 'selected' : ''}>9%</option>
+              <option value="21" ${Number(product.vat_rate ?? 9) === 21 ? 'selected' : ''}>21%</option>
+            </select>
+            <small class="admin-field-help">
+              Dit tarief wordt bij elke verkoop als fiscale snapshot opgeslagen.
             </small>
           </label>
 
@@ -9096,7 +10839,16 @@ function renderStatusButtons(order: Order) {
   }
 
   if (order.status === 'cancelled') {
-    return `<p class="muted">Order geannuleerd.</p>`
+    return `
+      <div>
+        <p class="muted">Order geannuleerd.</p>
+        ${
+          order.cancel_reason
+            ? `<p class="muted"><strong>Reden:</strong> ${escapeHtml(order.cancel_reason)}</p>`
+            : ''
+        }
+      </div>
+    `
   }
 
   return `
@@ -11452,6 +13204,71 @@ function bindEvents() {
   updateCategoryDiscountPreview()
 
   document.querySelector<HTMLButtonElement>('#admin-refresh-stats')?.addEventListener('click', loadAllAdminData)
+
+  document.querySelector<HTMLButtonElement>('#admin-open-cash-session')?.addEventListener('click', async () => {
+    await openCashSession()
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-cash-in')?.addEventListener('click', async () => {
+    await addManualCashMovement('cash_in')
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-cash-out')?.addEventListener('click', async () => {
+    await addManualCashMovement('cash_out')
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-close-cash-session')?.addEventListener('click', async () => {
+    await closeCashSession()
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-create-daily-closing')?.addEventListener('click', async () => {
+    await createDailyClosing()
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-export-daily-closing-csv')?.addEventListener('click', () => {
+    downloadDailyClosingCsv()
+  })
+
+  document.querySelector<HTMLInputElement>('#admin-daily-closing-date-filter')?.addEventListener('change', (event) => {
+    adminDailyClosingDateFilter = (event.currentTarget as HTMLInputElement).value
+    closeAdminDailyClosingHistoryItem()
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-clear-daily-closing-date-filter')?.addEventListener('click', () => {
+    clearAdminDailyClosingDateFilter()
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-view-daily-closing]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const closingId = button.dataset.adminViewDailyClosing
+      if (!closingId) return
+
+      await openAdminDailyClosingHistoryItem(closingId)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-export-history-closing]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const closingId = button.dataset.adminExportHistoryClosing
+      if (!closingId) return
+
+      await downloadHistoricalDailyClosingCsv(closingId)
+    })
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-close-daily-closing-history-detail')?.addEventListener('click', () => {
+    closeAdminDailyClosingHistoryItem()
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-refund-payment]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const paymentId = button.dataset.adminRefundPayment
+
+      if (!paymentId) return
+
+      await refundAdminPayment(paymentId)
+    })
+  })
 
   document.querySelectorAll<HTMLButtonElement>('[data-action="toggle-all-product-toppings"]').forEach((button) => {
     button.addEventListener('click', () => {
