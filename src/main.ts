@@ -548,6 +548,7 @@ let paymentTestError = ''
 let isSubmitting = false
 let isLoadingOrders = false
 let isLoadingOrderHistory = false
+let posProductSearch = ''
 let orderHistorySearch = ''
 let selectedOrderHistoryId: string | null = null
 let isLoadingKitchen = false
@@ -5173,6 +5174,9 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
                   <button
                     class="product-card ${hasProductDiscount(product) ? 'has-discount' : ''} ${product.is_sold_out ? 'sold-out' : ''} ${product.image_url ? 'has-image' : ''}"
                     data-add="${product.id}"
+                    data-pos-product-search="${escapeHtml(
+                      `${product.name} ${product.category}`.toLowerCase()
+                    )}"
                     ${product.is_sold_out ? 'disabled aria-disabled="true"' : ''}
                   >
                     ${
@@ -8314,6 +8318,49 @@ function renderStaffBottomBar(grouped?: Record<string, Product[]>) {
 }
 
 
+
+function applyPosProductSearchFilter() {
+  const search = posProductSearch.trim().toLowerCase()
+
+  const cards = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '.pos-page .product-card[data-pos-product-search]'
+    )
+  )
+
+  let visibleCardCount = 0
+
+  cards.forEach((card) => {
+    const haystack = card.dataset.posProductSearch || ''
+    const matches = !search || haystack.includes(search)
+
+    card.hidden = !matches
+
+    if (matches) {
+      visibleCardCount += 1
+    }
+  })
+
+  document
+    .querySelectorAll<HTMLElement>('.pos-page .category-block')
+    .forEach((group) => {
+      const hasVisibleProduct = Array.from(
+        group.querySelectorAll<HTMLElement>(
+          '.product-card[data-pos-product-search]'
+        )
+      ).some((card) => !card.hidden)
+
+      group.hidden = !hasVisibleProduct
+    })
+
+  const emptyMessage =
+    document.querySelector<HTMLElement>('#pos-product-search-empty')
+
+  if (emptyMessage) {
+    emptyMessage.hidden = visibleCardCount > 0
+  }
+}
+
 // =============================
 // RENDER: STAFF POS
 // =============================
@@ -8344,7 +8391,31 @@ function renderPos() {
 
       <main class="layout">
         <section class="products">
-          <h2>Producten</h2>
+          <div class="pos-products-header">
+            <h2>Producten</h2>
+
+            <label class="pos-product-search">
+              <span class="pos-product-search-icon" aria-hidden="true">⌕</span>
+
+              <input
+                id="pos-product-search"
+                type="search"
+                placeholder="Zoek product..."
+                autocomplete="off"
+                value="${escapeHtml(posProductSearch)}"
+                aria-label="Zoek product"
+              />
+            </label>
+          </div>
+
+          <p
+            class="pos-product-search-empty"
+            id="pos-product-search-empty"
+            hidden
+          >
+            Geen producten gevonden.
+          </p>
+
           ${renderProductGroups(grouped)}
         </section>
 
@@ -11051,6 +11122,18 @@ function bindEvents() {
       setCustomerLanguage(language)
     })
   })
+
+  const posProductSearchInput =
+    document.querySelector<HTMLInputElement>('#pos-product-search')
+
+  posProductSearchInput?.addEventListener('input', () => {
+    posProductSearch = posProductSearchInput.value
+    applyPosProductSearchFilter()
+  })
+
+  if (posProductSearchInput) {
+    applyPosProductSearchFilter()
+  }
 
   document.querySelectorAll<HTMLButtonElement>('[data-pos-footer-category]').forEach((button) => {
     button.addEventListener('click', () => {
