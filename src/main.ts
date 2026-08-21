@@ -14,6 +14,8 @@ type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-hist
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
+type CupSize = 'medium' | 'large'
+
 type Product = {
   id: string
   name: string
@@ -25,6 +27,10 @@ type Product = {
   image_url: string | null
   discount_type: DiscountType
   discount_value: number
+
+  available_sizes: CupSize[]
+  medium_price: number | null
+  large_price: number | null
 
   allow_ice_customization: boolean
   allowed_ice_levels: IceLevel[]
@@ -75,6 +81,7 @@ type CartItem = {
   cartItemId: string
   product: Product
   quantity: number
+  cupSize: CupSize
   iceLevel: IceLevel
   sugarLevel: SugarLevel
   toppings: SelectedTopping[]
@@ -84,6 +91,7 @@ type SavedCartItem = {
   cartItemId: string
   productId: string
   quantity: number
+  cupSize?: CupSize
   iceLevel: IceLevel
   sugarLevel: SugarLevel
   toppings: SelectedTopping[]
@@ -155,6 +163,7 @@ type OrderItem = {
   unit_price?: number | null
   quantity: number
   line_total?: number | null
+  cup_size?: CupSize | null
   ice_level?: IceLevel | null
   sugar_level?: SugarLevel | null
   toppings?: SelectedTopping[] | null
@@ -169,6 +178,7 @@ type KitchenLabel = {
   product_name: string
   status: LabelStatus
   label_index: number
+  cup_size?: CupSize | null
   ice_level?: IceLevel | null
   sugar_level?: SugarLevel | null
   toppings?: SelectedTopping[] | null
@@ -586,6 +596,7 @@ let bestSellerSales: Record<string, number> = {}
 // Product customizer
 let isCustomerCustomizerOpen = false
 let customizerProduct: Product | null = null
+let customizerCupSize: CupSize | null = null
 let customizerIceLevel: IceLevel | null = null
 let customizerSugarLevel: SugarLevel | null = null
 let customizerToppingIds: string[] = []
@@ -668,6 +679,7 @@ function resetCustomerStateVariables() {
   isCustomerCheckoutOpen = false
   isCustomerCustomizerOpen = false
   customizerProduct = null
+  customizerCupSize = null
   customizerIceLevel = null
   customizerSugarLevel = null
   customizerToppingIds = []
@@ -704,6 +716,7 @@ function saveCustomerState() {
     cartItemId: item.cartItemId,
     productId: String(item.product.id),
     quantity: item.quantity,
+    cupSize: item.cupSize,
     iceLevel: item.iceLevel,
     sugarLevel: item.sugarLevel,
     toppings: item.toppings,
@@ -781,6 +794,7 @@ function loadCustomerStateAfterProducts() {
             cartItemId: savedItem.cartItemId || makeCartItemId(),
             product,
             quantity: savedItem.quantity,
+            cupSize: getSafeCupSizeForProduct(product, savedItem.cupSize),
             iceLevel: savedItem.iceLevel || 'normal_ice',
             sugarLevel: normalizeSugarLevel(savedItem.sugarLevel),
             toppings: Array.isArray(savedItem.toppings) ? savedItem.toppings : [],
@@ -1238,6 +1252,83 @@ function makeCartItemId() {
 }
 
 
+
+function getProductAvailableSizes(product: Product): CupSize[] {
+  const configuredSizes = Array.isArray(product.available_sizes)
+    ? product.available_sizes
+    : []
+
+  const validSizes = configuredSizes.filter(
+    (size): size is CupSize => size === 'medium' || size === 'large'
+  )
+
+  return validSizes.length > 0 ? validSizes : ['medium']
+}
+
+function getDefaultCupSizeForProduct(product: Product): CupSize {
+  const sizes = getProductAvailableSizes(product)
+
+  if (sizes.includes('medium')) {
+    return 'medium'
+  }
+
+  return sizes[0] ?? 'medium'
+}
+
+function getSafeCupSizeForProduct(
+  product: Product,
+  value?: CupSize | null
+): CupSize {
+  const sizes = getProductAvailableSizes(product)
+
+  if (value && sizes.includes(value)) {
+    return value
+  }
+
+  return getDefaultCupSizeForProduct(product)
+}
+
+function getProductSizePrice(product: Product, size: CupSize) {
+  if (size === 'large' && product.large_price != null) {
+    return Math.max(0, Number(product.large_price))
+  }
+
+  if (size === 'medium' && product.medium_price != null) {
+    return Math.max(0, Number(product.medium_price))
+  }
+
+  return Math.max(0, Number(product.base_price))
+}
+
+function getDiscountedPriceForAmount(product: Product, originalPrice: number) {
+  const safePrice = Math.max(0, Number(originalPrice) || 0)
+  const discount = getProductDiscount(product)
+
+  if (discount.type === 'percentage') {
+    const percentage = Math.min(100, discount.value)
+    return Math.max(0, safePrice - safePrice * (percentage / 100))
+  }
+
+  if (discount.type === 'fixed') {
+    return Math.max(0, safePrice - discount.value)
+  }
+
+  return safePrice
+}
+
+function getCupSizeLabel(size: CupSize) {
+  return size === 'large' ? 'Large' : 'Medium'
+}
+
+function getCustomizerCupSizePrice(size: CupSize) {
+  if (!customizerProduct) return 0
+
+  return getDiscountedPriceForAmount(
+    customizerProduct,
+    getProductSizePrice(customizerProduct, size)
+  )
+}
+
 function productAllowsIceCustomization(product: Product) {
   return product.allow_ice_customization !== false
 }
@@ -1309,6 +1400,10 @@ function getDefaultSugarLevelForProduct(product: Product): SugarLevel {
 function isCustomizerSelectionValid() {
   if (!customizerProduct) return false
 
+  const sizeIsValid =
+    customizerCupSize !== null &&
+    getProductAvailableSizes(customizerProduct).includes(customizerCupSize)
+
   const iceIsValid =
     !productAllowsIceCustomization(customizerProduct) ||
     (
@@ -1323,7 +1418,7 @@ function isCustomizerSelectionValid() {
       getProductAllowedSugarLevels(customizerProduct).includes(customizerSugarLevel)
     )
 
-  return iceIsValid && sugarIsValid
+  return sizeIsValid && iceIsValid && sugarIsValid
 }
 
 function createDefaultCartItem(product: Product): CartItem {
@@ -1331,6 +1426,7 @@ function createDefaultCartItem(product: Product): CartItem {
     cartItemId: makeCartItemId(),
     product,
     quantity: 1,
+    cupSize: getDefaultCupSizeForProduct(product),
     iceLevel: getDefaultIceLevelForProduct(product),
     sugarLevel: getDefaultSugarLevelForProduct(product),
     toppings: [],
@@ -1349,6 +1445,7 @@ function addToCart(productId: string) {
   const existing = cart.find((item) => {
     return (
       String(item.product.id) === String(productId) &&
+      item.cupSize === getDefaultCupSizeForProduct(product) &&
       item.iceLevel === 'normal_ice' &&
       item.sugarLevel === 'normal' &&
       item.toppings.length === 0
@@ -1504,7 +1601,11 @@ function getDiscountSourceLabel(product: Product) {
 }
 
 function getCartItemUnitPrice(item: CartItem) {
-  return getDiscountedProductPrice(item.product) + getToppingsTotal(item)
+  const sizePrice = getProductSizePrice(item.product, item.cupSize)
+  const discountedSizePrice =
+    getDiscountedPriceForAmount(item.product, sizePrice)
+
+  return discountedSizePrice + getToppingsTotal(item)
 }
 
 
@@ -1867,6 +1968,7 @@ function renderCustomerLanguageSwitcher() {
 function openCustomerCustomizer(product: Product) {
   editingCartItemId = null
   customizerProduct = product
+  customizerCupSize = getDefaultCupSizeForProduct(product)
 
   customizerIceLevel = productAllowsIceCustomization(product)
     ? null
@@ -1889,6 +1991,7 @@ function editCustomerCartItem(cartItemId: string) {
 
   editingCartItemId = cartItemId
   customizerProduct = item.product
+  customizerCupSize = getSafeCupSizeForProduct(item.product, item.cupSize)
 
   const allowedIceLevels = getProductAllowedIceLevels(item.product)
   const allowedSugarLevels = getProductAllowedSugarLevels(item.product)
@@ -1918,6 +2021,7 @@ function closeCustomerCustomizer() {
 
   isCustomerCustomizerOpen = false
   customizerProduct = null
+  customizerCupSize = null
   customizerIceLevel = null
   customizerSugarLevel = null
   customizerToppingIds = []
@@ -1927,6 +2031,15 @@ function closeCustomerCustomizer() {
     isCustomerCartOpen = true
   }
 
+  render()
+}
+
+
+function setCustomizerCupSize(size: CupSize) {
+  if (!customizerProduct) return
+  if (!getProductAvailableSizes(customizerProduct).includes(size)) return
+
+  customizerCupSize = size
   render()
 }
 
@@ -1980,7 +2093,10 @@ function getCustomizerTotal() {
     0
   )
 
-  return getDiscountedProductPrice(customizerProduct) + toppingsTotal
+  const selectedSize =
+    customizerCupSize ?? getDefaultCupSizeForProduct(customizerProduct)
+
+  return getCustomizerCupSizePrice(selectedSize) + toppingsTotal
 }
 
 function confirmCustomerCustomizer() {
@@ -1993,6 +2109,9 @@ function confirmCustomerCustomizer() {
   const finalSugarLevel =
     customizerSugarLevel ?? getDefaultSugarLevelForProduct(customizerProduct)
 
+  const finalCupSize =
+    customizerCupSize ?? getDefaultCupSizeForProduct(customizerProduct)
+
   const selectedToppings = getCustomizerSelectedToppings()
   const wasEditing = editingCartItemId !== null
 
@@ -2001,6 +2120,7 @@ function confirmCustomerCustomizer() {
 
     if (item) {
       item.product = customizerProduct
+      item.cupSize = finalCupSize
       item.iceLevel = finalIceLevel
       item.sugarLevel = finalSugarLevel
       item.toppings = selectedToppings
@@ -2010,6 +2130,7 @@ function confirmCustomerCustomizer() {
       cartItemId: makeCartItemId(),
       product: customizerProduct,
       quantity: 1,
+      cupSize: finalCupSize,
       iceLevel: finalIceLevel,
       sugarLevel: finalSugarLevel,
       toppings: selectedToppings,
@@ -2020,6 +2141,7 @@ function confirmCustomerCustomizer() {
 
   isCustomerCustomizerOpen = false
   customizerProduct = null
+  customizerCupSize = null
   customizerIceLevel = null
   customizerSugarLevel = null
   customizerToppingIds = []
@@ -2033,12 +2155,14 @@ function confirmCustomerCustomizer() {
 function renderModifierSummary(
   iceLevel?: IceLevel | null,
   sugarLevel?: SugarLevel | null,
-  selectedToppings?: SelectedTopping[] | null
+  selectedToppings?: SelectedTopping[] | null,
+  cupSize?: CupSize | null
 ) {
   const toppingText = (selectedToppings ?? []).map((topping) => topping.name).join(', ')
 
   return `
     <div class="modifier-summary">
+      ${cupSize ? `<span>${escapeHtml(getCupSizeLabel(cupSize))}</span>` : ''}
       <span>${escapeHtml(getIceLevelText(iceLevel))}</span>
       <span>${escapeHtml(getSugarLevelText(sugarLevel))}</span>
       ${toppingText ? `<span>+ ${escapeHtml(toppingText)}</span>` : ''}
@@ -2162,6 +2286,7 @@ async function submitOrder(paymentMethod: PaymentMethod) {
     unit_price: getCartItemUnitPrice(item),
     quantity: item.quantity,
     line_total: getCartItemLineTotal(item),
+    cup_size: item.cupSize,
     ice_level: item.iceLevel,
     sugar_level: item.sugarLevel,
     toppings: item.toppings,
@@ -2271,6 +2396,7 @@ async function submitCustomerOrder() {
     unit_price: getCartItemUnitPrice(item),
     quantity: item.quantity,
     line_total: getCartItemLineTotal(item),
+    cup_size: item.cupSize,
     ice_level: item.iceLevel,
     sugar_level: item.sugarLevel,
     toppings: item.toppings,
@@ -2621,6 +2747,7 @@ async function createKitchenLabelsForOrder(
         product_name: productName,
         status: 'new',
         label_index: i,
+        cup_size: item.cup_size || null,
         ice_level: item.ice_level || null,
         sugar_level: item.sugar_level || null,
         toppings: item.toppings || [],
@@ -3713,6 +3840,10 @@ async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
+  const mediumSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-medium')
+  const largeSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-large')
+  const mediumPriceInput = document.querySelector<HTMLInputElement>('#admin-product-medium-price')
+  const largePriceInput = document.querySelector<HTMLInputElement>('#admin-product-large-price')
   const discountTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-discount-type')
   const discountValueInput = document.querySelector<HTMLInputElement>('#admin-product-discount-value')
   const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
@@ -3729,7 +3860,32 @@ async function saveAdminProduct() {
 
   const name = nameInput?.value.trim() || ''
   const category = categoryInput?.value.trim() || ''
-  const basePrice = Number(priceInput?.value || 0)
+
+  const availableSizes: CupSize[] = []
+
+  if (mediumSizeInput?.checked) {
+    availableSizes.push('medium')
+  }
+
+  if (largeSizeInput?.checked) {
+    availableSizes.push('large')
+  }
+
+  const mediumPrice =
+    mediumSizeInput?.checked
+      ? Number(mediumPriceInput?.value || 0)
+      : null
+
+  const largePrice =
+    largeSizeInput?.checked
+      ? Number(largePriceInput?.value || 0)
+      : null
+
+  const basePrice =
+    availableSizes.includes('medium')
+      ? Number(mediumPrice ?? 0)
+      : Number(largePrice ?? 0)
+
   const discountType = normalizeDiscountType(discountTypeInput?.value)
   const discountValue =
     discountType === 'none'
@@ -3770,6 +3926,30 @@ async function saveAdminProduct() {
 
   if (!category) {
     adminError = 'Vul een categorie in.'
+    render()
+    return
+  }
+
+  if (availableSizes.length === 0) {
+    adminError = 'Kies minimaal één bekergrootte: Medium of Large.'
+    render()
+    return
+  }
+
+  if (
+    availableSizes.includes('medium') &&
+    (!Number.isFinite(mediumPrice) || Number(mediumPrice) < 0)
+  ) {
+    adminError = 'Vul een geldige prijs voor Medium in.'
+    render()
+    return
+  }
+
+  if (
+    availableSizes.includes('large') &&
+    (!Number.isFinite(largePrice) || Number(largePrice) < 0)
+  ) {
+    adminError = 'Vul een geldige prijs voor Large in.'
     render()
     return
   }
@@ -3835,6 +4015,9 @@ async function saveAdminProduct() {
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
+          available_sizes: availableSizes,
+          medium_price: mediumPrice,
+          large_price: largePrice,
           is_bestseller: isBestSeller,
           is_sold_out: isSoldOut,
           is_active: isActive,
@@ -3864,6 +4047,9 @@ async function saveAdminProduct() {
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
+          available_sizes: availableSizes,
+          medium_price: mediumPrice,
+          large_price: largePrice,
           is_bestseller: isBestSeller,
           is_sold_out: isSoldOut,
           is_active: isActive,
@@ -5064,7 +5250,7 @@ function renderCart(isCustomer: boolean) {
                       <div class="pos-cart-item-info">
                         <div class="cart-item-name">${escapeHtml(item.product.name)}</div>
                         <div class="cart-item-price">€ ${getCartItemUnitPrice(item).toFixed(2)} per stuk</div>
-                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings)}
+                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                       </div>
 
                       <div class="pos-cart-item-controls">
@@ -5168,6 +5354,11 @@ function renderCustomerCustomizer() {
   const fixedIceLevel =
     getFixedIceLevelForProduct(customizerProduct)
 
+  const availableCupSizes =
+    getProductAvailableSizes(customizerProduct)
+
+  const hasMultipleCupSizes = availableCupSizes.length > 1
+
   const selectionIsValid = isCustomizerSelectionValid()
 
   return `
@@ -5184,16 +5375,28 @@ function renderCustomerCustomizer() {
               ? `
                 <div class="customizer-price-discount">
                   <span class="product-original-price">
-                    € ${Number(customizerProduct.base_price).toFixed(2)}
+                    € ${getProductSizePrice(
+                      customizerProduct,
+                      customizerCupSize ?? getDefaultCupSizeForProduct(customizerProduct)
+                    ).toFixed(2)}
                   </span>
-                  <strong>€ ${getDiscountedProductPrice(customizerProduct).toFixed(2)}</strong>
+                  <strong>
+                    € ${getCustomizerCupSizePrice(
+                      customizerCupSize ?? getDefaultCupSizeForProduct(customizerProduct)
+                    ).toFixed(2)}
+                  </strong>
                   <span class="discount-mini-badge">
                     ${escapeHtml(getProductDiscountLabel(customizerProduct))}
                   </span>
                 </div>
               `
               : `
-                <strong>€ ${Number(customizerProduct.base_price).toFixed(2)}</strong>
+                <strong>
+                  € ${getProductSizePrice(
+                    customizerProduct,
+                    customizerCupSize ?? getDefaultCupSizeForProduct(customizerProduct)
+                  ).toFixed(2)}
+                </strong>
               `
           }
         </div>
@@ -5202,6 +5405,45 @@ function renderCustomerCustomizer() {
       </div>
 
       <div class="customer-customizer-content">
+        <section class="customer-customizer-section">
+          <div class="customer-customizer-section-title">
+            <h3>Bekergrootte${hasMultipleCupSizes ? ' *' : ''}</h3>
+            <span>${hasMultipleCupSizes ? escapeHtml(t('required')) : 'Vast'}</span>
+          </div>
+
+          ${
+            hasMultipleCupSizes
+              ? `
+                <div class="customer-size-options">
+                  ${availableCupSizes.map(
+                    (size) => `
+                      <button
+                        class="customer-size-option ${customizerCupSize === size ? 'active' : ''}"
+                        data-cup-size="${size}"
+                        type="button"
+                      >
+                        <span>${escapeHtml(getCupSizeLabel(size))}</span>
+                        <strong>
+                          ${
+                            size === 'large' && availableCupSizes.includes('medium')
+                              ? `+ € ${Math.max(0, getCustomizerCupSizePrice('large') - getCustomizerCupSizePrice('medium')).toFixed(2)}`
+                              : 'Inbegrepen'
+                          }
+                        </strong>
+                      </button>
+                    `
+                  ).join('')}
+                </div>
+              `
+              : `
+                <div class="customer-fixed-modifier">
+                  <span>${escapeHtml(getCupSizeLabel(availableCupSizes[0]))}</span>
+                  <small>Vaste maat voor dit drankje</small>
+                </div>
+              `
+          }
+        </section>
+
         ${
           allowIceCustomization
             ? `
@@ -5370,7 +5612,7 @@ function renderCustomerCartDrawer() {
                       <div>
                         <h3>${escapeHtml(item.product.name)}</h3>
                         <p>€ ${getCartItemUnitPrice(item).toFixed(2)} ${escapeHtml(t('perItem'))}</p>
-                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings)}
+                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                         <strong>€ ${getCartItemLineTotal(item).toFixed(2)}</strong>
                       </div>
 
@@ -5496,7 +5738,7 @@ function renderCustomerCheckoutScreen() {
                         <div class="customer-checkout-item-row customer-checkout-item-with-modifiers">
                           <div>
                             <span>${item.quantity}x ${escapeHtml(item.product.name)}</span>
-                            ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings)}
+                            ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                           </div>
                           <strong>€ ${getCartItemLineTotal(item).toFixed(2)}</strong>
                         </div>
@@ -5584,7 +5826,7 @@ function renderCustomer() {
                         <div class="customer-drink-status-row">
                           <div>
                             <span>${escapeHtml(label.product_name)}</span>
-                            ${renderModifierSummary(label.ice_level, label.sugar_level, label.toppings)}
+                            ${renderModifierSummary(label.ice_level, label.sugar_level, label.toppings, label.cup_size)}
                           </div>
                           <strong>${escapeHtml(getCustomerLabelStatusText(label.status))}</strong>
                         </div>
@@ -5642,6 +5884,212 @@ function renderCustomer() {
 // RENDER: ADMIN
 // =============================
 
+
+
+function getAdminProductAvailableSizes(product?: Product | null): CupSize[] {
+  const configuredSizes = Array.isArray(product?.available_sizes)
+    ? product.available_sizes
+    : []
+
+  const validSizes = configuredSizes.filter(
+    (size): size is CupSize => size === 'medium' || size === 'large'
+  )
+
+  return validSizes.length > 0 ? validSizes : ['medium']
+}
+
+function renderAdminProductSizeFields(product?: Product | null) {
+  const availableSizes = getAdminProductAvailableSizes(product)
+
+  const mediumSelected = availableSizes.includes('medium')
+  const largeSelected = availableSizes.includes('large')
+
+  const mediumPrice =
+    product?.medium_price != null
+      ? Number(product.medium_price).toFixed(2)
+      : mediumSelected && product
+        ? Number(product.base_price).toFixed(2)
+        : ''
+
+  const largePrice =
+    product?.large_price != null
+      ? Number(product.large_price).toFixed(2)
+      : largeSelected && product && !mediumSelected
+        ? Number(product.base_price).toFixed(2)
+        : ''
+
+  return `
+    <div class="admin-product-size-field">
+      <div class="admin-product-size-header">
+        <div>
+          <strong>Bekergrootte</strong>
+          <span>
+            Kies welke maten beschikbaar zijn en geef iedere beschikbare maat een eigen prijs.
+          </span>
+        </div>
+      </div>
+
+      <div class="admin-product-size-grid">
+        <label class="admin-size-card ${mediumSelected ? 'selected' : ''}">
+          <div class="admin-size-card-top">
+            <input
+              id="admin-product-size-medium"
+              type="checkbox"
+              value="medium"
+              ${mediumSelected ? 'checked' : ''}
+            />
+            <span>
+              <strong>Medium</strong>
+              <small>Normale beker</small>
+            </span>
+          </div>
+
+          <div class="admin-size-price-row">
+            <span>€</span>
+            <input
+              id="admin-product-medium-price"
+              type="number"
+              min="0"
+              step="0.01"
+              inputmode="decimal"
+              placeholder="4.50"
+              value="${mediumPrice}"
+              ${mediumSelected ? '' : 'disabled'}
+            />
+          </div>
+        </label>
+
+        <label class="admin-size-card ${largeSelected ? 'selected' : ''}">
+          <div class="admin-size-card-top">
+            <input
+              id="admin-product-size-large"
+              type="checkbox"
+              value="large"
+              ${largeSelected ? 'checked' : ''}
+            />
+            <span>
+              <strong>Large</strong>
+              <small>Grote beker</small>
+            </span>
+          </div>
+
+          <div class="admin-size-price-row">
+            <span>€</span>
+            <input
+              id="admin-product-large-price"
+              type="number"
+              min="0"
+              step="0.01"
+              inputmode="decimal"
+              placeholder="5.00"
+              value="${largePrice}"
+              ${largeSelected ? '' : 'disabled'}
+            />
+          </div>
+        </label>
+      </div>
+
+      <p class="admin-product-size-help">
+        Bij Medium + Large gebruikt het systeem Medium als basisprijs. Large mag iedere gewenste prijs hebben.
+      </p>
+    </div>
+  `
+}
+
+function updateAdminProductBasePriceFromSizes() {
+  const mediumToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-medium')
+
+  const largeToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-large')
+
+  const mediumPriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-medium-price')
+
+  const largePriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-large-price')
+
+  const basePriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-price')
+
+  if (!basePriceInput) return
+
+  const mediumPrice = Number(mediumPriceInput?.value || 0)
+  const largePrice = Number(largePriceInput?.value || 0)
+
+  if (mediumToggle?.checked && Number.isFinite(mediumPrice) && mediumPrice >= 0) {
+    basePriceInput.value = mediumPriceInput?.value || ''
+    return
+  }
+
+  if (largeToggle?.checked && Number.isFinite(largePrice) && largePrice >= 0) {
+    basePriceInput.value = largePriceInput?.value || ''
+    return
+  }
+
+  basePriceInput.value = ''
+}
+
+function updateAdminProductSizeState() {
+  const mediumToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-medium')
+
+  const largeToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-large')
+
+  const mediumPriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-medium-price')
+
+  const largePriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-large-price')
+
+  if (mediumPriceInput) {
+    mediumPriceInput.disabled = !(mediumToggle?.checked ?? false)
+  }
+
+  if (largePriceInput) {
+    largePriceInput.disabled = !(largeToggle?.checked ?? false)
+  }
+
+  mediumToggle
+    ?.closest('.admin-size-card')
+    ?.classList.toggle('selected', mediumToggle.checked)
+
+  largeToggle
+    ?.closest('.admin-size-card')
+    ?.classList.toggle('selected', largeToggle.checked)
+
+  updateAdminProductBasePriceFromSizes()
+}
+
+function bindAdminProductSizeControls() {
+  const mediumToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-medium')
+
+  const largeToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-large')
+
+  const mediumPriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-medium-price')
+
+  const largePriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-large-price')
+
+  mediumToggle?.addEventListener('change', updateAdminProductSizeState)
+  largeToggle?.addEventListener('change', updateAdminProductSizeState)
+
+  mediumPriceInput?.addEventListener(
+    'input',
+    updateAdminProductBasePriceFromSizes
+  )
+
+  largePriceInput?.addEventListener(
+    'input',
+    updateAdminProductBasePriceFromSizes
+  )
+
+  updateAdminProductSizeState()
+}
 
 function renderAdminProductCustomizationFields(product?: Product | null) {
   const allowIceCustomization = product?.allow_ice_customization ?? true
@@ -5887,16 +6335,20 @@ function renderAdminProductForm() {
         </label>
 
         <label>
-          <span>Prijs (€)</span>
+          <span>Basisprijs (€)</span>
           <input
             id="admin-product-price"
-            class="admin-input"
+            class="admin-input admin-base-price-readonly"
             type="number"
             min="0"
             step="0.01"
             value="${editingProduct ? Number(editingProduct.base_price).toFixed(2) : ''}"
-            placeholder="4.50"
+            placeholder="Wordt automatisch bepaald"
+            readonly
           />
+          <small class="admin-field-help">
+            Wordt automatisch Medium, of Large als alleen Large beschikbaar is.
+          </small>
         </label>
 
         <div class="admin-product-image-field">
@@ -5954,6 +6406,8 @@ function renderAdminProductForm() {
             </div>
           </div>
         </div>
+
+        ${renderAdminProductSizeFields(editingProduct)}
 
         ${renderAdminProductCustomizationFields(editingProduct)}
 
@@ -6609,15 +7063,19 @@ function renderAdminProductEditModal() {
           </label>
 
           <label class="admin-modal-field">
-            <span>Prijs (€)</span>
+            <span>Basisprijs (€)</span>
             <input
               id="admin-product-price"
-              class="admin-input"
+              class="admin-input admin-base-price-readonly"
               type="number"
               min="0"
               step="0.01"
               value="${Number(product.base_price).toFixed(2)}"
+              readonly
             />
+            <small class="admin-field-help">
+              Wordt automatisch Medium, of Large als alleen Large beschikbaar is.
+            </small>
           </label>
 
           <div class="admin-product-image-field admin-product-image-modal-field">
@@ -6726,6 +7184,8 @@ function renderAdminProductEditModal() {
             </strong>
             <small id="admin-product-preview-text"></small>
           </div>
+
+          ${renderAdminProductSizeFields(product)}
 
           ${renderAdminProductCustomizationFields(product)}
 
@@ -8537,7 +8997,7 @@ function renderOrderCard(order: Order) {
                     <div class="order-item-row order-item-with-modifiers">
                       <div>
                         <span>${item.quantity}x ${escapeHtml(name)}</span>
-                        ${renderModifierSummary(item.ice_level, item.sugar_level, item.toppings)}
+                        ${renderModifierSummary(item.ice_level, item.sugar_level, item.toppings, item.cup_size)}
                       </div>
                       <span>€ ${getOrderItemTotal(item).toFixed(2)}</span>
                     </div>
@@ -8709,7 +9169,7 @@ function renderKitchenLabelRow(label: KitchenLabel) {
       <div class="kitchen-label-info">
         <strong>${escapeHtml(label.product_name)}</strong>
         <span class="muted">Label #${label.label_index}</span>
-        ${renderModifierSummary(label.ice_level, label.sugar_level, label.toppings)}
+        ${renderModifierSummary(label.ice_level, label.sugar_level, label.toppings, label.cup_size)}
       </div>
 
       <span class="status-badge status-${label.status}">
@@ -8909,10 +9369,13 @@ function buildStickerZpl(
     .filter(Boolean)
 
   const modifierText = [
+    label.cup_size ? getCupSizeLabel(label.cup_size) : '',
     getStickerIceText(label.ice_level),
     getStickerSugarText(label.sugar_level),
     ...toppingNames,
-  ].join(', ')
+  ]
+    .filter(Boolean)
+    .join(', ')
 
   const orderNumber =
     order?.order_number ||
@@ -8975,10 +9438,13 @@ function buildStickerZplFooterDesign(
     .filter(Boolean)
 
   const modifierText = [
+    label.cup_size ? getCupSizeLabel(label.cup_size) : '',
     getStickerIceText(label.ice_level),
     getStickerSugarText(label.sugar_level),
     ...toppingNames,
-  ].join(', ')
+  ]
+    .filter(Boolean)
+    .join(', ')
 
   const orderNumber =
     order?.order_number ||
@@ -9773,10 +10239,13 @@ function renderStickerPreview(
   // De browserpreview gebruikt exact dezelfde teksten/truncatie als de ZPL.
   // Alleen deze HTML-preview is aangepast; buildStickerZpl() blijft onaangeraakt.
   const modifierText = [
+    label.cup_size ? getCupSizeLabel(label.cup_size) : '',
     getStickerIceText(label.ice_level),
     getStickerSugarText(label.sugar_level),
     ...toppingNames,
-  ].join(', ')
+  ]
+    .filter(Boolean)
+    .join(', ')
 
   const orderNumber =
     order?.order_number ||
@@ -10923,6 +11392,7 @@ function bindEvents() {
   })
 
   bindAdminProductImagePreview()
+  bindAdminProductSizeControls()
   bindAdminProductCustomizationToggles()
 
   document.querySelector<HTMLButtonElement>('#admin-save-product')?.addEventListener('click', saveAdminProduct)
@@ -10975,6 +11445,16 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#customer-customizer-close')?.addEventListener('click', closeCustomerCustomizer)
   document.querySelector<HTMLDivElement>('#customer-customizer-overlay')?.addEventListener('click', closeCustomerCustomizer)
   document.querySelector<HTMLButtonElement>('#customer-customizer-add')?.addEventListener('click', confirmCustomerCustomizer)
+
+  document.querySelectorAll<HTMLElement>('[data-cup-size]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const size = button.dataset.cupSize as CupSize | undefined
+
+      if (size === 'medium' || size === 'large') {
+        setCustomizerCupSize(size)
+      }
+    })
+  })
 
   document.querySelectorAll<HTMLElement>('[data-ice-level]').forEach((button) => {
     button.addEventListener('click', () => {

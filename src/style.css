@@ -11056,3 +11056,215 @@ body,
     text-align: left;
   }
 }
+
+/* ========================================================= */
+/* STEP 6 — ADMIN CUP SIZES                                  */
+/* ========================================================= */
+
+.admin-product-size-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid #dfe7f2;
+  border-radius: 18px;
+  background: #f8faff;
+}
+
+.admin-product-size-header strong {
+  display: block;
+  color: #172033;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.admin-product-size-header span {
+  display: block;
+  margin-top: 4px;
+  color: #6b7890;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-product-size-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-size-card {
+  display: grid;
+  gap: 13px;
+  padding: 14px;
+  border: 1px solid #d8e2ef;
+  border-radius: 14px;
+  background: #ffffff;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    opacity 150ms ease;
+}
+
+.admin-size-card.selected {
+  border-color: #1B478F;
+  background: #eef4fb;
+}
+
+.admin-size-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-size-card-top input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  accent-color: #1B478F;
+}
+
+.admin-size-card-top > span {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-size-card-top strong {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.admin-size-card-top small {
+  color: #6b7890;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-size-price-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-size-price-row > span {
+  color: #405777;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.admin-size-price-row input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
+  border: 1px solid #cad8e9;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-size-price-row input:focus {
+  outline: none;
+  border-color: #1B478F;
+  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.08);
+}
+
+.admin-size-price-row input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: #f1f4f8;
+}
+
+.admin-product-size-help {
+  margin: 0;
+  color: #6b7890;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.admin-base-price-readonly {
+  background: #f3f6fa !important;
+  color: #5c6b80 !important;
+  cursor: default;
+}
+
+.admin-field-help {
+  display: block;
+  margin-top: 5px;
+  color: #7a879a;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.admin-modal .admin-product-size-field {
+  margin-top: 2px;
+  padding: 15px;
+}
+
+@media (max-width: 700px) {
+  .admin-product-size-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ========================================================= */
+/* STEP 7 — CUSTOMER / POS CUP SIZE CHOICE                   */
+/* ========================================================= */
+
+.customer-size-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.customer-size-option {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid #d7e1ee;
+  border-radius: 14px;
+  background: #ffffff;
+  color: #172033;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
+}
+
+.customer-size-option:hover {
+  border-color: #9eb7d7;
+  transform: translateY(-1px);
+}
+
+.customer-size-option.active {
+  border-color: #1B478F;
+  background: #eef4fb;
+  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+}
+
+.customer-size-option > span {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.customer-size-option > strong {
+  color: #1B478F;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+@media (max-width: 520px) {
+  .customer-size-options {
+    grid-template-columns: 1fr;
+  }
+}
