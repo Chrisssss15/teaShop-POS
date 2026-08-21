@@ -5210,12 +5210,11 @@ function renderCustomerCheckoutScreen() {
             ${escapeHtml(t('name'))}
           </label>
           <input
-  id="customer-name-input"
-  class="customer-checkout-input"
-  type="text"
-  placeholder="${escapeHtml(t('namePlaceholder'))}"
-  value="chris"
-  <!-- value="${escapeHtml(customerName)}" -->
+            id="customer-name-input"
+            class="customer-checkout-input"
+            type="text"
+            placeholder="${escapeHtml(t('namePlaceholder'))}"
+            value="${escapeHtml(customerName)}"
           />
 
           <label class="customer-checkout-label" for="customer-phone-input">
@@ -5226,8 +5225,7 @@ function renderCustomerCheckoutScreen() {
             class="customer-checkout-input"
             type="tel"
             placeholder="${escapeHtml(t('phonePlaceholder'))}"
-             value="0612345678"
-            <!-- value="${escapeHtml(customerPhone)}"-->
+            value="${escapeHtml(customerPhone)}"
           />
         </section>
 
