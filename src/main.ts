@@ -25,6 +25,13 @@ type Product = {
   image_url: string | null
   discount_type: DiscountType
   discount_value: number
+
+  allow_ice_customization: boolean
+  allowed_ice_levels: IceLevel[]
+  default_ice_level: IceLevel | null
+
+  allow_sugar_customization: boolean
+  allowed_sugar_levels: SugarLevel[]
 }
 
 type Topping = {
@@ -50,7 +57,12 @@ type Category = {
   created_at?: string | null
 }
 
-type IceLevel = 'no_ice' | 'less_ice' | 'normal_ice' | 'extra_ice'
+type IceLevel =
+  | 'no_ice'
+  | 'less_ice'
+  | 'normal_ice'
+  | 'warm'
+  | 'extra_ice'
 type SugarLevel = 'none' | 'minimal' | 'less' | 'normal' | 'sweet'
 
 type SelectedTopping = {
@@ -194,7 +206,7 @@ const ICE_LEVELS: IceLevel[] = [
   'no_ice',
   'less_ice',
   'normal_ice',
-  'extra_ice',
+  'warm',
 ]
 
 const SUGAR_LEVELS: SugarLevel[] = [
@@ -214,12 +226,12 @@ const translations = {
     customizeDrink: 'Maak je drankje persoonlijk',
     required: 'Verplicht',
     multiplePossible: 'Meerdere mogelijk',
-    iceLevel: 'Ice level',
+    iceLevel: 'Temperatuur / ijsniveau',
     sugarLevel: 'Sugar level',
     toppings: 'Toppings',
     noToppings: 'Geen toppings beschikbaar.',
     total: 'Totaal',
-    chooseIceSugar: 'Kies ice & sugar',
+    chooseIceSugar: 'Kies temperatuur/ijs & sugar',
     addToOrder: 'Toevoegen aan bestelling',
     edit: 'Bewerken',
     saveChanges: 'Wijzigingen opslaan',
@@ -281,12 +293,12 @@ const translations = {
     customizeDrink: 'Customize your drink',
     required: 'Required',
     multiplePossible: 'Multiple allowed',
-    iceLevel: 'Ice level',
+    iceLevel: 'Temperature / ice level',
     sugarLevel: 'Sugar level',
     toppings: 'Toppings',
     noToppings: 'No toppings available.',
     total: 'Total',
-    chooseIceSugar: 'Choose ice & sugar',
+    chooseIceSugar: 'Choose temperature/ice & sugar',
     addToOrder: 'Add to order',
     edit: 'Edit',
     saveChanges: 'Save changes',
@@ -348,12 +360,12 @@ const translations = {
     customizeDrink: '定制你的饮品',
     required: '必选',
     multiplePossible: '可多选',
-    iceLevel: '冰量',
+    iceLevel: '温度 / 冰量',
     sugarLevel: '甜度',
     toppings: '加料',
     noToppings: '暂无可选加料。',
     total: '总计',
-    chooseIceSugar: '请选择冰量和甜度',
+    chooseIceSugar: '请选择温度 / 冰量和甜度',
     addToOrder: '加入订单',
     edit: '编辑',
     saveChanges: '保存修改',
@@ -414,18 +426,21 @@ const ICE_LEVEL_LABELS: Record<CustomerLanguage, Record<IceLevel, string>> = {
     no_ice: 'Geen ijs',
     less_ice: 'Minder ijs',
     normal_ice: 'Normaal ijs',
+    warm: 'Warm',
     extra_ice: 'Extra ijs',
   },
   en: {
     no_ice: 'No ice',
     less_ice: 'Less ice',
     normal_ice: 'Normal ice',
+    warm: 'Warm',
     extra_ice: 'Extra ice',
   },
   cn: {
     no_ice: '去冰',
     less_ice: '少冰',
     normal_ice: '正常冰',
+    warm: '热',
     extra_ice: '多冰',
   },
 }
@@ -1222,13 +1237,102 @@ function makeCartItemId() {
   return `cart-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+
+function productAllowsIceCustomization(product: Product) {
+  return product.allow_ice_customization !== false
+}
+
+function productAllowsSugarCustomization(product: Product) {
+  return product.allow_sugar_customization !== false
+}
+
+function getProductAllowedIceLevels(product: Product): IceLevel[] {
+  const configuredLevels = Array.isArray(product.allowed_ice_levels)
+    ? product.allowed_ice_levels
+    : []
+
+  const validLevels = configuredLevels.filter((level) =>
+    ICE_LEVELS.includes(level)
+  )
+
+  return validLevels.length > 0 ? validLevels : ICE_LEVELS
+}
+
+function getProductAllowedSugarLevels(product: Product): SugarLevel[] {
+  const configuredLevels = Array.isArray(product.allowed_sugar_levels)
+    ? product.allowed_sugar_levels
+    : []
+
+  const validLevels = configuredLevels.filter((level) =>
+    SUGAR_LEVELS.includes(level)
+  )
+
+  return validLevels.length > 0 ? validLevels : SUGAR_LEVELS
+}
+
+function getFixedIceLevelForProduct(product: Product): IceLevel | null {
+  const fixedLevel = product.default_ice_level
+
+  if (!fixedLevel) {
+    return null
+  }
+
+  return ICE_LEVELS.includes(fixedLevel) ? fixedLevel : null
+}
+
+function getDefaultIceLevelForProduct(product: Product): IceLevel {
+  const fixedLevel = getFixedIceLevelForProduct(product)
+
+  if (fixedLevel) {
+    return fixedLevel
+  }
+
+  const allowedLevels = getProductAllowedIceLevels(product)
+
+  if (allowedLevels.includes('normal_ice')) {
+    return 'normal_ice'
+  }
+
+  return allowedLevels[0] ?? 'normal_ice'
+}
+
+function getDefaultSugarLevelForProduct(product: Product): SugarLevel {
+  const allowedLevels = getProductAllowedSugarLevels(product)
+
+  if (allowedLevels.includes('normal')) {
+    return 'normal'
+  }
+
+  return allowedLevels[0] ?? 'normal'
+}
+
+function isCustomizerSelectionValid() {
+  if (!customizerProduct) return false
+
+  const iceIsValid =
+    !productAllowsIceCustomization(customizerProduct) ||
+    (
+      customizerIceLevel !== null &&
+      getProductAllowedIceLevels(customizerProduct).includes(customizerIceLevel)
+    )
+
+  const sugarIsValid =
+    !productAllowsSugarCustomization(customizerProduct) ||
+    (
+      customizerSugarLevel !== null &&
+      getProductAllowedSugarLevels(customizerProduct).includes(customizerSugarLevel)
+    )
+
+  return iceIsValid && sugarIsValid
+}
+
 function createDefaultCartItem(product: Product): CartItem {
   return {
     cartItemId: makeCartItemId(),
     product,
     quantity: 1,
-    iceLevel: 'normal_ice',
-    sugarLevel: 'normal',
+    iceLevel: getDefaultIceLevelForProduct(product),
+    sugarLevel: getDefaultSugarLevelForProduct(product),
     toppings: [],
   }
 }
@@ -1763,8 +1867,15 @@ function renderCustomerLanguageSwitcher() {
 function openCustomerCustomizer(product: Product) {
   editingCartItemId = null
   customizerProduct = product
-  customizerIceLevel = null
-  customizerSugarLevel = null
+
+  customizerIceLevel = productAllowsIceCustomization(product)
+    ? null
+    : getDefaultIceLevelForProduct(product)
+
+  customizerSugarLevel = productAllowsSugarCustomization(product)
+    ? null
+    : getDefaultSugarLevelForProduct(product)
+
   customizerToppingIds = []
   isCustomerCustomizerOpen = true
   isCustomerCartOpen = false
@@ -1778,8 +1889,22 @@ function editCustomerCartItem(cartItemId: string) {
 
   editingCartItemId = cartItemId
   customizerProduct = item.product
-  customizerIceLevel = item.iceLevel
-  customizerSugarLevel = item.sugarLevel
+
+  const allowedIceLevels = getProductAllowedIceLevels(item.product)
+  const allowedSugarLevels = getProductAllowedSugarLevels(item.product)
+
+  customizerIceLevel = productAllowsIceCustomization(item.product)
+    ? allowedIceLevels.includes(item.iceLevel)
+      ? item.iceLevel
+      : null
+    : getDefaultIceLevelForProduct(item.product)
+
+  customizerSugarLevel = productAllowsSugarCustomization(item.product)
+    ? allowedSugarLevels.includes(item.sugarLevel)
+      ? item.sugarLevel
+      : null
+    : getDefaultSugarLevelForProduct(item.product)
+
   customizerToppingIds = item.toppings.map((topping) => String(topping.id))
 
   isCustomerCartOpen = false
@@ -1806,11 +1931,19 @@ function closeCustomerCustomizer() {
 }
 
 function setCustomizerIceLevel(level: IceLevel) {
+  if (!customizerProduct) return
+  if (!productAllowsIceCustomization(customizerProduct)) return
+  if (!getProductAllowedIceLevels(customizerProduct).includes(level)) return
+
   customizerIceLevel = level
   render()
 }
 
 function setCustomizerSugarLevel(level: SugarLevel) {
+  if (!customizerProduct) return
+  if (!productAllowsSugarCustomization(customizerProduct)) return
+  if (!getProductAllowedSugarLevels(customizerProduct).includes(level)) return
+
   customizerSugarLevel = level
   render()
 }
@@ -1852,10 +1985,13 @@ function getCustomizerTotal() {
 
 function confirmCustomerCustomizer() {
   if (!customizerProduct) return
+  if (!isCustomizerSelectionValid()) return
 
-  if (!customizerIceLevel || !customizerSugarLevel) {
-    return
-  }
+  const finalIceLevel =
+    customizerIceLevel ?? getDefaultIceLevelForProduct(customizerProduct)
+
+  const finalSugarLevel =
+    customizerSugarLevel ?? getDefaultSugarLevelForProduct(customizerProduct)
 
   const selectedToppings = getCustomizerSelectedToppings()
   const wasEditing = editingCartItemId !== null
@@ -1865,8 +2001,8 @@ function confirmCustomerCustomizer() {
 
     if (item) {
       item.product = customizerProduct
-      item.iceLevel = customizerIceLevel
-      item.sugarLevel = customizerSugarLevel
+      item.iceLevel = finalIceLevel
+      item.sugarLevel = finalSugarLevel
       item.toppings = selectedToppings
     }
   } else {
@@ -1874,8 +2010,8 @@ function confirmCustomerCustomizer() {
       cartItemId: makeCartItemId(),
       product: customizerProduct,
       quantity: 1,
-      iceLevel: customizerIceLevel,
-      sugarLevel: customizerSugarLevel,
+      iceLevel: finalIceLevel,
+      sugarLevel: finalSugarLevel,
       toppings: selectedToppings,
     }
 
@@ -3582,6 +3718,9 @@ async function saveAdminProduct() {
   const bestSellerInput = document.querySelector<HTMLInputElement>('#admin-product-bestseller')
   const soldOutInput = document.querySelector<HTMLInputElement>('#admin-product-sold-out')
   const activeInput = document.querySelector<HTMLInputElement>('#admin-product-active')
+  const allowIceInput = document.querySelector<HTMLInputElement>('#admin-product-allow-ice')
+  const defaultIceInput = document.querySelector<HTMLSelectElement>('#admin-product-default-ice')
+  const allowSugarInput = document.querySelector<HTMLInputElement>('#admin-product-allow-sugar')
   const imageInput = document.querySelector<HTMLInputElement>('#admin-product-image')
   const removeImageInput = document.querySelector<HTMLInputElement>('#admin-product-remove-image')
   const selectedImageFile = imageInput?.files?.[0] ?? null
@@ -3599,6 +3738,26 @@ async function saveAdminProduct() {
   const isBestSeller = bestSellerInput?.checked ?? false
   const isSoldOut = soldOutInput?.checked ?? false
   const isActive = activeInput?.checked ?? true
+
+  const allowIceCustomization = allowIceInput?.checked ?? true
+  const allowSugarCustomization = allowSugarInput?.checked ?? true
+
+  const defaultIceLevel =
+    !allowIceCustomization && defaultIceInput?.value
+      ? (defaultIceInput.value as IceLevel)
+      : null
+
+  const selectedIceLevels = Array.from(
+    document.querySelectorAll<HTMLInputElement>(
+      'input[name="admin-product-ice-level"]:checked'
+    )
+  ).map((input) => input.value as IceLevel)
+
+  const selectedSugarLevels = Array.from(
+    document.querySelectorAll<HTMLInputElement>(
+      'input[name="admin-product-sugar-level"]:checked'
+    )
+  ).map((input) => input.value as SugarLevel)
 
   adminMessage = ''
   adminError = ''
@@ -3633,6 +3792,26 @@ async function saveAdminProduct() {
     return
   }
 
+  if (allowIceCustomization && selectedIceLevels.length === 0) {
+    adminError =
+      'Kies minimaal één optie voor Temperatuur / ijsniveau.'
+    render()
+    return
+  }
+
+  if (defaultIceLevel && !ICE_LEVELS.includes(defaultIceLevel)) {
+    adminError = 'Kies een geldige vaste temperatuur / ijsniveau.'
+    render()
+    return
+  }
+
+  if (allowSugarCustomization && selectedSugarLevels.length === 0) {
+    adminError =
+      'Kies minimaal één optie voor Sugar level.'
+    render()
+    return
+  }
+
   try {
     if (adminEditingProductId) {
       const productId = adminEditingProductId
@@ -3660,6 +3839,11 @@ async function saveAdminProduct() {
           is_sold_out: isSoldOut,
           is_active: isActive,
           image_url: imageUrl,
+          allow_ice_customization: allowIceCustomization,
+          allowed_ice_levels: selectedIceLevels,
+          default_ice_level: defaultIceLevel,
+          allow_sugar_customization: allowSugarCustomization,
+          allowed_sugar_levels: selectedSugarLevels,
         })
         .eq('id', productId)
 
@@ -3684,6 +3868,11 @@ async function saveAdminProduct() {
           is_sold_out: isSoldOut,
           is_active: isActive,
           image_url: null,
+          allow_ice_customization: allowIceCustomization,
+          allowed_ice_levels: selectedIceLevels,
+          default_ice_level: defaultIceLevel,
+          allow_sugar_customization: allowSugarCustomization,
+          allowed_sugar_levels: selectedSugarLevels,
         })
         .select('id')
         .single()
@@ -4964,6 +5153,23 @@ function renderCustomerCustomizer() {
     return ''
   }
 
+  const allowIceCustomization =
+    productAllowsIceCustomization(customizerProduct)
+
+  const allowSugarCustomization =
+    productAllowsSugarCustomization(customizerProduct)
+
+  const allowedIceLevels =
+    getProductAllowedIceLevels(customizerProduct)
+
+  const allowedSugarLevels =
+    getProductAllowedSugarLevels(customizerProduct)
+
+  const fixedIceLevel =
+    getFixedIceLevelForProduct(customizerProduct)
+
+  const selectionIsValid = isCustomizerSelectionValid()
+
   return `
     <div class="customer-customizer-overlay ${isCustomerCustomizerOpen ? 'open' : ''}" id="customer-customizer-overlay"></div>
 
@@ -4996,45 +5202,71 @@ function renderCustomerCustomizer() {
       </div>
 
       <div class="customer-customizer-content">
-        <section class="customer-customizer-section">
-          <div class="customer-customizer-section-title">
-            <h3>${escapeHtml(t('iceLevel'))} *</h3>
-            <span>${escapeHtml(t('required'))}</span>
-          </div>
+        ${
+          allowIceCustomization
+            ? `
+              <section class="customer-customizer-section">
+                <div class="customer-customizer-section-title">
+                  <h3>${escapeHtml(t('iceLevel'))} *</h3>
+                  <span>${escapeHtml(t('required'))}</span>
+                </div>
 
-          <div class="customer-modifier-options">
-            ${ICE_LEVELS.map(
-              (level) => `
-                <button
-                  class="customer-modifier-option ${customizerIceLevel === level ? 'active' : ''}"
-                  data-ice-level="${level}"
-                >
-                  ${escapeHtml(getIceLevelText(level))}
-                </button>
+                <div class="customer-modifier-options">
+                  ${allowedIceLevels.map(
+                    (level) => `
+                      <button
+                        class="customer-modifier-option ${customizerIceLevel === level ? 'active' : ''}"
+                        data-ice-level="${level}"
+                      >
+                        ${escapeHtml(getIceLevelText(level))}
+                      </button>
+                    `
+                  ).join('')}
+                </div>
+              </section>
+            `
+            : fixedIceLevel
+              ? `
+                <section class="customer-customizer-section">
+                  <div class="customer-customizer-section-title">
+                    <h3>${escapeHtml(t('iceLevel'))}</h3>
+                    <span>Vast</span>
+                  </div>
+
+                  <div class="customer-fixed-modifier">
+                    <span>${escapeHtml(getIceLevelText(fixedIceLevel))}</span>
+                    <small>Dit is de standaard voor dit drankje</small>
+                  </div>
+                </section>
               `
-            ).join('')}
-          </div>
-        </section>
+              : ''
+        }
 
-        <section class="customer-customizer-section">
-          <div class="customer-customizer-section-title">
-            <h3>${escapeHtml(t('sugarLevel'))} *</h3>
-            <span>${escapeHtml(t('required'))}</span>
-          </div>
+        ${
+          allowSugarCustomization
+            ? `
+              <section class="customer-customizer-section">
+                <div class="customer-customizer-section-title">
+                  <h3>${escapeHtml(t('sugarLevel'))} *</h3>
+                  <span>${escapeHtml(t('required'))}</span>
+                </div>
 
-          <div class="customer-modifier-options sugar-options">
-            ${SUGAR_LEVELS.map(
-              (level) => `
-                <button
-                  class="customer-modifier-option ${customizerSugarLevel === level ? 'active' : ''}"
-                  data-sugar-level="${level}"
-                >
-                  ${escapeHtml(getSugarLevelText(level))}
-                </button>
-              `
-            ).join('')}
-          </div>
-        </section>
+                <div class="customer-modifier-options sugar-options">
+                  ${allowedSugarLevels.map(
+                    (level) => `
+                      <button
+                        class="customer-modifier-option ${customizerSugarLevel === level ? 'active' : ''}"
+                        data-sugar-level="${level}"
+                      >
+                        ${escapeHtml(getSugarLevelText(level))}
+                      </button>
+                    `
+                  ).join('')}
+                </div>
+              </section>
+            `
+            : ''
+        }
 
         <section class="customer-customizer-section">
           <div class="customer-customizer-section-title">
@@ -5073,12 +5305,12 @@ function renderCustomerCustomizer() {
         <button
           class="checkout-btn"
           id="customer-customizer-add"
-          ${!customizerIceLevel || !customizerSugarLevel ? 'disabled' : ''}
+          ${selectionIsValid ? '' : 'disabled'}
         >
           ${
-            !customizerIceLevel || !customizerSugarLevel
-              ? escapeHtml(t('chooseIceSugar'))
-              : escapeHtml(editingCartItemId ? t('saveChanges') : t('addToOrder'))
+            selectionIsValid
+              ? escapeHtml(editingCartItemId ? t('saveChanges') : t('addToOrder'))
+              : escapeHtml(t('chooseIceSugar'))
           }
         </button>
       </div>
@@ -5410,6 +5642,196 @@ function renderCustomer() {
 // RENDER: ADMIN
 // =============================
 
+
+function renderAdminProductCustomizationFields(product?: Product | null) {
+  const allowIceCustomization = product?.allow_ice_customization ?? true
+  const allowSugarCustomization = product?.allow_sugar_customization ?? true
+
+  const selectedIceLevels =
+    product?.allowed_ice_levels?.length
+      ? product.allowed_ice_levels
+      : ICE_LEVELS
+
+  const selectedSugarLevels =
+    product?.allowed_sugar_levels?.length
+      ? product.allowed_sugar_levels
+      : SUGAR_LEVELS
+
+  const defaultIceLevel = product?.default_ice_level ?? ''
+
+  return `
+    <div class="admin-product-customization-field">
+      <div class="admin-product-customization-header">
+        <div>
+          <strong>Temperatuur / ijsniveau</strong>
+          <span>Bepaal of de klant dit mag kiezen en welke opties beschikbaar zijn.</span>
+        </div>
+
+        <label class="admin-customization-toggle">
+          <input
+            id="admin-product-allow-ice"
+            type="checkbox"
+            ${allowIceCustomization ? 'checked' : ''}
+          />
+          <span>Klant mag kiezen</span>
+        </label>
+      </div>
+
+      <div
+        class="admin-customization-options ${allowIceCustomization ? '' : 'disabled'}"
+        id="admin-product-ice-options"
+      >
+        ${ICE_LEVELS.map(
+          (level) => `
+            <label class="admin-customization-option">
+              <input
+                type="checkbox"
+                name="admin-product-ice-level"
+                value="${level}"
+                ${selectedIceLevels.includes(level) ? 'checked' : ''}
+                ${allowIceCustomization ? '' : 'disabled'}
+              />
+              <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
+            </label>
+          `
+        ).join('')}
+      </div>
+
+      <label class="admin-fixed-modifier-field">
+        <span>
+          <strong>Vaste temperatuur / ijsniveau</strong>
+          <small>
+            Gebruik dit als de klant niet mag kiezen. De klant ziet de waarde wel,
+            maar kan deze niet aanpassen.
+          </small>
+        </span>
+
+        <select
+          id="admin-product-default-ice"
+          ${allowIceCustomization ? 'disabled' : ''}
+        >
+          <option value="">Niet tonen / niet van toepassing</option>
+          ${ICE_LEVELS.map(
+            (level) => `
+              <option
+                value="${level}"
+                ${defaultIceLevel === level ? 'selected' : ''}
+              >
+                ${escapeHtml(ICE_LEVEL_LABELS.nl[level])}
+              </option>
+            `
+          ).join('')}
+        </select>
+      </label>
+    </div>
+
+    <div class="admin-product-customization-field">
+      <div class="admin-product-customization-header">
+        <div>
+          <strong>Sugar level</strong>
+          <span>Bepaal of de klant suiker mag kiezen en welke niveaus beschikbaar zijn.</span>
+        </div>
+
+        <label class="admin-customization-toggle">
+          <input
+            id="admin-product-allow-sugar"
+            type="checkbox"
+            ${allowSugarCustomization ? 'checked' : ''}
+          />
+          <span>Klant mag kiezen</span>
+        </label>
+      </div>
+
+      <div
+        class="admin-customization-options ${allowSugarCustomization ? '' : 'disabled'}"
+        id="admin-product-sugar-options"
+      >
+        ${SUGAR_LEVELS.map(
+          (level) => `
+            <label class="admin-customization-option">
+              <input
+                type="checkbox"
+                name="admin-product-sugar-level"
+                value="${level}"
+                ${selectedSugarLevels.includes(level) ? 'checked' : ''}
+                ${allowSugarCustomization ? '' : 'disabled'}
+              />
+              <span>${escapeHtml(SUGAR_LEVEL_LABELS.nl[level])}</span>
+            </label>
+          `
+        ).join('')}
+      </div>
+    </div>
+  `
+}
+
+function updateAdminProductCustomizationState(
+  masterSelector: string,
+  optionsSelector: string,
+  fixedValueSelector?: string
+) {
+  const master =
+    document.querySelector<HTMLInputElement>(masterSelector)
+
+  const options =
+    document.querySelector<HTMLElement>(optionsSelector)
+
+  if (!master || !options) return
+
+  const isEnabled = master.checked
+
+  options.classList.toggle('disabled', !isEnabled)
+
+  options
+    .querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    .forEach((input) => {
+      input.disabled = !isEnabled
+    })
+
+  if (fixedValueSelector) {
+    const fixedValueInput =
+      document.querySelector<HTMLSelectElement>(fixedValueSelector)
+
+    if (fixedValueInput) {
+      fixedValueInput.disabled = isEnabled
+    }
+  }
+}
+
+function bindAdminProductCustomizationToggles() {
+  const iceToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-allow-ice')
+
+  const sugarToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-allow-sugar')
+
+  iceToggle?.addEventListener('change', () => {
+    updateAdminProductCustomizationState(
+      '#admin-product-allow-ice',
+      '#admin-product-ice-options',
+      '#admin-product-default-ice'
+    )
+  })
+
+  sugarToggle?.addEventListener('change', () => {
+    updateAdminProductCustomizationState(
+      '#admin-product-allow-sugar',
+      '#admin-product-sugar-options'
+    )
+  })
+
+  updateAdminProductCustomizationState(
+    '#admin-product-allow-ice',
+    '#admin-product-ice-options',
+    '#admin-product-default-ice'
+  )
+
+  updateAdminProductCustomizationState(
+    '#admin-product-allow-sugar',
+    '#admin-product-sugar-options'
+  )
+}
+
 function renderAdminProductForm() {
   const editingProduct = adminEditingProductId
     ? products.find((product) => String(product.id) === String(adminEditingProductId))
@@ -5533,55 +5955,7 @@ function renderAdminProductForm() {
           </div>
         </div>
 
-        <label>
-          <span>Kortingstype</span>
-          <select
-            id="admin-product-discount-type"
-            class="admin-input admin-select"
-          >
-            <option value="none" ${normalizeDiscountType(editingProduct?.discount_type) === 'none' ? 'selected' : ''}>
-              Geen korting
-            </option>
-            <option value="percentage" ${normalizeDiscountType(editingProduct?.discount_type) === 'percentage' ? 'selected' : ''}>
-              Percentage
-            </option>
-            <option value="fixed" ${normalizeDiscountType(editingProduct?.discount_type) === 'fixed' ? 'selected' : ''}>
-              Vast bedrag
-            </option>
-          </select>
-        </label>
-
-        <label>
-          <span>Kortingswaarde</span>
-
-          <div class="admin-discount-input-wrap">
-            <span
-              class="admin-discount-input-symbol"
-              id="admin-product-discount-symbol"
-            ></span>
-
-            <input
-              id="admin-product-discount-value"
-              class="admin-input admin-discount-value-input"
-              type="number"
-              min="0"
-              step="0.01"
-              value="${editingProduct ? Number(editingProduct.discount_value ?? 0) : 0}"
-              placeholder="0"
-            />
-          </div>
-        </label>
-
-        <div
-          class="admin-live-discount-preview hidden"
-          id="admin-product-discount-preview"
-        >
-          <span>Nieuwe verkoopprijs</span>
-          <strong id="admin-product-preview-price">
-            € ${editingProduct ? getDiscountedProductPrice(editingProduct).toFixed(2) : '0.00'}
-          </strong>
-          <small id="admin-product-preview-text"></small>
-        </div>
+        ${renderAdminProductCustomizationFields(editingProduct)}
 
         <div class="admin-product-toppings-field">
           <div class="admin-product-toppings-header">
@@ -5632,6 +6006,57 @@ function renderAdminProductForm() {
             }
           </div>
         </div>
+
+        <label>
+          <span>Kortingstype</span>
+          <select
+            id="admin-product-discount-type"
+            class="admin-input admin-select"
+          >
+            <option value="none" ${normalizeDiscountType(editingProduct?.discount_type) === 'none' ? 'selected' : ''}>
+              Geen korting
+            </option>
+            <option value="percentage" ${normalizeDiscountType(editingProduct?.discount_type) === 'percentage' ? 'selected' : ''}>
+              Percentage
+            </option>
+            <option value="fixed" ${normalizeDiscountType(editingProduct?.discount_type) === 'fixed' ? 'selected' : ''}>
+              Vast bedrag
+            </option>
+          </select>
+        </label>
+
+        <label>
+          <span>Kortingswaarde</span>
+
+          <div class="admin-discount-input-wrap">
+            <span
+              class="admin-discount-input-symbol"
+              id="admin-product-discount-symbol"
+            ></span>
+
+            <input
+              id="admin-product-discount-value"
+              class="admin-input admin-discount-value-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value="${editingProduct ? Number(editingProduct.discount_value ?? 0) : 0}"
+              placeholder="0"
+            />
+          </div>
+        </label>
+
+        <div
+          class="admin-live-discount-preview hidden"
+          id="admin-product-discount-preview"
+        >
+          <span>Nieuwe verkoopprijs</span>
+          <strong id="admin-product-preview-price">
+            € ${editingProduct ? getDiscountedProductPrice(editingProduct).toFixed(2) : '0.00'}
+          </strong>
+          <small id="admin-product-preview-text"></small>
+        </div>
+
 
         <label class="admin-checkbox-label">
           <input
@@ -6301,6 +6726,8 @@ function renderAdminProductEditModal() {
             </strong>
             <small id="admin-product-preview-text"></small>
           </div>
+
+          ${renderAdminProductCustomizationFields(product)}
 
           <div class="admin-product-toppings-field admin-product-toppings-modal">
             <div class="admin-product-toppings-header">
@@ -9092,7 +9519,11 @@ async function printStickerOnZebra(labelId: string, design = 1) {
 function getStickerIceText(level?: IceLevel | null) {
   if (level === 'no_ice') return 'No ice'
   if (level === 'less_ice') return 'Less ice'
+  if (level === 'warm') return 'Warm'
+
+  // Alleen voor oude bestellingen die nog extra_ice bevatten.
   if (level === 'extra_ice') return 'Extra ice'
+
   return 'Normal ice'
 }
 
@@ -10492,6 +10923,7 @@ function bindEvents() {
   })
 
   bindAdminProductImagePreview()
+  bindAdminProductCustomizationToggles()
 
   document.querySelector<HTMLButtonElement>('#admin-save-product')?.addEventListener('click', saveAdminProduct)
   document.querySelector<HTMLButtonElement>('#admin-cancel-product')?.addEventListener('click', cancelAdminProductEdit)
