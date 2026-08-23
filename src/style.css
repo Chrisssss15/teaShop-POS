@@ -11670,3 +11670,466 @@ body:has(.pos-page) {
     width: 100%;
   }
 }
+
+/* ========================================================= */
+/* POS SETTINGS — FULL PAGE                                  */
+/* Alle styling van de aparte POS-instellingenpagina.        */
+/* ========================================================= */
+
+.pos-settings-page {
+  min-height: 100dvh;
+  padding-bottom: 120px;
+  background: #f6f8fb;
+}
+
+.pos-settings-page .header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.pos-settings-page .header .success-message {
+  margin-top: 0;
+}
+
+.pos-settings-content {
+  width: calc(100% - 32px);
+  max-width: 900px;
+  margin: 24px auto 120px;
+}
+
+.pos-settings-card {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid #dce5f1;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 10px 30px rgba(27, 71, 143, 0.08);
+}
+
+.pos-settings-card .pos-wait-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid #e8edf4;
+  background: #ffffff;
+}
+
+.pos-settings-card .pos-wait-modal-header h2 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 24px;
+}
+
+.pos-settings-card .pos-wait-modal-body {
+  padding: 24px;
+}
+
+.pos-settings-section-heading {
+  margin-bottom: 22px;
+}
+
+.pos-settings-section-heading strong {
+  display: block;
+  color: #172033;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.pos-settings-section-heading p {
+  margin: 5px 0 0;
+  color: #718097;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pos-settings-card .pos-wait-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 24px;
+  border-top: 1px solid #e8edf4;
+  background: #fbfcfe;
+}
+
+.pos-settings-card .primary-btn,
+.pos-settings-card .secondary-btn,
+.pos-settings-page .secondary-btn {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.pos-settings-card .primary-btn {
+  border: 1px solid #1B478F;
+  background: #1B478F;
+  color: #ffffff;
+}
+
+.pos-settings-card .primary-btn:hover {
+  background: #153a76;
+  border-color: #153a76;
+}
+
+.pos-settings-card .secondary-btn,
+.pos-settings-page .secondary-btn {
+  border: 1px solid #d7e2f0;
+  background: #ffffff;
+  color: #1B478F;
+}
+
+.pos-settings-card .secondary-btn:hover,
+.pos-settings-page .secondary-btn:hover {
+  background: #edf4fd;
+}
+
+/* De bestaande wachttijd-controls blijven hetzelfde,
+   maar renderen nu als onderdeel van een pagina in plaats van modal. */
+.pos-settings-card .pos-wait-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.pos-settings-card .pos-wait-divider {
+  height: 1px;
+  margin: 22px 0;
+  background: #e8edf4;
+}
+
+.pos-settings-card .pos-wait-input-wrap {
+  width: 260px;
+}
+
+@media (max-width: 700px) {
+  .pos-settings-page {
+    padding: 16px 16px 100px;
+  }
+
+  .pos-settings-page .header {
+    flex-direction: column;
+  }
+
+  .pos-settings-content {
+    width: 100%;
+    margin: 18px auto 80px;
+  }
+
+  .pos-settings-card {
+    border-radius: 18px;
+  }
+
+  .pos-settings-card .pos-wait-modal-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+  }
+
+  .pos-settings-card .pos-wait-modal-header .secondary-btn {
+    width: fit-content;
+  }
+
+  .pos-settings-card .pos-wait-modal-body {
+    padding: 18px;
+  }
+
+  .pos-settings-card .pos-wait-setting-row {
+    gap: 16px;
+  }
+
+  .pos-settings-card .pos-wait-input-wrap {
+    width: 100%;
+  }
+
+  .pos-settings-card .pos-wait-modal-footer {
+    padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ========================================================= */
+/* SHARED STAFF FOOTER — POS / ORDERS / INSTELLINGEN         */
+/* Dezelfde bottom dock op alle drie de staff-schermen.      */
+/* ========================================================= */
+
+.staff-footer-page {
+  padding-bottom: 118px !important;
+}
+
+/* Op Orders en Instellingen zijn er geen categorieknoppen,
+   dus de twee bestaande acties staan compact in het midden. */
+.staff-footer-page:not(.pos-page) .pos-action-dock {
+  width: auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  padding: 6px 10px;
+}
+
+.staff-footer-page:not(.pos-page) .pos-footer-actions {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+}
+
+.staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-tile {
+  width: 104px;
+  height: 72px;
+  min-width: 104px;
+  min-height: 72px;
+  padding: 6px 10px;
+  gap: 6px;
+}
+
+.staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 21px;
+}
+
+.staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-copy strong {
+  font-size: 12px;
+}
+
+.staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-tile + .pos-action-tile {
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+@media (max-width: 700px) {
+  .staff-footer-page {
+    padding-bottom: 108px !important;
+  }
+
+  .staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-tile {
+    width: 92px;
+    min-width: 92px;
+    height: 68px;
+    min-height: 68px;
+  }
+
+  .staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 19px;
+  }
+
+  .staff-footer-page:not(.pos-page) .pos-footer-actions .pos-action-copy strong {
+    font-size: 11px;
+  }
+}
+
+/* ========================================================= */
+/* EXACT POS FOOTER — POS / ORDERS / INSTELLINGEN            */
+/* Eén identieke footer-layout op alle staff-footer pagina's. */
+/* ========================================================= */
+
+.page.staff-footer-page {
+  padding-bottom: 118px !important;
+}
+
+.page.staff-footer-page .pos-action-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transform: none;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  z-index: 100;
+
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+
+  padding: 6px 14px;
+
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  background: #1e2a44;
+  box-shadow: 0 -8px 22px rgba(15, 23, 42, 0.18);
+}
+
+.page.staff-footer-page .pos-footer-categories {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.page.staff-footer-page .pos-footer-categories::-webkit-scrollbar {
+  display: none;
+}
+
+.page.staff-footer-page .pos-footer-category-btn {
+  flex: 0 0 104px;
+  width: 104px;
+  min-width: 104px;
+  min-height: 72px;
+  padding: 6px 10px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0;
+
+  background: transparent;
+  color: #ffffff;
+  text-align: center;
+  cursor: pointer;
+
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.page.staff-footer-page .pos-footer-category-btn:first-child {
+  border-left: 0;
+}
+
+.page.staff-footer-page .pos-footer-category-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.page.staff-footer-page .pos-footer-category-btn:active {
+  transform: scale(0.97);
+}
+
+.page.staff-footer-page .pos-footer-category-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #24559f;
+  font-size: 21px;
+  line-height: 1;
+}
+
+.page.staff-footer-page .pos-footer-category-btn strong {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.page.staff-footer-page .pos-footer-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  width: 104px;
+  height: 72px;
+  min-width: 104px;
+  min-height: 72px;
+  padding: 6px 10px;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #1B478F;
+  font-size: 21px;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy {
+  gap: 0;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  margin: 0;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy small {
+  display: none;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile + .pos-action-tile {
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding-left: 10px;
+  margin-left: 0;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile:hover {
+  background: rgba(255, 255, 255, 0.05);
+  transform: none;
+}
+
+@media (max-width: 700px) {
+  .page.staff-footer-page {
+    padding-bottom: 108px !important;
+  }
+
+  .page.staff-footer-page .pos-action-dock {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-btn,
+  .page.staff-footer-page .pos-footer-actions .pos-action-tile {
+    flex-basis: 92px;
+    width: 92px;
+    min-width: 92px;
+    height: 68px;
+    min-height: 68px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-icon,
+  .page.staff-footer-page .pos-footer-actions .pos-action-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 19px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-btn strong,
+  .page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+    font-size: 11px;
+  }
+}

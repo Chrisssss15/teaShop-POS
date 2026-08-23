@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
+type Screen = 'pos' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -490,6 +490,7 @@ const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode')
 
 function getScreenFromMode(modeValue: string | null): Screen {
+  if (modeValue === 'pos-settings') return 'pos-settings'
   if (modeValue === 'orders') return 'orders'
   if (modeValue === 'kitchen') return 'kitchen'
   if (modeValue === 'customer') return 'customer'
@@ -498,6 +499,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'admin') return 'admin'
   if (modeValue === 'admin-products') return 'admin-products'
   if (modeValue === 'admin-sales') return 'admin-sales'
+  if (modeValue === 'admin-day-close') return 'admin-day-close'
   if (modeValue === 'admin-add-product') return 'admin-add-product'
   if (modeValue === 'admin-add-topping') return 'admin-add-topping'
   if (modeValue === 'admin-categories') return 'admin-categories'
@@ -629,7 +631,6 @@ let ignoredPendingLabelIds = new Set<string>()
 
 let pickupWaitVisible = true
 let pickupWaitMinutes = 10
-let isPosWaitSettingsOpen = false
 let isSmoothScrollingToCategory = false
 
 
@@ -3314,19 +3315,20 @@ async function savePickupWaitSettings() {
 
   pickupWaitVisible = visible
   pickupWaitMinutes = minutes
-  isPosWaitSettingsOpen = false
-  message = 'Wachttijd opgeslagen.'
+  message = 'Instellingen opgeslagen.'
   render()
 }
 
-function openPosWaitSettings() {
-  isPosWaitSettingsOpen = true
+async function goToPosSettings() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'pos-settings'
   message = ''
-  render()
-}
+  updateModeInUrl('pos-settings')
 
-function closePosWaitSettings() {
-  isPosWaitSettingsOpen = false
+  await loadPickupWaitSettings()
   render()
 }
 
@@ -3603,6 +3605,20 @@ async function goToAdminSales() {
   updateModeInUrl('admin-sales')
 
   await loadAdminSalesData()
+}
+
+async function goToAdminDayClose() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'admin-day-close'
+  message = ''
+  adminMessage = ''
+  adminError = ''
+  updateModeInUrl('admin-day-close')
+
+  await loadAllAdminData()
 }
 
 async function goToAdminAddProduct() {
@@ -5444,7 +5460,7 @@ async function loadAllAdminData() {
 function renderNav() {
   return `
     <nav class="top-nav">
-      <button class="nav-btn ${screen === 'pos' ? 'active' : ''}" id="go-pos">
+      <button class="nav-btn ${screen === 'pos' || screen === 'pos-settings' ? 'active' : ''}" id="go-pos">
         POS
       </button>
 
@@ -5460,6 +5476,7 @@ function renderNav() {
         screen === 'admin' ||
         screen === 'admin-products' ||
         screen === 'admin-sales' ||
+        screen === 'admin-day-close' ||
         screen === 'admin-add-product' ||
         screen === 'admin-add-topping' ||
         screen === 'admin-categories'
@@ -7515,12 +7532,23 @@ function renderAdmin() {
           <span class="admin-dashboard-card-arrow">→</span>
         </button>
 
-        <button class="admin-dashboard-card admin-dashboard-card-sales" id="go-admin-sales-dashboard">
-          <span class="admin-dashboard-card-icon">📊</span>
+        <button class="admin-dashboard-card admin-dashboard-card-sales" id="go-admin-administration">
+          <span class="admin-dashboard-card-icon">🧾</span>
 
           <span class="admin-dashboard-card-content">
-            <strong>Verkoop & statistieken</strong>
-            <small>Omzet, cups, bestellingen en verkoophistorie bekijken</small>
+            <strong>Administratie</strong>
+            <small>Omzet, betalingen, bestellingen, cups en verkoophistorie bekijken</small>
+          </span>
+
+          <span class="admin-dashboard-card-arrow">→</span>
+        </button>
+
+        <button class="admin-dashboard-card" id="go-admin-day-close">
+          <span class="admin-dashboard-card-icon">🌙</span>
+
+          <span class="admin-dashboard-card-content">
+            <strong>Dagafsluiting</strong>
+            <small>Bekijk de dagomzet en betalingen voordat je de kassa afsluit</small>
           </span>
 
           <span class="admin-dashboard-card-arrow">→</span>
@@ -7530,6 +7558,35 @@ function renderAdmin() {
   `
 }
 
+
+
+function renderAdminDayClosePage() {
+  return `
+    <div class="page admin-page admin-day-close-page">
+      ${renderNav()}
+
+      <header class="header admin-products-header">
+        <div class="staff-brand">
+          <img class="tea-shop-logo" src="/logo.jpg" alt="Blue Cup logo" />
+
+          <div>
+            <h1>Dagafsluiting</h1>
+            <p class="sub">Controleer de cijfers van vandaag voordat je de dag afsluit.</p>
+          </div>
+        </div>
+
+        <button class="admin-secondary-btn" id="back-admin-from-day-close">
+          ← Admin dashboard
+        </button>
+      </header>
+
+      ${adminError ? `<p class="error admin-error">${escapeHtml(adminError)}</p>` : ''}
+
+      ${renderAdminDailyStats()}
+      ${renderAdminPaymentOverview()}
+    </div>
+  `
+}
 
 function renderAdminProductEditModal() {
   if (!adminEditingProductId) return ''
@@ -8716,93 +8773,112 @@ function renderAdminSalesPage() {
 }
 
 
-function renderPosWaitSettingsModal() {
-  if (!isPosWaitSettingsOpen) return ''
+function renderPosSettings() {
+  const grouped = groupProductsByCategory()
 
   return `
-    <div class="pos-wait-modal-overlay" id="pos-wait-modal-overlay">
-      <div class="pos-wait-modal" role="dialog" aria-modal="true">
-        <div class="pos-wait-modal-header">
+    <div class="page pos-settings-page staff-footer-page">
+      ${renderNav()}
+
+      <header class="header">
+        <div class="staff-brand">
+          <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
+
           <div>
             <p class="eyebrow">POS</p>
-            <h2>Instellingen</h2>
+            <h1>Instellingen</h1>
+            <p class="sub">Beheer instellingen van de kassa en het pickup-scherm.</p>
           </div>
-
-          <button
-            type="button"
-            class="pos-wait-close"
-            id="pos-wait-close"
-            aria-label="Sluiten"
-          >
-            ×
-          </button>
         </div>
 
-        <div class="pos-wait-modal-body">
-          <div class="pos-settings-section-heading">
-            <strong>Pickup & wachttijd</strong>
-            <p>Beheer wat klanten op het pickup-scherm zien.</p>
-          </div>
+        ${message ? `<p class="success-message">${escapeHtml(message)}</p>` : ''}
+      </header>
 
-          <div class="pos-wait-setting-row">
+      <main class="pos-settings-content">
+        <section class="pos-settings-card">
+          <div class="pos-wait-modal-header">
             <div>
-              <strong>Wachttijd zichtbaar</strong>
-              <p>Toon de wachttijd op het scherm aan de voorkant.</p>
+              <p class="eyebrow">Pickup</p>
+              <h2>Pickup & wachttijd</h2>
             </div>
 
-            <label class="pos-wait-switch">
-              <input
-                id="pos-wait-visible"
-                type="checkbox"
-                ${pickupWaitVisible ? 'checked' : ''}
-              />
-              <span class="pos-wait-switch-track">
-                <span class="pos-wait-switch-thumb"></span>
-              </span>
+            <button
+              type="button"
+              class="secondary-btn"
+              id="pos-settings-back"
+            >
+              ← Terug naar POS
+            </button>
+          </div>
+
+          <div class="pos-wait-modal-body">
+            <div class="pos-settings-section-heading">
+              <strong>Wachttijd op pickup-scherm</strong>
+              <p>Beheer wat klanten op het pickup-scherm zien.</p>
+            </div>
+
+            <div class="pos-wait-setting-row">
+              <div>
+                <strong>Wachttijd zichtbaar</strong>
+                <p>Toon de wachttijd op het scherm aan de voorkant.</p>
+              </div>
+
+              <label class="pos-wait-switch">
+                <input
+                  id="pos-wait-visible"
+                  type="checkbox"
+                  ${pickupWaitVisible ? 'checked' : ''}
+                />
+                <span class="pos-wait-switch-track">
+                  <span class="pos-wait-switch-thumb"></span>
+                </span>
+              </label>
+            </div>
+
+            <div class="pos-wait-divider"></div>
+
+            <label class="pos-wait-field">
+              <span>Geschatte wachttijd</span>
+
+              <div class="pos-wait-input-wrap">
+                <input
+                  id="pos-wait-minutes"
+                  type="number"
+                  min="0"
+                  max="180"
+                  step="1"
+                  value="${pickupWaitMinutes}"
+                />
+                <span>minuten</span>
+              </div>
+
+              <small>
+                Bijvoorbeeld 15 = ± 15 minuten op het pickup-scherm.
+              </small>
             </label>
           </div>
 
-          <div class="pos-wait-divider"></div>
+          <div class="pos-wait-modal-footer">
+            <button
+              type="button"
+              class="secondary-btn"
+              id="pos-settings-back-bottom"
+            >
+              Terug
+            </button>
 
-          <label class="pos-wait-field">
-            <span>Geschatte wachttijd</span>
+            <button
+              type="button"
+              class="primary-btn"
+              id="pos-wait-save"
+            >
+              Opslaan
+            </button>
+          </div>
+        </section>
+      </main>
 
-            <div class="pos-wait-input-wrap">
-              <input
-                id="pos-wait-minutes"
-                type="number"
-                min="0"
-                max="180"
-                step="1"
-                value="${pickupWaitMinutes}"
-              />
-              <span>minuten</span>
-            </div>
-
-            <small>
-              Bijvoorbeeld 15 = ± 15 minuten op het pickup-scherm.
-            </small>
-          </label>
-        </div>
-
-        <div class="pos-wait-modal-footer">
-          <button
-            type="button"
-            class="secondary-btn"
-            id="pos-wait-cancel"
-          >
-            Annuleren
-          </button>
-
-          <button
-            type="button"
-            class="primary-btn"
-            id="pos-wait-save"
-          >
-            Opslaan
-          </button>
-        </div>
-      </div>
+      ${renderStaffBottomBar(grouped)}
     </div>
   `
 }
@@ -8930,7 +9006,7 @@ function renderPos() {
   const grouped = groupProductsByCategory()
 
   return `
-    <div class="page pos-page">
+    <div class="page pos-page staff-footer-page">
       ${renderNav()}
 
       <header class="header">
@@ -8948,7 +9024,6 @@ function renderPos() {
       </header>
 
       ${renderCustomerCustomizer()}
-      ${renderPosWaitSettingsModal()}
 
       <main class="layout">
         <section class="products">
@@ -9314,9 +9389,10 @@ function renderOrderHistoryDetailPanel() {
 function renderOrderHistory() {
   const filteredOrders = getFilteredOrderHistory()
   const isSearching = orderHistorySearch.trim().length > 0
+  const grouped = groupProductsByCategory()
 
   return `
-    <div class="page order-history-page">
+    <div class="page order-history-page staff-footer-page">
       ${renderNav()}
 
       <header class="header history-header">
@@ -9389,8 +9465,7 @@ function renderOrderHistory() {
         }
       </section>
 
-      ${renderPosWaitSettingsModal()}
-      ${renderStaffBottomBar()}
+      ${renderStaffBottomBar(grouped)}
     </div>
   `
 }
@@ -9509,7 +9584,7 @@ function renderOrders() {
   const filteredOrders = getFilteredOrders()
 
   return `
-    <div class="page">
+    <div class="page orders-screen-page">
       ${renderNav()}
 
       <header class="header">
@@ -9545,6 +9620,7 @@ function renderOrders() {
             `
         }
       </section>
+
     </div>
   `
 }
@@ -11616,6 +11692,10 @@ function render() {
     app.innerHTML = renderPos()
   }
 
+  if (screen === 'pos-settings') {
+    app.innerHTML = renderPosSettings()
+  }
+
   if (screen === 'orders') {
     app.innerHTML = renderOrders()
   }
@@ -11646,6 +11726,10 @@ function render() {
 
   if (screen === 'admin-sales') {
     app.innerHTML = renderAdminSalesPage()
+  }
+
+  if (screen === 'admin-day-close') {
+    app.innerHTML = renderAdminDayClosePage()
   }
 
   if (screen === 'admin-add-product') {
@@ -11770,7 +11854,22 @@ function bindEvents() {
       if (categoryIndex === undefined) return
 
       const target = document.querySelector<HTMLElement>(`#category-${categoryIndex}`)
-      if (!target) return
+
+      if (!target) {
+        goToPos()
+
+        requestAnimationFrame(() => {
+          const posTarget = document.querySelector<HTMLElement>(`#category-${categoryIndex}`)
+          if (!posTarget) return
+
+          posTarget.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+          })
+        })
+
+        return
+      }
 
       target.scrollIntoView({
         behavior: 'smooth',
@@ -11779,17 +11878,15 @@ function bindEvents() {
     })
   })
 
-  document.querySelector<HTMLButtonElement>('#pos-wait-settings')?.addEventListener('click', openPosWaitSettings)
-  document.querySelector<HTMLButtonElement>('#pos-wait-close')?.addEventListener('click', closePosWaitSettings)
-  document.querySelector<HTMLButtonElement>('#pos-wait-cancel')?.addEventListener('click', closePosWaitSettings)
-  document.querySelector<HTMLButtonElement>('#pos-wait-save')?.addEventListener('click', () => {
-    void savePickupWaitSettings()
+  document.querySelector<HTMLButtonElement>('#pos-wait-settings')?.addEventListener('click', () => {
+    void goToPosSettings()
   })
 
-  document.querySelector<HTMLDivElement>('#pos-wait-modal-overlay')?.addEventListener('click', (event) => {
-    if (event.target === event.currentTarget) {
-      closePosWaitSettings()
-    }
+  document.querySelector<HTMLButtonElement>('#pos-settings-back')?.addEventListener('click', goToPos)
+  document.querySelector<HTMLButtonElement>('#pos-settings-back-bottom')?.addEventListener('click', goToPos)
+
+  document.querySelector<HTMLButtonElement>('#pos-wait-save')?.addEventListener('click', () => {
+    void savePickupWaitSettings()
   })
 
   document.querySelector<HTMLButtonElement>('#go-pos')?.addEventListener('click', goToPos)
@@ -11849,7 +11946,9 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#go-admin')?.addEventListener('click', goToAdmin)
   document.querySelector<HTMLButtonElement>('#go-admin-products')?.addEventListener('click', goToAdminProducts)
   document.querySelector<HTMLButtonElement>('#go-admin-sales')?.addEventListener('click', goToAdminSales)
-  document.querySelector<HTMLButtonElement>('#go-admin-sales-dashboard')?.addEventListener('click', goToAdminSales)
+  document.querySelector<HTMLButtonElement>('#go-admin-administration')?.addEventListener('click', goToAdminSales)
+  document.querySelector<HTMLButtonElement>('#go-admin-day-close')?.addEventListener('click', goToAdminDayClose)
+  document.querySelector<HTMLButtonElement>('#back-admin-from-day-close')?.addEventListener('click', goToAdmin)
 
   document.querySelector<HTMLButtonElement>('#refresh-admin-sales')?.addEventListener('click', () => {
     void loadAdminSalesData()
@@ -12372,6 +12471,12 @@ window.addEventListener('popstate', async () => {
     return
   }
 
+  if (screen === 'pos-settings') {
+    await loadPickupWaitSettings()
+    render()
+    return
+  }
+
   if (screen === 'order-history') {
     await loadOrderHistory()
     return
@@ -12394,7 +12499,7 @@ window.addEventListener('popstate', async () => {
     return
   }
 
-  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
+  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-day-close' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
     await loadAllAdminData()
     return
   }
@@ -12472,7 +12577,7 @@ async function startApp() {
     return
   }
 
-  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
+  if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-day-close' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
     await loadAllAdminData()
     return
   }
