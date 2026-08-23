@@ -12353,6 +12353,7 @@ window.addEventListener('popstate', async () => {
   message = ''
 
   if (screen === 'print-preview') {
+    await loadProducts()
     await loadPrintPreviewData()
     return
   }
@@ -12421,6 +12422,7 @@ async function startApp() {
   }
 
   if (screen === 'print-preview') {
+    await loadProducts()
     await loadPrintPreviewData()
     return
   }
