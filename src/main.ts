@@ -912,6 +912,11 @@ async function loadCategories() {
     shouldRefresh = true
   }
 
+  if (!getHotSystemCategory()) {
+    await ensureHotSystemCategory()
+    shouldRefresh = true
+  }
+
   if (shouldRefresh) {
     const { data: refreshedData, error: refreshedError } = await supabase
       .from('categories')
@@ -1757,6 +1762,9 @@ const BESTSELLER_CATEGORY_KEY = '__bestseller__'
 const BESTSELLER_CATEGORY_LABEL = 'Best Seller'
 const BESTSELLER_LIMIT = 5
 
+const HOT_CATEGORY_KEY = '__hot__'
+const HOT_CATEGORY_LABEL = 'Hot'
+
 function isDiscountSystemCategory(category: Category) {
   return category.name.trim().toLowerCase() === DISCOUNT_CATEGORY_LABEL.toLowerCase()
 }
@@ -1773,6 +1781,58 @@ function isBestSellerSystemCategory(category: Category) {
 function getBestSellerSystemCategory() {
   return categories.find((category) => isBestSellerSystemCategory(category)) ?? null
 }
+
+function isHotSystemCategory(category: Category) {
+  return category.name.trim().toLowerCase() === HOT_CATEGORY_LABEL.toLowerCase()
+}
+
+function getHotSystemCategory() {
+  return categories.find((category) => isHotSystemCategory(category)) ?? null
+}
+
+function isProductAvailableHot(product: Product) {
+  const fixedIceLevel = getFixedIceLevelForProduct(product)
+
+  if (fixedIceLevel === 'warm') {
+    return true
+  }
+
+  return (
+    productAllowsIceCustomization(product) &&
+    getProductAllowedIceLevels(product).includes('warm')
+  )
+}
+
+function getHotProducts() {
+  return products
+    .filter((product) => isProductAvailableHot(product))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+async function ensureHotSystemCategory() {
+  if (getHotSystemCategory()) {
+    return
+  }
+
+  const maxSortOrder = categories.reduce((max, category) => {
+    return Math.max(max, Number(category.sort_order ?? 0))
+  }, 0)
+
+  const { error } = await supabase
+    .from('categories')
+    .insert({
+      name: HOT_CATEGORY_LABEL,
+      is_active: true,
+      discount_type: 'none',
+      discount_value: 0,
+      sort_order: maxSortOrder + 1,
+    })
+
+  if (error) {
+    console.error('Hot categorie aanmaken mislukt:', error)
+  }
+}
+
 
 async function ensureBestSellerSystemCategory() {
   if (getBestSellerSystemCategory()) {
@@ -1829,6 +1889,10 @@ function getCategoryDisplayName(categoryKey: string) {
 
   if (categoryKey === BESTSELLER_CATEGORY_KEY) {
     return BESTSELLER_CATEGORY_LABEL
+  }
+
+  if (categoryKey === HOT_CATEGORY_KEY) {
+    return HOT_CATEGORY_LABEL
   }
 
   return categoryKey
@@ -1894,6 +1958,16 @@ function groupProductsByCategory() {
     bestSellerProducts.length > 0
   ) {
     grouped[BESTSELLER_CATEGORY_KEY] = bestSellerProducts
+  }
+
+  const hotProducts = getHotProducts()
+  const hotCategory = getHotSystemCategory()
+
+  if (
+    hotCategory?.is_active &&
+    hotProducts.length > 0
+  ) {
+    grouped[HOT_CATEGORY_KEY] = hotProducts
   }
 
   return grouped
@@ -4926,10 +5000,11 @@ async function deleteAdminCategory(categoryId: string) {
 
   if (
     isDiscountSystemCategory(category) ||
-    isBestSellerSystemCategory(category)
+    isBestSellerSystemCategory(category) ||
+    isHotSystemCategory(category)
   ) {
     adminError =
-      'Discount en Best Seller zijn systeemcategorieën en kunnen niet worden verwijderd.'
+      'Discount, Best Seller en Hot zijn systeemcategorieën en kunnen niet worden verwijderd.'
     render()
     return
   }
@@ -5311,6 +5386,10 @@ function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
         return groupedNames.includes(BESTSELLER_CATEGORY_KEY)
       }
 
+      if (isHotSystemCategory(category)) {
+        return groupedNames.includes(HOT_CATEGORY_KEY)
+      }
+
       return groupedNames.includes(category.name)
     })
     .sort((a, b) => {
@@ -5330,6 +5409,10 @@ function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
 
       if (isBestSellerSystemCategory(category)) {
         return BESTSELLER_CATEGORY_KEY
+      }
+
+      if (isHotSystemCategory(category)) {
+        return HOT_CATEGORY_KEY
       }
 
       return category.name
@@ -6526,6 +6609,7 @@ function renderAdminProductForm() {
                 (category) =>
                   !isDiscountSystemCategory(category) &&
                   !isBestSellerSystemCategory(category) &&
+                  !isHotSystemCategory(category) &&
                   (category.is_active || category.name === editingProduct?.category)
               )
               .map(
@@ -7819,14 +7903,22 @@ function renderAdminCategoryProductsModal() {
   const isBestSellerCategory =
     adminViewingCategoryId === BESTSELLER_CATEGORY_KEY
 
+  const isHotCategory =
+    adminViewingCategoryId === HOT_CATEGORY_KEY
+
   const category =
-    isDiscountCategory || isBestSellerCategory
+    isDiscountCategory || isBestSellerCategory || isHotCategory
       ? null
       : categories.find(
           (item) => String(item.id) === String(adminViewingCategoryId)
         )
 
-  if (!isDiscountCategory && !isBestSellerCategory && !category) {
+  if (
+    !isDiscountCategory &&
+    !isBestSellerCategory &&
+    !isHotCategory &&
+    !category
+  ) {
     return ''
   }
 
@@ -7834,13 +7926,17 @@ function renderAdminCategoryProductsModal() {
     ? DISCOUNT_CATEGORY_LABEL
     : isBestSellerCategory
       ? BESTSELLER_CATEGORY_LABEL
-      : category!.name
+      : isHotCategory
+        ? HOT_CATEGORY_LABEL
+        : category!.name
 
   const categoryProducts = isDiscountCategory
     ? getDiscountedProducts()
     : isBestSellerCategory
       ? getBestSellerProducts()
-      : products
+      : isHotCategory
+        ? getHotProducts()
+        : products
           .filter((product) => product.category === category!.name)
           .sort((a, b) => a.name.localeCompare(b.name))
 
@@ -7879,7 +7975,9 @@ function renderAdminCategoryProductsModal() {
                       ? 'Er zijn momenteel geen drankjes met korting.'
                       : isBestSellerCategory
                         ? 'Er zijn nog geen verkochte drankjes om Best Sellers te bepalen.'
-                        : 'Er zijn nog geen drankjes gekoppeld aan deze categorie.'
+                        : isHotCategory
+                          ? 'Er zijn momenteel geen drankjes die warm beschikbaar zijn.'
+                          : 'Er zijn nog geen drankjes gekoppeld aan deze categorie.'
                   }</span>
                 </div>
               `
@@ -8073,7 +8171,9 @@ function renderAdminCategoriesPage() {
                               ? 'admin-discount-system-row'
                               : isBestSellerSystemCategory(category)
                                 ? 'admin-bestseller-system-row'
-                                : ''
+                                : isHotSystemCategory(category)
+                                  ? 'admin-hot-system-row'
+                                  : ''
                           }"
                           draggable="true"
                           data-admin-category-row="${category.id}"
@@ -8093,7 +8193,9 @@ function renderAdminCategoriesPage() {
                                 ? getDiscountedProducts().length
                                 : isBestSellerSystemCategory(category)
                                   ? getBestSellerProducts().length
-                                  : getAdminCategoryProductCount(category.name)
+                                  : isHotSystemCategory(category)
+                                    ? getHotProducts().length
+                                    : getAdminCategoryProductCount(category.name)
                             } producten</span>
 
                             ${
@@ -8101,12 +8203,15 @@ function renderAdminCategoriesPage() {
                                 ? `<span class="admin-auto-category-label">Automatisch gevuld</span>`
                                 : isBestSellerSystemCategory(category)
                                   ? `<span class="admin-auto-category-label">Handmatig geselecteerd</span>`
-                                  : ''
+                                  : isHotSystemCategory(category)
+                                    ? `<span class="admin-auto-category-label">Automatisch gevuld</span>`
+                                    : ''
                             }
 
                             ${
                               !isDiscountSystemCategory(category) &&
                               !isBestSellerSystemCategory(category) &&
+                              !isHotSystemCategory(category) &&
                               normalizeDiscountType(category.discount_type) !== 'none' &&
                               Number(category.discount_value ?? 0) > 0
                                 ? `
@@ -8136,7 +8241,9 @@ function renderAdminCategoriesPage() {
                                   ? DISCOUNT_CATEGORY_KEY
                                   : isBestSellerSystemCategory(category)
                                     ? BESTSELLER_CATEGORY_KEY
-                                    : category.id
+                                    : isHotSystemCategory(category)
+                                      ? HOT_CATEGORY_KEY
+                                      : category.id
                               }"
                             >
                               Producten (${
@@ -8144,12 +8251,16 @@ function renderAdminCategoriesPage() {
                                   ? getDiscountedProducts().length
                                   : isBestSellerSystemCategory(category)
                                     ? getBestSellerProducts().length
-                                    : getAdminCategoryProductCount(category.name)
+                                    : isHotSystemCategory(category)
+                                      ? getHotProducts().length
+                                      : getAdminCategoryProductCount(category.name)
                               })
                             </button>
 
                             ${
-                              isDiscountSystemCategory(category) || isBestSellerSystemCategory(category)
+                              isDiscountSystemCategory(category) ||
+                              isBestSellerSystemCategory(category) ||
+                              isHotSystemCategory(category)
                                 ? ''
                                 : `
                                   <button
@@ -8175,7 +8286,8 @@ function renderAdminCategoriesPage() {
 
                             ${
                               isDiscountSystemCategory(category) ||
-                              isBestSellerSystemCategory(category)
+                              isBestSellerSystemCategory(category) ||
+                              isHotSystemCategory(category)
                                 ? ''
                                 : `
                                   <button
@@ -8480,6 +8592,7 @@ function renderStaffBottomBar(grouped?: Record<string, Product[]>) {
           (category) =>
             category !== DISCOUNT_CATEGORY_KEY &&
             category !== BESTSELLER_CATEGORY_KEY &&
+            category !== HOT_CATEGORY_KEY &&
             getCategoryDisplayName(category).trim().toLowerCase() !== 'test'
         )
         .map((category) => {
