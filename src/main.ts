@@ -3929,6 +3929,7 @@ async function deleteAdminProduct(productId: string) {
 
 async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
+  const qrCodeInput = document.querySelector<HTMLInputElement>('#admin-product-qr-code')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
   const mediumSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-medium')
@@ -3950,6 +3951,7 @@ async function saveAdminProduct() {
   const selectedToppingIds = getSelectedAdminToppingIds()
 
   const name = nameInput?.value.trim() || ''
+  const qrProductCode = qrCodeInput?.value.trim() || ''
   const category = categoryInput?.value.trim() || ''
 
   const availableSizes: CupSize[] = []
@@ -4083,6 +4085,35 @@ async function saveAdminProduct() {
     return
   }
 
+  if (qrProductCode) {
+    let qrQuery = supabase
+      .from('products')
+      .select('id')
+      .eq('qr_product_code', qrProductCode)
+      .limit(1)
+
+    if (adminEditingProductId) {
+      qrQuery = qrQuery.neq('id', adminEditingProductId)
+    }
+
+    const { data: duplicateQrProduct, error: duplicateQrError } =
+      await qrQuery.maybeSingle()
+
+    if (duplicateQrError) {
+      adminError =
+        `QR product code controleren mislukt: ${duplicateQrError.message}`
+      render()
+      return
+    }
+
+    if (duplicateQrProduct) {
+      adminError =
+        `QR product code "${qrProductCode}" is al in gebruik. Kies een unieke code.`
+      render()
+      return
+    }
+  }
+
   try {
     if (adminEditingProductId) {
       const productId = adminEditingProductId
@@ -4106,6 +4137,7 @@ async function saveAdminProduct() {
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
+          qr_product_code: qrProductCode || null,
           available_sizes: availableSizes,
           medium_price: mediumPrice,
           large_price: largePrice,
@@ -4138,6 +4170,7 @@ async function saveAdminProduct() {
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
+          qr_product_code: qrProductCode || null,
           available_sizes: availableSizes,
           medium_price: mediumPrice,
           large_price: largePrice,
@@ -6467,6 +6500,21 @@ function renderAdminProductForm() {
         </label>
 
         <label>
+          <span>QR product code</span>
+          <input
+            id="admin-product-qr-code"
+            class="admin-input"
+            type="text"
+            value="${editingProduct?.qr_product_code ? escapeHtml(editingProduct.qr_product_code) : ''}"
+            placeholder="Bijv. 102"
+            inputmode="numeric"
+          />
+          <small class="admin-field-help">
+            Optioneel. Als je een code invult, moet die uniek zijn.
+          </small>
+        </label>
+
+        <label>
           <span>Categorie</span>
           <select
             id="admin-product-category"
@@ -7202,6 +7250,21 @@ function renderAdminProductEditModal() {
           <label class="admin-modal-field">
             <span>Naam</span>
             <input id="admin-product-name" class="admin-input" type="text" value="${escapeHtml(product.name)}" />
+          </label>
+
+          <label class="admin-modal-field">
+            <span>QR product code</span>
+            <input
+              id="admin-product-qr-code"
+              class="admin-input"
+              type="text"
+              value="${product.qr_product_code ? escapeHtml(product.qr_product_code) : ''}"
+              placeholder="Bijv. 102"
+              inputmode="numeric"
+            />
+            <small class="admin-field-help">
+              Optioneel. Als je een code invult, moet die uniek zijn.
+            </small>
           </label>
 
           <label class="admin-modal-field">
