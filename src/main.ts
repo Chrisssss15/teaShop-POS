@@ -35,6 +35,8 @@ type Product = {
 
   allow_ice_customization: boolean
   allowed_ice_levels: IceLevel[]
+  medium_allowed_ice_levels: IceLevel[] | null
+  large_allowed_ice_levels: IceLevel[] | null
   default_ice_level: IceLevel | null
 
   allow_sugar_customization: boolean
@@ -1344,16 +1346,54 @@ function productAllowsSugarCustomization(product: Product) {
   return product.allow_sugar_customization !== false
 }
 
-function getProductAllowedIceLevels(product: Product): IceLevel[] {
-  const configuredLevels = Array.isArray(product.allowed_ice_levels)
-    ? product.allowed_ice_levels
-    : []
+function getProductAllowedIceLevels(
+  product: Product,
+  cupSize?: CupSize | null
+): IceLevel[] {
+  const getValidLevels = (levels?: IceLevel[] | null) => {
+    if (!Array.isArray(levels)) {
+      return []
+    }
 
-  const validLevels = configuredLevels.filter((level) =>
-    ICE_LEVELS.includes(level)
+    return levels.filter((level) => ICE_LEVELS.includes(level))
+  }
+
+  if (cupSize === 'medium') {
+    const mediumLevels = getValidLevels(product.medium_allowed_ice_levels)
+
+    if (mediumLevels.length > 0) {
+      return mediumLevels
+    }
+  }
+
+  if (cupSize === 'large') {
+    const largeLevels = getValidLevels(product.large_allowed_ice_levels)
+
+    if (largeLevels.length > 0) {
+      return largeLevels
+    }
+  }
+
+  const configuredLevels = getValidLevels(product.allowed_ice_levels)
+
+  if (cupSize) {
+    return configuredLevels.length > 0 ? configuredLevels : ICE_LEVELS
+  }
+
+  const availableSizes = getProductAvailableSizes(product)
+  const sizeSpecificLevels = availableSizes.flatMap((size) => {
+    if (size === 'medium') {
+      return getValidLevels(product.medium_allowed_ice_levels)
+    }
+
+    return getValidLevels(product.large_allowed_ice_levels)
+  })
+
+  const combinedLevels = Array.from(
+    new Set([...sizeSpecificLevels, ...configuredLevels])
   )
 
-  return validLevels.length > 0 ? validLevels : ICE_LEVELS
+  return combinedLevels.length > 0 ? combinedLevels : ICE_LEVELS
 }
 
 function getProductAllowedSugarLevels(product: Product): SugarLevel[] {
@@ -1378,14 +1418,17 @@ function getFixedIceLevelForProduct(product: Product): IceLevel | null {
   return ICE_LEVELS.includes(fixedLevel) ? fixedLevel : null
 }
 
-function getDefaultIceLevelForProduct(product: Product): IceLevel {
+function getDefaultIceLevelForProduct(
+  product: Product,
+  cupSize?: CupSize | null
+): IceLevel {
   const fixedLevel = getFixedIceLevelForProduct(product)
 
   if (fixedLevel) {
     return fixedLevel
   }
 
-  const allowedLevels = getProductAllowedIceLevels(product)
+  const allowedLevels = getProductAllowedIceLevels(product, cupSize)
 
   if (allowedLevels.includes('normal_ice')) {
     return 'normal_ice'
@@ -1415,7 +1458,10 @@ function isCustomizerSelectionValid() {
     !productAllowsIceCustomization(customizerProduct) ||
     (
       customizerIceLevel !== null &&
-      getProductAllowedIceLevels(customizerProduct).includes(customizerIceLevel)
+      getProductAllowedIceLevels(
+        customizerProduct,
+        customizerCupSize
+      ).includes(customizerIceLevel)
     )
 
   const sugarIsValid =
@@ -1434,7 +1480,10 @@ function createDefaultCartItem(product: Product): CartItem {
     product,
     quantity: 1,
     cupSize: getDefaultCupSizeForProduct(product),
-    iceLevel: getDefaultIceLevelForProduct(product),
+    iceLevel: getDefaultIceLevelForProduct(
+      product,
+      getDefaultCupSizeForProduct(product)
+    ),
     sugarLevel: getDefaultSugarLevelForProduct(product),
     toppings: [],
   }
@@ -2048,7 +2097,7 @@ function openCustomerCustomizer(product: Product) {
 
   customizerIceLevel = productAllowsIceCustomization(product)
     ? null
-    : getDefaultIceLevelForProduct(product)
+    : getDefaultIceLevelForProduct(product, customizerCupSize)
 
   customizerSugarLevel = productAllowsSugarCustomization(product)
     ? null
@@ -2069,14 +2118,17 @@ function editCustomerCartItem(cartItemId: string) {
   customizerProduct = item.product
   customizerCupSize = getSafeCupSizeForProduct(item.product, item.cupSize)
 
-  const allowedIceLevels = getProductAllowedIceLevels(item.product)
+  const allowedIceLevels = getProductAllowedIceLevels(
+    item.product,
+    customizerCupSize
+  )
   const allowedSugarLevels = getProductAllowedSugarLevels(item.product)
 
   customizerIceLevel = productAllowsIceCustomization(item.product)
     ? allowedIceLevels.includes(item.iceLevel)
       ? item.iceLevel
       : null
-    : getDefaultIceLevelForProduct(item.product)
+    : getDefaultIceLevelForProduct(item.product, customizerCupSize)
 
   customizerSugarLevel = productAllowsSugarCustomization(item.product)
     ? allowedSugarLevels.includes(item.sugarLevel)
@@ -2116,13 +2168,40 @@ function setCustomizerCupSize(size: CupSize) {
   if (!getProductAvailableSizes(customizerProduct).includes(size)) return
 
   customizerCupSize = size
+
+  if (productAllowsIceCustomization(customizerProduct)) {
+    const allowedIceLevels = getProductAllowedIceLevels(
+      customizerProduct,
+      size
+    )
+
+    if (
+      customizerIceLevel &&
+      !allowedIceLevels.includes(customizerIceLevel)
+    ) {
+      customizerIceLevel = null
+    }
+  } else {
+    customizerIceLevel = getDefaultIceLevelForProduct(
+      customizerProduct,
+      size
+    )
+  }
+
   render()
 }
 
 function setCustomizerIceLevel(level: IceLevel) {
   if (!customizerProduct) return
   if (!productAllowsIceCustomization(customizerProduct)) return
-  if (!getProductAllowedIceLevels(customizerProduct).includes(level)) return
+  if (
+    !getProductAllowedIceLevels(
+      customizerProduct,
+      customizerCupSize
+    ).includes(level)
+  ) {
+    return
+  }
 
   customizerIceLevel = level
   render()
@@ -2180,7 +2259,8 @@ function confirmCustomerCustomizer() {
   if (!isCustomizerSelectionValid()) return
 
   const finalIceLevel =
-    customizerIceLevel ?? getDefaultIceLevelForProduct(customizerProduct)
+    customizerIceLevel ??
+    getDefaultIceLevelForProduct(customizerProduct, customizerCupSize)
 
   const finalSugarLevel =
     customizerSugarLevel ?? getDefaultSugarLevelForProduct(customizerProduct)
@@ -4070,11 +4150,24 @@ async function saveAdminProduct() {
       ? (defaultIceInput.value as IceLevel)
       : null
 
-  const selectedIceLevels = Array.from(
+  const selectedMediumIceLevels = Array.from(
     document.querySelectorAll<HTMLInputElement>(
-      'input[name="admin-product-ice-level"]:checked'
+      'input[name="admin-product-ice-level-medium"]:checked'
     )
   ).map((input) => input.value as IceLevel)
+
+  const selectedLargeIceLevels = Array.from(
+    document.querySelectorAll<HTMLInputElement>(
+      'input[name="admin-product-ice-level-large"]:checked'
+    )
+  ).map((input) => input.value as IceLevel)
+
+  const selectedIceLevels = Array.from(
+    new Set([
+      ...selectedMediumIceLevels,
+      ...selectedLargeIceLevels,
+    ])
+  )
 
   const selectedSugarLevels = Array.from(
     document.querySelectorAll<HTMLInputElement>(
@@ -4139,9 +4232,24 @@ async function saveAdminProduct() {
     return
   }
 
-  if (allowIceCustomization && selectedIceLevels.length === 0) {
+  if (
+    allowIceCustomization &&
+    availableSizes.includes('medium') &&
+    selectedMediumIceLevels.length === 0
+  ) {
     adminError =
-      'Kies minimaal één optie voor Temperatuur / ijsniveau.'
+      'Kies minimaal één temperatuur / ijsniveau voor Medium.'
+    render()
+    return
+  }
+
+  if (
+    allowIceCustomization &&
+    availableSizes.includes('large') &&
+    selectedLargeIceLevels.length === 0
+  ) {
+    adminError =
+      'Kies minimaal één temperatuur / ijsniveau voor Large.'
     render()
     return
   }
@@ -4221,6 +4329,14 @@ async function saveAdminProduct() {
           image_url: imageUrl,
           allow_ice_customization: allowIceCustomization,
           allowed_ice_levels: selectedIceLevels,
+          medium_allowed_ice_levels:
+            availableSizes.includes('medium')
+              ? selectedMediumIceLevels
+              : null,
+          large_allowed_ice_levels:
+            availableSizes.includes('large')
+              ? selectedLargeIceLevels
+              : null,
           default_ice_level: defaultIceLevel,
           allow_sugar_customization: allowSugarCustomization,
           allowed_sugar_levels: selectedSugarLevels,
@@ -4254,6 +4370,14 @@ async function saveAdminProduct() {
           image_url: null,
           allow_ice_customization: allowIceCustomization,
           allowed_ice_levels: selectedIceLevels,
+          medium_allowed_ice_levels:
+            availableSizes.includes('medium')
+              ? selectedMediumIceLevels
+              : null,
+          large_allowed_ice_levels:
+            availableSizes.includes('large')
+              ? selectedLargeIceLevels
+              : null,
           default_ice_level: defaultIceLevel,
           allow_sugar_customization: allowSugarCustomization,
           allowed_sugar_levels: selectedSugarLevels,
@@ -5622,7 +5746,10 @@ function renderCustomerCustomizer() {
     productAllowsSugarCustomization(customizerProduct)
 
   const allowedIceLevels =
-    getProductAllowedIceLevels(customizerProduct)
+    getProductAllowedIceLevels(
+      customizerProduct,
+      customizerCupSize
+    )
 
   const allowedSugarLevels =
     getProductAllowedSugarLevels(customizerProduct)
@@ -6306,6 +6433,44 @@ function updateAdminProductBasePriceFromSizes() {
   basePriceInput.value = ''
 }
 
+
+function updateAdminSizeSpecificIceState() {
+  const mediumToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-medium')
+
+  const largeToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-size-large')
+
+  const allowIceToggle =
+    document.querySelector<HTMLInputElement>('#admin-product-allow-ice')
+
+  const mediumGroup =
+    document.querySelector<HTMLElement>('#admin-medium-ice-group')
+
+  const largeGroup =
+    document.querySelector<HTMLElement>('#admin-large-ice-group')
+
+  const iceCustomizationEnabled = allowIceToggle?.checked ?? true
+
+  const updateGroup = (
+    group: HTMLElement | null,
+    sizeEnabled: boolean
+  ) => {
+    if (!group) return
+
+    group.hidden = !sizeEnabled
+
+    group
+      .querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+      .forEach((input) => {
+        input.disabled = !sizeEnabled || !iceCustomizationEnabled
+      })
+  }
+
+  updateGroup(mediumGroup, mediumToggle?.checked ?? false)
+  updateGroup(largeGroup, largeToggle?.checked ?? false)
+}
+
 function updateAdminProductSizeState() {
   const mediumToggle =
     document.querySelector<HTMLInputElement>('#admin-product-size-medium')
@@ -6335,6 +6500,7 @@ function updateAdminProductSizeState() {
     ?.closest('.admin-size-card')
     ?.classList.toggle('selected', largeToggle.checked)
 
+  updateAdminSizeSpecificIceState()
   updateAdminProductBasePriceFromSizes()
 }
 
@@ -6376,6 +6542,16 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
       ? product.allowed_ice_levels
       : ICE_LEVELS
 
+  const selectedMediumIceLevels =
+    product?.medium_allowed_ice_levels?.length
+      ? product.medium_allowed_ice_levels
+      : selectedIceLevels
+
+  const selectedLargeIceLevels =
+    product?.large_allowed_ice_levels?.length
+      ? product.large_allowed_ice_levels
+      : selectedIceLevels
+
   const selectedSugarLevels =
     product?.allowed_sugar_levels?.length
       ? product.allowed_sugar_levels
@@ -6402,23 +6578,66 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
       </div>
 
       <div
-        class="admin-customization-options ${allowIceCustomization ? '' : 'disabled'}"
+        class="${allowIceCustomization ? '' : 'disabled'}"
         id="admin-product-ice-options"
       >
-        ${ICE_LEVELS.map(
-          (level) => `
-            <label class="admin-customization-option">
-              <input
-                type="checkbox"
-                name="admin-product-ice-level"
-                value="${level}"
-                ${selectedIceLevels.includes(level) ? 'checked' : ''}
-                ${allowIceCustomization ? '' : 'disabled'}
-              />
-              <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
-            </label>
-          `
-        ).join('')}
+        <div
+          class="admin-size-specific-ice-group"
+          id="admin-medium-ice-group"
+        >
+          <div class="admin-product-customization-header">
+            <div>
+              <strong>Medium</strong>
+              <span>Temperatuur / ijsniveau voor de Medium beker.</span>
+            </div>
+          </div>
+
+          <div class="admin-customization-options">
+            ${ICE_LEVELS.map(
+              (level) => `
+                <label class="admin-customization-option">
+                  <input
+                    type="checkbox"
+                    name="admin-product-ice-level-medium"
+                    value="${level}"
+                    ${selectedMediumIceLevels.includes(level) ? 'checked' : ''}
+                    ${allowIceCustomization ? '' : 'disabled'}
+                  />
+                  <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
+                </label>
+              `
+            ).join('')}
+          </div>
+        </div>
+
+        <div
+          class="admin-size-specific-ice-group"
+          id="admin-large-ice-group"
+        >
+          <div class="admin-product-customization-header">
+            <div>
+              <strong>Large</strong>
+              <span>Temperatuur / ijsniveau voor de Large beker.</span>
+            </div>
+          </div>
+
+          <div class="admin-customization-options">
+            ${ICE_LEVELS.map(
+              (level) => `
+                <label class="admin-customization-option">
+                  <input
+                    type="checkbox"
+                    name="admin-product-ice-level-large"
+                    value="${level}"
+                    ${selectedLargeIceLevels.includes(level) ? 'checked' : ''}
+                    ${allowIceCustomization ? '' : 'disabled'}
+                  />
+                  <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
+                </label>
+              `
+            ).join('')}
+          </div>
+        </div>
       </div>
 
       <label class="admin-fixed-modifier-field">
@@ -6535,6 +6754,7 @@ function bindAdminProductCustomizationToggles() {
       '#admin-product-ice-options',
       '#admin-product-default-ice'
     )
+    updateAdminSizeSpecificIceState()
   })
 
   sugarToggle?.addEventListener('change', () => {
@@ -6554,6 +6774,8 @@ function bindAdminProductCustomizationToggles() {
     '#admin-product-allow-sugar',
     '#admin-product-sugar-options'
   )
+
+  updateAdminSizeSpecificIceState()
 }
 
 function renderAdminProductForm() {
