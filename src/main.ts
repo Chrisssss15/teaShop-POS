@@ -3838,6 +3838,95 @@ function bindAdminProductImagePreview() {
   })
 }
 
+
+async function deleteAdminProduct(productId: string) {
+  adminMessage = ''
+  adminError = ''
+
+  const product = products.find(
+    (item) => String(item.id) === String(productId)
+  )
+
+  if (!product) {
+    adminError = 'Product niet gevonden.'
+    render()
+    return
+  }
+
+  const { count: orderItemCount, error: orderItemCountError } = await supabase
+    .from('order_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('product_id', productId)
+
+  if (orderItemCountError) {
+    adminError =
+      `Kon niet controleren of dit product al besteld is: ${orderItemCountError.message}`
+    render()
+    return
+  }
+
+  if ((orderItemCount ?? 0) > 0) {
+    adminError =
+      `Dit product is al gebruikt in ${orderItemCount} orderregel${orderItemCount === 1 ? '' : 's'}. ` +
+      'Zet het product daarom op inactief in plaats van het te verwijderen.'
+    render()
+    return
+  }
+
+  const confirmed = window.confirm(
+    `Weet je zeker dat je "${product.name}" definitief wilt verwijderen?`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  const { error: toppingLinkError } = await supabase
+    .from('product_toppings')
+    .delete()
+    .eq('product_id', productId)
+
+  if (toppingLinkError) {
+    adminError =
+      `Product-topping koppelingen verwijderen mislukt: ${toppingLinkError.message}`
+    render()
+    return
+  }
+
+  const { error: modifierLinkError } = await supabase
+    .from('product_modifier_groups')
+    .delete()
+    .eq('product_id', productId)
+
+  if (modifierLinkError) {
+    console.warn(
+      'Product-modifier koppelingen verwijderen overgeslagen:',
+      modifierLinkError.message
+    )
+  }
+
+  const { error } = await supabase
+    .from('products')
+    .delete()
+    .eq('id', productId)
+
+  if (error) {
+    adminError = `Product verwijderen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  if (
+    adminEditingProductId &&
+    String(adminEditingProductId) === String(productId)
+  ) {
+    adminEditingProductId = null
+  }
+
+  adminMessage = `Product "${product.name}" verwijderd.`
+  await loadAllAdminData()
+}
+
 async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
@@ -6724,6 +6813,13 @@ function renderAdminProductsList() {
                         <button class="admin-small-btn" data-admin-edit-product="${product.id}">
                           Bewerken
                         </button>
+                          <button
+                            class="admin-small-btn danger"
+                            data-admin-delete-product="${product.id}"
+                            type="button"
+                          >
+                            Verwijderen
+                          </button>
 
                         <button
                           class="admin-small-btn ${product.is_active ? 'danger' : 'success'}"
@@ -11630,6 +11726,18 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#admin-cancel-product')?.addEventListener('click', cancelAdminProductEdit)
   document.querySelector<HTMLButtonElement>('#admin-save-topping')?.addEventListener('click', saveAdminTopping)
   document.querySelector<HTMLButtonElement>('#admin-cancel-topping')?.addEventListener('click', cancelAdminToppingEdit)
+
+  document.querySelectorAll<HTMLElement>('[data-admin-delete-product]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const productId = button.dataset.adminDeleteProduct
+      if (!productId) return
+
+      await deleteAdminProduct(productId)
+    })
+  })
 
   document.querySelectorAll<HTMLElement>('[data-admin-edit-product]').forEach((button) => {
     button.addEventListener('click', () => {
