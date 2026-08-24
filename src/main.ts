@@ -8119,10 +8119,12 @@ function renderCustomer() {
           </div>
         </div>
 
-        ${renderCustomerLanguageSwitcher()}
+        <div class="customer-header-actions">
+          ${renderCustomerCartButton()}
+          ${renderCustomerLanguageSwitcher()}
+        </div>
       </header>
 
-      ${renderCustomerCartButton()}
       ${renderCustomerCustomizer()}
       ${renderCustomerCartDrawer()}
       ${renderCustomerCheckoutScreen()}
