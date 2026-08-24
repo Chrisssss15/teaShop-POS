@@ -705,6 +705,7 @@ let ignoredPendingLabelIds = new Set<string>()
 
 let pickupWaitVisible = true
 let pickupWaitMinutes = 10
+let cashRegistrationEnabled = true
 let isSmoothScrollingToCategory = false
 
 
@@ -2555,32 +2556,49 @@ function makePickupCode() {
 async function submitOrder(paymentMethod: PaymentMethod) {
   if (cart.length === 0 || isSubmitting) return
 
-  // Cashbetalingen mogen alleen wanneer er een kassasessie open staat.
-  // We lezen dit rechtstreeks uit Supabase zodat dit ook werkt als de POS
-  // net is geopend en Admin nog niet bezocht is.
+  // Als kasregistratie aan staat, is voor cash een open kassasessie verplicht.
+  // Als kasregistratie uit staat, mag cash zonder kassasessie en wordt er
+  // geen cash_movement aan een kassasessie gekoppeld.
   let cashSessionForSale: CashSession | null = null
 
   if (paymentMethod === 'cash') {
-    const { data: cashSessionData, error: cashSessionError } = await supabase
-      .from('cash_sessions')
-      .select('*')
-      .eq('status', 'open')
-      .order('opened_at', { ascending: false })
-      .limit(1)
+    const { data: settingsData, error: settingsError } = await supabase
+      .from('shop_settings')
+      .select('cash_registration_enabled')
+      .eq('id', 1)
       .maybeSingle()
 
-    if (cashSessionError) {
-      message = `Open kas controleren mislukt: ${cashSessionError.message}`
+    if (settingsError) {
+      message = `Kasregistratie-instelling controleren mislukt: ${settingsError.message}`
       render()
       return
     }
 
-    if (!cashSessionData) {
-      window.alert('Open eerst de kas in Admin voordat je contant afrekent.')
-      return
-    }
+    cashRegistrationEnabled =
+      settingsData?.cash_registration_enabled ?? true
 
-    cashSessionForSale = cashSessionData as CashSession
+    if (cashRegistrationEnabled) {
+      const { data: cashSessionData, error: cashSessionError } = await supabase
+        .from('cash_sessions')
+        .select('*')
+        .eq('status', 'open')
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (cashSessionError) {
+        message = `Open kas controleren mislukt: ${cashSessionError.message}`
+        render()
+        return
+      }
+
+      if (!cashSessionData) {
+        window.alert('Open eerst de kas in Admin voordat je contant afrekent, of zet kasregistratie uit bij Dagafsluiting.')
+        return
+      }
+
+      cashSessionForSale = cashSessionData as CashSession
+    }
   }
 
   isSubmitting = true
@@ -3629,7 +3647,7 @@ function stopOrdersRealtime() {
 async function loadPickupWaitSettings() {
   const { data, error } = await supabase
     .from('shop_settings')
-    .select('pickup_wait_visible,pickup_wait_minutes')
+    .select('pickup_wait_visible,pickup_wait_minutes,cash_registration_enabled')
     .eq('id', 1)
     .maybeSingle()
 
@@ -3642,6 +3660,38 @@ async function loadPickupWaitSettings() {
 
   pickupWaitVisible = data.pickup_wait_visible ?? true
   pickupWaitMinutes = Number(data.pickup_wait_minutes ?? 10)
+  cashRegistrationEnabled = data.cash_registration_enabled ?? true
+}
+
+async function saveCashRegistrationSetting(enabled: boolean) {
+  const previousValue = cashRegistrationEnabled
+  cashRegistrationEnabled = enabled
+  adminMessage = ''
+  adminError = ''
+  render()
+
+  const { error } = await supabase
+    .from('shop_settings')
+    .upsert(
+      {
+        id: 1,
+        cash_registration_enabled: enabled,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    )
+
+  if (error) {
+    cashRegistrationEnabled = previousValue
+    adminError = `Kasregistratie-instelling opslaan mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  adminMessage = enabled
+    ? 'Kasregistratie staat aan. Voor cash is een open kas verplicht.'
+    : 'Kasregistratie staat uit. Cash afrekenen kan zonder kassasessie.'
+  render()
 }
 
 async function savePickupWaitSettings() {
@@ -6779,6 +6829,46 @@ async function openCashSession() {
   render()
 }
 
+function renderCashRegistrationSetting() {
+  return `
+    <section class="admin-payment-panel">
+      <div class="admin-payment-panel-header">
+        <div>
+          <h2>Kasregistratie gebruiken</h2>
+          <p class="muted">
+            Bepaal of een geopende kassasessie verplicht is voor contante betalingen.
+          </p>
+        </div>
+
+        <div class="admin-cash-registration-toggle-wrap">
+          <span class="admin-cash-registration-status">
+            ${cashRegistrationEnabled ? 'AAN' : 'UIT'}
+          </span>
+
+          <label class="pos-wait-switch" aria-label="Kasregistratie aan of uit">
+            <input
+              id="admin-cash-registration-enabled"
+              type="checkbox"
+              ${cashRegistrationEnabled ? 'checked' : ''}
+            />
+            <span class="pos-wait-switch-track">
+              <span class="pos-wait-switch-thumb"></span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="admin-payment-empty">
+        ${
+          cashRegistrationEnabled
+            ? 'AAN: cash afrekenen kan alleen met een geopende kas en wordt in de kassasessie geregistreerd.'
+            : 'UIT: cash afrekenen kan zonder geopende kas. De verkoop blijft in orders/Z-rapport staan, maar wordt niet aan een kassasessie gekoppeld.'
+        }
+      </div>
+    </section>
+  `
+}
+
 function renderAdminCashSession() {
   if (!activeCashSession) {
     return `
@@ -9300,7 +9390,17 @@ function renderAdminDayClosePage() {
       ${adminError ? `<p class="error admin-error">${escapeHtml(adminError)}</p>` : ''}
 
       ${renderAdminDailyStats()}
-      ${renderAdminCashSession()}
+
+      <div class="admin-cash-overview-row">
+        <div class="admin-cash-overview-main">
+          ${renderAdminCashSession()}
+        </div>
+
+        <div class="admin-cash-overview-setting">
+          ${renderCashRegistrationSetting()}
+        </div>
+      </div>
+
       ${renderAdminDailyClosing()}
       ${renderAdminDailyClosingHistory()}
       ${renderAdminPaymentOverview()}
@@ -13936,6 +14036,11 @@ function bindEvents() {
   updateCategoryDiscountPreview()
 
   document.querySelector<HTMLButtonElement>('#admin-refresh-stats')?.addEventListener('click', loadAllAdminData)
+
+  document.querySelector<HTMLInputElement>('#admin-cash-registration-enabled')?.addEventListener('change', async (event) => {
+    const enabled = (event.currentTarget as HTMLInputElement).checked
+    await saveCashRegistrationSetting(enabled)
+  })
 
   document.querySelector<HTMLButtonElement>('#admin-open-cash-session')?.addEventListener('click', async () => {
     await openCashSession()

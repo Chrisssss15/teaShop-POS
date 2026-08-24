@@ -12133,3 +12133,112 @@ body:has(.pos-page) {
     font-size: 11px;
   }
 }
+
+
+/* ========================================================= */
+/* ADMIN — KASREGISTRATIE SWITCH                             */
+/* Zelfde toggle-stijl als Pickup / Wachttijd                */
+/* ========================================================= */
+
+.admin-cash-registration-toggle-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.admin-cash-registration-status {
+  min-width: 30px;
+  color: #617089;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+
+.admin-cash-registration-toggle-wrap:has(
+  #admin-cash-registration-enabled:checked
+) .admin-cash-registration-status {
+  color: #1B478F;
+}
+
+/* Keyboard focus voor de switch */
+.admin-cash-registration-toggle-wrap .pos-wait-switch input:focus-visible
+  + .pos-wait-switch-track {
+  outline: 3px solid rgba(27, 71, 143, 0.16);
+  outline-offset: 3px;
+}
+
+@media (max-width: 620px) {
+  .admin-cash-registration-toggle-wrap {
+    gap: 8px;
+  }
+}
+
+
+/* ========================================================= */
+/* ADMIN — KASADMINISTRATIE + KASREGISTRATIE 3/4 + 1/4      */
+/* Links: kasadministratie | Rechts: kasregistratie toggle    */
+/* ========================================================= */
+
+.admin-cash-overview-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(270px, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+
+.admin-cash-overview-main,
+.admin-cash-overview-setting {
+  min-width: 0;
+  display: flex;
+}
+
+.admin-cash-overview-main > .admin-payment-panel,
+.admin-cash-overview-setting > .admin-payment-panel {
+  width: 100%;
+  margin: 0;
+}
+
+/* Beide blokken even hoog maken */
+.admin-cash-overview-row .admin-payment-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* De informatierij onderaan vult mooi de resterende ruimte */
+.admin-cash-overview-row .admin-payment-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Rechter 1/4 kaart compacter houden */
+.admin-cash-overview-setting .admin-payment-panel-header {
+  gap: 12px;
+}
+
+.admin-cash-overview-setting .admin-payment-panel-header h2 {
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.admin-cash-overview-setting .admin-payment-panel-header .muted {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Op smallere schermen onder elkaar */
+@media (max-width: 1050px) {
+  .admin-cash-overview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-cash-overview-main,
+  .admin-cash-overview-setting {
+    display: block;
+  }
+}
