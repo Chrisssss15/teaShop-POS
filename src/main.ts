@@ -627,6 +627,7 @@ let posAvailabilityProducts: Product[] = []
 let posAvailabilityError = ''
 let orderHistorySearch = ''
 let selectedOrderHistoryId: string | null = null
+let orderHistoryReturnScreen: 'pos' | 'admin' = 'pos'
 let isLoadingKitchen = false
 let message = ''
 
@@ -4065,7 +4066,11 @@ function goToPos() {
 }
 
 
-async function goToOrderHistory() {
+async function goToOrderHistory(
+  from: 'pos' | 'admin' = 'pos'
+) {
+  orderHistoryReturnScreen = from
+
   stopAutoRefresh()
   stopCustomerProgressRefresh()
   removeCustomerScrollListeners()
@@ -4077,6 +4082,15 @@ async function goToOrderHistory() {
   updateModeInUrl('order-history')
 
   await loadOrderHistory()
+}
+
+function goBackFromOrderHistory() {
+  if (orderHistoryReturnScreen === 'admin') {
+    void goToAdmin()
+    return
+  }
+
+  goToPos()
 }
 
 async function goToOrders() {
@@ -9494,6 +9508,17 @@ function renderAdmin() {
           <span class="admin-dashboard-card-arrow">→</span>
         </button>
 
+        <button class="admin-dashboard-card" id="go-admin-order-history">
+          <span class="admin-dashboard-card-icon">📋</span>
+
+          <span class="admin-dashboard-card-content">
+            <strong>Orderhistorie</strong>
+            <small>Bekijk en zoek alle bestellingen van vandaag</small>
+          </span>
+
+          <span class="admin-dashboard-card-arrow">→</span>
+        </button>
+
         <button class="admin-dashboard-card" id="go-admin-day-close">
           <span class="admin-dashboard-card-icon">🌙</span>
 
@@ -11218,9 +11243,19 @@ function getFilteredOrderHistory() {
   )
 }
 
+function getEmployeePaymentMethodLabel(method?: PaymentMethod | null) {
+  if (method === 'cash') return 'Contant'
+  if (method === 'card') return 'Kaart'
+  if (method === 'online_fake') return 'Online'
+  if (method === 'pay_at_counter') return 'Betalen aan balie'
+
+  return '-'
+}
+
 function renderOrderHistoryCard(order: Order) {
   const items = getOrderItems(order.id)
   const payment = getPaymentForOrder(order.id)
+  const isAdminView = orderHistoryReturnScreen === 'admin'
 
   const itemCount = items.reduce(
     (sum, item) => sum + Number(item.quantity ?? 0),
@@ -11288,15 +11323,9 @@ function renderOrderHistoryCard(order: Order) {
 
         <small>
           ${
-            payment
+            isAdminView && payment
               ? escapeHtml(getPaymentProviderLabel(payment))
-              : order.payment_method
-                ? escapeHtml(
-                    order.payment_method === 'online_fake'
-                      ? 'MultiSafepay test'
-                      : order.payment_method
-                  )
-                : '-'
+              : escapeHtml(getEmployeePaymentMethodLabel(order.payment_method))
           }
         </small>
       </div>
@@ -11312,12 +11341,20 @@ function renderOrderHistoryCard(order: Order) {
 }
 
 function renderOrderHistoryDetailPanel() {
+  const isAdminView = orderHistoryReturnScreen === 'admin'
+
   if (!selectedOrderHistoryId) {
     return `
       <aside class="history-detail-panel history-detail-empty">
         <div class="history-detail-empty-icon">☰</div>
         <strong>Selecteer een bestelling</strong>
-        <span>Klik links op een order om de drankjes en betaalgegevens te bekijken.</span>
+        <span>
+          ${
+            isAdminView
+              ? 'Klik links op een order om de drankjes en volledige betaalgegevens te bekijken.'
+              : 'Klik links op een order om de bestelling te bekijken.'
+          }
+        </span>
       </aside>
     `
   }
@@ -11336,6 +11373,10 @@ function renderOrderHistoryDetailPanel() {
 
   const items = getOrderItems(order.id)
   const payment = getPaymentForOrder(order.id)
+  const hasCustomerInfo =
+    Boolean(order.customer_name) ||
+    Boolean(order.customer_phone) ||
+    Boolean(order.pickup_code)
 
   return `
     <aside class="history-detail-panel open">
@@ -11374,31 +11415,61 @@ function renderOrderHistoryDetailPanel() {
         </span>
       </div>
 
-      <div class="history-detail-section">
-        <h3>Klant & pickup</h3>
+      ${
+        hasCustomerInfo
+          ? `
+            <div class="history-detail-section">
+              <h3>Klant & pickup</h3>
 
-        <div class="history-detail-info-grid">
-          <div>
-            <span>Naam</span>
-            <strong>${escapeHtml(order.customer_name || '-')}</strong>
-          </div>
+              <div class="history-detail-info-grid">
+                ${
+                  order.customer_name
+                    ? `
+                      <div>
+                        <span>Naam</span>
+                        <strong>${escapeHtml(order.customer_name)}</strong>
+                      </div>
+                    `
+                    : ''
+                }
 
-          <div>
-            <span>Telefoon</span>
-            <strong>${escapeHtml(order.customer_phone || '-')}</strong>
-          </div>
+                ${
+                  order.customer_phone
+                    ? `
+                      <div>
+                        <span>Telefoon</span>
+                        <strong>${escapeHtml(order.customer_phone)}</strong>
+                      </div>
+                    `
+                    : ''
+                }
 
-          <div>
-            <span>Pickup code</span>
-            <strong>${escapeHtml(order.pickup_code || '-')}</strong>
-          </div>
+                ${
+                  order.pickup_code
+                    ? `
+                      <div>
+                        <span>Pickup code</span>
+                        <strong>${escapeHtml(order.pickup_code)}</strong>
+                      </div>
+                    `
+                    : ''
+                }
 
-          <div>
-            <span>Kanaal</span>
-            <strong>${escapeHtml(order.channel || order.order_type || '-')}</strong>
-          </div>
-        </div>
-      </div>
+                ${
+                  isAdminView
+                    ? `
+                      <div>
+                        <span>Kanaal</span>
+                        <strong>${escapeHtml(order.channel || order.order_type || '-')}</strong>
+                      </div>
+                    `
+                    : ''
+                }
+              </div>
+            </div>
+          `
+          : ''
+      }
 
       <div class="history-detail-section">
         <div class="history-detail-section-title">
@@ -11445,50 +11516,48 @@ function renderOrderHistoryDetailPanel() {
 
         <div class="history-detail-info-grid">
           <div>
-            <span>Methode</span>
+            <span>Betaalmethode</span>
             <strong>
-              ${
-                order.payment_method
-                  ? escapeHtml(
-                      order.payment_method === 'online_fake'
-                        ? 'MultiSafepay test'
-                        : order.payment_method
-                    )
-                  : '-'
-              }
+              ${escapeHtml(getEmployeePaymentMethodLabel(order.payment_method))}
             </strong>
           </div>
 
-          <div>
-            <span>Provider</span>
-            <strong>${escapeHtml(payment ? getPaymentProviderLabel(payment) : '-')}</strong>
-          </div>
+          ${
+            isAdminView
+              ? `
+                <div>
+                  <span>Provider</span>
+                  <strong>${escapeHtml(payment ? getPaymentProviderLabel(payment) : '-')}</strong>
+                </div>
 
-          <div>
-            <span>Provider order ID</span>
-            <strong class="history-detail-code">
-              ${escapeHtml(payment?.provider_order_id || '-')}
-            </strong>
-          </div>
+                <div>
+                  <span>Provider order ID</span>
+                  <strong class="history-detail-code">
+                    ${escapeHtml(payment?.provider_order_id || '-')}
+                  </strong>
+                </div>
 
-          <div>
-            <span>Transaction ID</span>
-            <strong class="history-detail-code">
-              ${escapeHtml(payment?.provider_transaction_id || '-')}
-            </strong>
-          </div>
+                <div>
+                  <span>Transaction ID</span>
+                  <strong class="history-detail-code">
+                    ${escapeHtml(payment?.provider_transaction_id || '-')}
+                  </strong>
+                </div>
 
-          <div>
-            <span>Betaald op</span>
-            <strong>${escapeHtml(formatDate(payment?.paid_at || order.paid_at))}</strong>
-          </div>
+                <div>
+                  <span>Betaald op</span>
+                  <strong>${escapeHtml(formatDate(payment?.paid_at || order.paid_at))}</strong>
+                </div>
 
-          <div>
-            <span>Payment ID</span>
-            <strong class="history-detail-code">
-              ${escapeHtml(payment?.id || '-')}
-            </strong>
-          </div>
+                <div>
+                  <span>Payment ID</span>
+                  <strong class="history-detail-code">
+                    ${escapeHtml(payment?.id || '-')}
+                  </strong>
+                </div>
+              `
+              : ''
+          }
         </div>
       </div>
 
@@ -11519,7 +11588,13 @@ function renderOrderHistory() {
           </div>
         </div>
 
-
+        <button
+          type="button"
+          class="small-btn"
+          id="history-back"
+        >
+          ${orderHistoryReturnScreen === 'admin' ? '← Terug naar Admin' : '← Terug naar POS'}
+        </button>
       </header>
 
       <section class="history-panel">
@@ -14063,11 +14138,18 @@ function bindEvents() {
   })
 
   document.querySelector<HTMLButtonElement>('#go-pos')?.addEventListener('click', goToPos)
+
   document.querySelector<HTMLButtonElement>('#go-order-history')?.addEventListener('click', () => {
-    void goToOrderHistory()
+    void goToOrderHistory('pos')
   })
 
-  document.querySelector<HTMLButtonElement>('#history-back-pos')?.addEventListener('click', goToPos)
+  document.querySelector<HTMLButtonElement>('#go-admin-order-history')?.addEventListener('click', () => {
+    void goToOrderHistory('admin')
+  })
+
+  document.querySelector<HTMLButtonElement>('#history-back')?.addEventListener('click', goBackFromOrderHistory)
+
+  document.querySelector<HTMLButtonElement>('#history-back-pos')?.addEventListener('click', goBackFromOrderHistory)
 
   document.querySelector<HTMLButtonElement>('#refresh-order-history')?.addEventListener('click', () => {
     void loadOrderHistory()
