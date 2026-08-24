@@ -620,6 +620,11 @@ let isSubmitting = false
 let isLoadingOrders = false
 let isLoadingOrderHistory = false
 let posProductSearch = ''
+let isPosAvailabilityOpen = false
+let isLoadingPosAvailability = false
+let posAvailabilitySearch = ''
+let posAvailabilityProducts: Product[] = []
+let posAvailabilityError = ''
 let orderHistorySearch = ''
 let selectedOrderHistoryId: string | null = null
 let isLoadingKitchen = false
@@ -918,6 +923,137 @@ async function loadProducts() {
   }
 
   render()
+}
+
+async function loadPosAvailabilityProducts(showLoading = true) {
+  if (showLoading) {
+    isLoadingPosAvailability = true
+    posAvailabilityError = ''
+    render()
+  }
+
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .order('category', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) {
+    isLoadingPosAvailability = false
+    posAvailabilityError = `Productbeschikbaarheid laden mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  posAvailabilityProducts = (data ?? []) as Product[]
+  isLoadingPosAvailability = false
+  render()
+}
+
+async function openPosAvailability() {
+  isPosAvailabilityOpen = true
+  posAvailabilitySearch = ''
+  posAvailabilityError = ''
+  await loadPosAvailabilityProducts()
+}
+
+function closePosAvailability() {
+  isPosAvailabilityOpen = false
+  posAvailabilitySearch = ''
+  posAvailabilityError = ''
+  render()
+}
+
+async function setPosProductSoldOut(productId: string, isSoldOut: boolean) {
+  const { error } = await supabase
+    .from('products')
+    .update({ is_sold_out: isSoldOut })
+    .eq('id', productId)
+
+  if (error) {
+    posAvailabilityError = `Beschikbaarheid aanpassen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  posAvailabilityProducts = posAvailabilityProducts.map((product) =>
+    String(product.id) === String(productId)
+      ? { ...product, is_sold_out: isSoldOut }
+      : product
+  )
+
+  products = products.map((product) =>
+    String(product.id) === String(productId)
+      ? { ...product, is_sold_out: isSoldOut }
+      : product
+  )
+
+  message = isSoldOut
+    ? 'Product staat nu op uitverkocht.'
+    : 'Product is weer beschikbaar.'
+
+  render()
+}
+
+async function setPosProductVisible(productId: string, isVisible: boolean) {
+  const { error } = await supabase
+    .from('products')
+    .update({ is_active: isVisible })
+    .eq('id', productId)
+
+  if (error) {
+    posAvailabilityError = `Zichtbaarheid aanpassen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  posAvailabilityProducts = posAvailabilityProducts.map((product) =>
+    String(product.id) === String(productId)
+      ? { ...product, is_active: isVisible }
+      : product
+  )
+
+  if (isVisible) {
+    const restoredProduct = posAvailabilityProducts.find(
+      (product) => String(product.id) === String(productId)
+    )
+
+    if (restoredProduct) {
+      const alreadyLoaded = products.some(
+        (product) => String(product.id) === String(productId)
+      )
+
+      if (!alreadyLoaded) {
+        products = [...products, restoredProduct]
+      }
+    }
+  } else {
+    products = products.filter(
+      (product) => String(product.id) !== String(productId)
+    )
+
+    cart = cart.filter(
+      (item) => String(item.product.id) !== String(productId)
+    )
+  }
+
+  message = isVisible
+    ? 'Product is weer zichtbaar.'
+    : 'Product is verborgen uit het menu.'
+
+  render()
+}
+
+function getFilteredPosAvailabilityProducts() {
+  const search = posAvailabilitySearch.trim().toLowerCase()
+
+  if (!search) {
+    return posAvailabilityProducts
+  }
+
+  return posAvailabilityProducts.filter((product) =>
+    `${product.name} ${product.category}`.toLowerCase().includes(search)
+  )
 }
 
 async function loadBestSellerSales() {
@@ -1572,6 +1708,14 @@ function createDefaultCartItem(product: Product): CartItem {
 function addToCart(productId: string) {
   const product = products.find((p) => String(p.id) === String(productId))
   if (!product) return
+
+  if (!product.is_active || product.is_sold_out) {
+    message = product.is_sold_out
+      ? `${product.name} is uitverkocht.`
+      : `${product.name} is momenteel niet beschikbaar.`
+    render()
+    return
+  }
 
   if (screen === 'customer' || screen === 'pos') {
     openCustomerCustomizer(product)
@@ -10758,6 +10902,25 @@ function renderStaffBottomBar(grouped?: Record<string, Product[]>) {
       }
 
       <div class="pos-footer-actions">
+        ${
+          screen === 'pos'
+            ? `
+              <button
+                type="button"
+                class="pos-action-tile pos-action-tile-availability"
+                id="pos-availability-open"
+                aria-label="Beschikbaarheid"
+              >
+                <span class="pos-action-icon" aria-hidden="true">📦</span>
+                <span class="pos-action-copy">
+                  <strong>Beschikbaarheid</strong>
+                  <small>Producten beheren</small>
+                </span>
+              </button>
+            `
+            : ''
+        }
+
         <button
           type="button"
           class="pos-action-tile"
@@ -10836,6 +10999,120 @@ function applyPosProductSearchFilter() {
 // RENDER: STAFF POS
 // =============================
 
+function renderPosAvailabilityModal() {
+  if (!isPosAvailabilityOpen) return ''
+
+  const filteredProducts = getFilteredPosAvailabilityProducts()
+
+  return `
+    <div class="pos-availability-overlay" id="pos-availability-overlay">
+      <section
+        class="pos-availability-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pos-availability-title"
+      >
+        <header class="pos-availability-header">
+          <div>
+            <p class="pos-availability-eyebrow">Snel beheer</p>
+            <h2 id="pos-availability-title">Productbeschikbaarheid</h2>
+            <p>Markeer producten als uitverkocht of verberg ze tijdelijk uit het menu.</p>
+          </div>
+
+          <button
+            class="pos-availability-close"
+            id="pos-availability-close"
+            type="button"
+            aria-label="Sluiten"
+          >
+            ×
+          </button>
+        </header>
+
+        <div class="pos-availability-toolbar">
+          <label class="pos-availability-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              id="pos-availability-search"
+              type="search"
+              placeholder="Zoek product..."
+              autocomplete="off"
+              value="${escapeHtml(posAvailabilitySearch)}"
+            />
+          </label>
+
+          <button
+            class="pos-availability-refresh"
+            id="pos-availability-refresh"
+            type="button"
+            ${isLoadingPosAvailability ? 'disabled' : ''}
+          >
+            Vernieuwen
+          </button>
+        </div>
+
+        ${
+          posAvailabilityError
+            ? `<p class="pos-availability-error">${escapeHtml(posAvailabilityError)}</p>`
+            : ''
+        }
+
+        <div class="pos-availability-list">
+          ${
+            isLoadingPosAvailability
+              ? `<p class="pos-availability-empty">Producten laden...</p>`
+              : filteredProducts.length === 0
+                ? `<p class="pos-availability-empty">Geen producten gevonden.</p>`
+                : filteredProducts
+                    .map(
+                      (product) => `
+                        <article class="pos-availability-row ${!product.is_active ? 'is-hidden' : ''}">
+                          <div class="pos-availability-product">
+                            <strong>${escapeHtml(product.name)}</strong>
+                            <span>${escapeHtml(product.category)}</span>
+
+                            <div class="pos-availability-badges">
+                              ${
+                                !product.is_active
+                                  ? `<span class="pos-availability-badge hidden">Verborgen</span>`
+                                  : product.is_sold_out
+                                    ? `<span class="pos-availability-badge sold-out">Uitverkocht</span>`
+                                    : `<span class="pos-availability-badge available">Beschikbaar</span>`
+                              }
+                            </div>
+                          </div>
+
+                          <div class="pos-availability-actions">
+                            <button
+                              class="pos-availability-action ${product.is_sold_out ? 'restore' : 'sold-out'}"
+                              type="button"
+                              data-pos-sold-out="${product.id}"
+                              data-next-sold-out="${product.is_sold_out ? 'false' : 'true'}"
+                              ${!product.is_active ? 'disabled' : ''}
+                            >
+                              ${product.is_sold_out ? 'Weer beschikbaar' : 'Uitverkocht'}
+                            </button>
+
+                            <button
+                              class="pos-availability-action ${product.is_active ? 'hide' : 'show'}"
+                              type="button"
+                              data-pos-visible="${product.id}"
+                              data-next-visible="${product.is_active ? 'false' : 'true'}"
+                            >
+                              ${product.is_active ? 'Verbergen' : 'Weergeven'}
+                            </button>
+                          </div>
+                        </article>
+                      `
+                    )
+                    .join('')
+          }
+        </div>
+      </section>
+    </div>
+  `
+}
+
 function renderPos() {
   const grouped = groupProductsByCategory()
 
@@ -10858,13 +11135,15 @@ function renderPos() {
       </header>
 
       ${renderCustomerCustomizer()}
+      ${renderPosAvailabilityModal()}
 
       <main class="layout">
         <section class="products">
           <div class="pos-products-header">
             <h2>Producten</h2>
 
-            <label class="pos-product-search">
+            <div class="pos-products-tools">
+              <label class="pos-product-search">
               <span class="pos-product-search-icon" aria-hidden="true">⌕</span>
 
               <input
@@ -10875,7 +11154,8 @@ function renderPos() {
                 value="${escapeHtml(posProductSearch)}"
                 aria-label="Zoek product"
               />
-            </label>
+              </label>
+            </div>
           </div>
 
           <p
@@ -13690,6 +13970,56 @@ function bindEvents() {
   if (posProductSearchInput) {
     applyPosProductSearchFilter()
   }
+
+  document.querySelector<HTMLButtonElement>('#pos-availability-open')?.addEventListener('click', () => {
+    void openPosAvailability()
+  })
+
+  document.querySelector<HTMLButtonElement>('#pos-availability-close')?.addEventListener('click', () => {
+    closePosAvailability()
+  })
+
+  document.querySelector<HTMLDivElement>('#pos-availability-overlay')?.addEventListener('click', (event) => {
+    if (event.target === event.currentTarget) {
+      closePosAvailability()
+    }
+  })
+
+  document.querySelector<HTMLButtonElement>('#pos-availability-refresh')?.addEventListener('click', () => {
+    void loadPosAvailabilityProducts()
+  })
+
+  document.querySelector<HTMLInputElement>('#pos-availability-search')?.addEventListener('input', (event) => {
+    posAvailabilitySearch = (event.target as HTMLInputElement).value
+    render()
+
+    requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>('#pos-availability-search')
+      if (!input) return
+      input.focus()
+      input.setSelectionRange(input.value.length, input.value.length)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-pos-sold-out]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.posSoldOut
+      const nextValue = button.dataset.nextSoldOut === 'true'
+      if (!productId) return
+
+      void setPosProductSoldOut(productId, nextValue)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-pos-visible]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const productId = button.dataset.posVisible
+      const nextValue = button.dataset.nextVisible === 'true'
+      if (!productId) return
+
+      void setPosProductVisible(productId, nextValue)
+    })
+  })
 
   document.querySelectorAll<HTMLButtonElement>('[data-pos-footer-category]').forEach((button) => {
     button.addEventListener('click', () => {

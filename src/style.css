@@ -12242,3 +12242,342 @@ body:has(.pos-page) {
     display: block;
   }
 }
+
+/* ========================================================= */
+/* POS — PRODUCT BESCHIKBAARHEID                            */
+/* Snel uitverkocht / verbergen vanuit mode=pos             */
+/* ========================================================= */
+
+.pos-products-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pos-availability-open-btn {
+  height: 42px;
+  padding: 0 15px;
+  border: 1px solid #cbd8e9;
+  border-radius: 12px;
+  background: #eef3fa;
+  color: #1b478f;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-availability-open-btn:hover {
+  background: #e4edf8;
+  border-color: #aebfd8;
+}
+
+.pos-availability-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 28, 50, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+.pos-availability-modal {
+  width: min(780px, 100%);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8e2f0;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow: 0 26px 80px rgba(23, 32, 51, 0.24);
+}
+
+.pos-availability-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  border-bottom: 1px solid #e5ebf3;
+}
+
+.pos-availability-header h2 {
+  margin: 2px 0 6px;
+  color: #172033;
+  font-size: 24px;
+}
+
+.pos-availability-header p:not(.pos-availability-eyebrow) {
+  margin: 0;
+  color: #6f7a8a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pos-availability-eyebrow {
+  margin: 0;
+  color: #1b478f;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pos-availability-close {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 0;
+  border-radius: 50%;
+  background: #eef3fa;
+  color: #1b478f;
+  font-size: 27px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pos-availability-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: #f8fafd;
+  border-bottom: 1px solid #e5ebf3;
+}
+
+.pos-availability-search {
+  min-width: 0;
+  flex: 1;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid #dce4ef;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #6f7a8a;
+}
+
+.pos-availability-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #172033;
+  font-size: 13px;
+}
+
+.pos-availability-refresh {
+  height: 42px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #1b478f;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pos-availability-error {
+  margin: 12px 20px 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fdeaea;
+  color: #a92a2a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pos-availability-list {
+  min-height: 180px;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 20px 22px;
+}
+
+.pos-availability-empty {
+  margin: 0;
+  padding: 30px 12px;
+  color: #778397;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pos-availability-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #e1e8f1;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.pos-availability-row.is-hidden {
+  background: #f6f7f9;
+  border-style: dashed;
+}
+
+.pos-availability-product {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.pos-availability-product > strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-availability-product > span {
+  color: #7b8798;
+  font-size: 10px;
+}
+
+.pos-availability-badges {
+  margin-top: 4px;
+}
+
+.pos-availability-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.pos-availability-badge.available {
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.pos-availability-badge.sold-out {
+  background: #fff1dc;
+  color: #9a5d00;
+}
+
+.pos-availability-badge.hidden {
+  background: #eceff4;
+  color: #667080;
+}
+
+.pos-availability-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.pos-availability-action {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-availability-action.sold-out {
+  background: #fff1dc;
+  color: #9a5d00;
+}
+
+.pos-availability-action.restore,
+.pos-availability-action.show {
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.pos-availability-action.hide {
+  background: #eef1f4;
+  color: #596273;
+}
+
+.pos-availability-action:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .pos-products-header {
+    align-items: flex-start;
+  }
+
+  .pos-products-tools {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .pos-products-tools .pos-product-search {
+    min-width: 180px;
+    flex: 1;
+  }
+
+  .pos-availability-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .pos-availability-modal {
+    width: 100%;
+    max-height: 90dvh;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .pos-availability-toolbar {
+    padding: 12px 14px;
+  }
+
+  .pos-availability-list {
+    padding: 12px 14px calc(env(safe-area-inset-bottom, 0px) + 20px);
+  }
+
+  .pos-availability-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-availability-actions {
+    justify-content: stretch;
+  }
+
+  .pos-availability-action {
+    flex: 1;
+  }
+}
+
+
+/* ========================================================= */
+/* POS FOOTER — BESCHIKBAARHEID                              */
+/* Knop staat echt in de blauwe footer naast Orders.         */
+/* ========================================================= */
+
+.pos-page .pos-action-tile-availability {
+  width: 96px;
+  min-width: 96px;
+}
+
+.pos-page .pos-action-tile-availability .pos-action-copy strong {
+  font-size: 8px;
+  white-space: nowrap;
+}
