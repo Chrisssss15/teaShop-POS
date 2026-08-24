@@ -13990,3 +13990,465 @@ body:has(.pos-page){
     font-size: 9px;
   }
 }
+
+
+/* ========================================================= */
+/* POS — PREMIUM APPLE-INSPIRED UI                           */
+/* Alleen mode=pos / staff POS. Logica blijft ongewijzigd.   */
+/* ========================================================= */
+
+.page.staff-footer-page {
+  --pos-bg: #f5f5f7;
+  --pos-card: rgba(255, 255, 255, 0.96);
+  --pos-text: #1d1d1f;
+  --pos-muted: #86868b;
+  --pos-border: rgba(0, 0, 0, 0.075);
+  --pos-blue: #0071e3;
+  --pos-blue-dark: #0066cc;
+
+  background:
+    radial-gradient(circle at 0% -10%, rgba(0, 113, 227, 0.055), transparent 30%),
+    var(--pos-bg);
+  color: var(--pos-text);
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "SF Pro Text",
+    Inter,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+}
+
+/* --------------------------------------------------------- */
+/* HEADER / TOP                                              */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .header {
+  margin-bottom: 18px;
+}
+
+.page.staff-footer-page .staff-brand {
+  align-items: center;
+  gap: 15px;
+}
+
+.page.staff-footer-page .tea-shop-logo {
+  width: 54px;
+  height: 54px;
+  flex-basis: 54px;
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 22px rgba(0, 0, 0, 0.08);
+}
+
+.page.staff-footer-page .header h1 {
+  color: var(--pos-text);
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 720;
+  letter-spacing: -0.04em;
+}
+
+.page.staff-footer-page .header .sub {
+  margin-top: 6px;
+  color: var(--pos-muted);
+  font-size: 13px;
+  font-weight: 520;
+}
+
+/* --------------------------------------------------------- */
+/* MAIN POS LAYOUT                                           */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .layout {
+  grid-template-columns: minmax(0, 1fr) 350px;
+  gap: 18px;
+}
+
+.page.staff-footer-page .products,
+.page.staff-footer-page .cart {
+  border: 1px solid var(--pos-border);
+  border-radius: 26px;
+  background: var(--pos-card);
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.02),
+    0 10px 30px rgba(0, 0, 0, 0.045);
+}
+
+.page.staff-footer-page .products {
+  padding: 22px;
+}
+
+.page.staff-footer-page .cart {
+  top: 18px;
+  padding: 20px;
+}
+
+.page.staff-footer-page .products h2,
+.page.staff-footer-page .cart h2 {
+  color: var(--pos-text);
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+/* --------------------------------------------------------- */
+/* CATEGORY HEADINGS                                         */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .category-block {
+  margin-top: 28px;
+}
+
+.page.staff-footer-page .category-block:first-of-type {
+  margin-top: 12px;
+}
+
+.page.staff-footer-page .category-block h3 {
+  margin-bottom: 12px;
+  color: var(--pos-text);
+  font-size: 18px;
+  font-weight: 690;
+  letter-spacing: -0.02em;
+}
+
+/* --------------------------------------------------------- */
+/* PRODUCT GRID / CARDS                                      */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .product-grid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.page.staff-footer-page .product-card {
+  min-height: 112px;
+  padding: 16px;
+
+  border: 1px solid var(--pos-border);
+  border-radius: 20px;
+  background: #ffffff;
+  color: var(--pos-text);
+
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.015),
+    0 6px 18px rgba(0, 0, 0, 0.035);
+
+  transition:
+    transform 160ms cubic-bezier(.2,.8,.2,1),
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+.page.staff-footer-page .product-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 113, 227, 0.18);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.025),
+    0 12px 28px rgba(0, 0, 0, 0.065);
+}
+
+.page.staff-footer-page .product-card:active {
+  transform: scale(0.988);
+}
+
+.page.staff-footer-page .product-name {
+  margin-bottom: 12px;
+  color: var(--pos-text);
+  font-size: 16px;
+  line-height: 1.15;
+  font-weight: 680;
+  letter-spacing: -0.012em;
+}
+
+.page.staff-footer-page .product-price {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(0, 113, 227, 0.09);
+  color: var(--pos-blue);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Discount styles */
+.page.staff-footer-page .product-discount-badge {
+  border: 0;
+  background: rgba(0, 113, 227, 0.08);
+  color: var(--pos-blue);
+}
+
+.page.staff-footer-page .product-card.has-discount .product-sale-price {
+  background: var(--pos-blue) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* --------------------------------------------------------- */
+/* CART                                                      */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .empty-cart {
+  color: var(--pos-muted);
+}
+
+.page.staff-footer-page .cart-list {
+  gap: 10px;
+}
+
+.page.staff-footer-page .cart-item {
+  padding: 13px;
+
+  border: 1px solid var(--pos-border);
+  border-radius: 18px;
+  background: #f9f9fb;
+
+  box-shadow: none;
+}
+
+.page.staff-footer-page .cart-item-name {
+  color: var(--pos-text);
+  font-weight: 680;
+}
+
+.page.staff-footer-page .cart-item-price {
+  color: var(--pos-muted);
+}
+
+.page.staff-footer-page .qty-controls {
+  gap: 5px;
+}
+
+.page.staff-footer-page .qty-controls button {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--pos-text);
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.page.staff-footer-page .qty-controls button:hover {
+  background: #323234;
+}
+
+.page.staff-footer-page .pos-cart-edit {
+  background: #f2f2f7;
+  color: #3a3a3c;
+}
+
+.page.staff-footer-page .pos-cart-remove {
+  background: rgba(255, 59, 48, 0.08);
+  color: #ff3b30;
+}
+
+.page.staff-footer-page .modifier-summary span {
+  border: 0;
+  background: #eeeeF2;
+  color: #636366;
+}
+
+/* --------------------------------------------------------- */
+/* CART FOOTER / TOTAL / PAYMENT                             */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .cart-footer {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.page.staff-footer-page .total-row {
+  margin-bottom: 14px;
+  color: var(--pos-text);
+  font-size: 19px;
+  font-weight: 650;
+}
+
+.page.staff-footer-page .total-row strong {
+  font-size: 22px;
+  font-weight: 720;
+}
+
+.page.staff-footer-page .checkout-actions {
+  gap: 8px;
+}
+
+.page.staff-footer-page .checkout-btn {
+  min-height: 50px;
+  padding: 13px 12px;
+
+  border-radius: 15px;
+  background: var(--pos-blue);
+  color: #ffffff;
+
+  font-size: 14px;
+  font-weight: 650;
+
+  box-shadow:
+    0 4px 12px rgba(0, 113, 227, 0.16);
+}
+
+.page.staff-footer-page .checkout-btn:hover:not(:disabled) {
+  background: var(--pos-blue-dark);
+}
+
+.page.staff-footer-page .checkout-btn.cash,
+.page.staff-footer-page .checkout-btn.card {
+  background: var(--pos-blue);
+}
+
+/* --------------------------------------------------------- */
+/* POS PRODUCT SEARCH                                        */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .pos-search-wrap,
+.page.staff-footer-page .pos-product-search-wrap {
+  border-radius: 16px;
+}
+
+.page.staff-footer-page .pos-product-search,
+.page.staff-footer-page .pos-search-input {
+  border: 1px solid var(--pos-border);
+  border-radius: 14px;
+  background: rgba(255,255,255,.92);
+  color: var(--pos-text);
+
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.02);
+}
+
+.page.staff-footer-page .pos-product-search:focus,
+.page.staff-footer-page .pos-search-input:focus {
+  outline: none;
+  border-color: rgba(0,113,227,.38);
+  box-shadow: 0 0 0 4px rgba(0,113,227,.07);
+}
+
+/* --------------------------------------------------------- */
+/* CUSTOMIZER IN POS                                         */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page ~ .customer-customizer,
+.page.staff-footer-page .customer-customizer {
+  --customer-blue: var(--pos-blue);
+}
+
+.page.staff-footer-page ~ .customer-customizer .customer-customizer-header,
+.page.staff-footer-page ~ .customer-customizer .customer-customizer-footer {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.page.staff-footer-page ~ .customer-customizer .customer-modifier-option.active,
+.page.staff-footer-page ~ .customer-customizer .customer-topping-option.active {
+  border-color: rgba(0,113,227,.20);
+  background: rgba(0,113,227,.08);
+  color: var(--pos-blue);
+}
+
+/* --------------------------------------------------------- */
+/* FOOTER — PREMIUM BUT PRESERVE CURRENT DIMENSIONS          */
+/* Belangrijk: 104px breedte blijft behouden.                */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .pos-action-dock {
+  border-top: 1px solid rgba(255,255,255,.08);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(27, 48, 82, 0.98),
+      rgba(23, 43, 74, 0.99)
+    );
+
+  box-shadow:
+    0 -1px 0 rgba(255,255,255,.035),
+    0 -10px 30px rgba(15, 28, 48, 0.12);
+
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+/* Zelfde compacte maat links en rechts behouden */
+.page.staff-footer-page .pos-footer-category-btn,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile,
+.page.staff-footer-page .pos-action-tile-availability {
+  flex: 0 0 104px !important;
+  width: 104px !important;
+  min-width: 104px !important;
+
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Icoon als rustige Apple-like rounded square */
+.page.staff-footer-page .pos-footer-category-icon,
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,.045),
+    0 3px 10px rgba(0,0,0,.08);
+}
+
+.page.staff-footer-page .pos-footer-category-btn:hover .pos-footer-category-icon,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile:hover .pos-action-icon {
+  background: rgba(255,255,255,.14);
+}
+
+.page.staff-footer-page .pos-footer-category-btn strong,
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  max-width: 92px !important;
+  color: rgba(255,255,255,.94);
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 620;
+}
+
+.page.staff-footer-page .pos-footer-category-btn.active .pos-footer-category-icon {
+  background: #ffffff;
+  color: #1B478F;
+}
+
+/* --------------------------------------------------------- */
+/* AVAILABILITY MODAL                                        */
+/* --------------------------------------------------------- */
+
+.page.staff-footer-page .pos-availability-modal,
+.page.staff-footer-page .pos-availability-panel {
+  border: 1px solid var(--pos-border);
+  border-radius: 26px;
+  background: rgba(255,255,255,.98);
+
+  box-shadow:
+    0 24px 70px rgba(0,0,0,.18);
+}
+
+.page.staff-footer-page .pos-availability-item {
+  border-color: rgba(0,0,0,.06);
+  background: #f9f9fb;
+}
+
+/* --------------------------------------------------------- */
+/* RESPONSIVE                                                */
+/* --------------------------------------------------------- */
+
+@media (max-width: 1000px) {
+  .page.staff-footer-page .layout {
+    grid-template-columns: 1fr 320px;
+  }
+}
+
+@media (max-width: 800px) {
+  .page.staff-footer-page .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .page.staff-footer-page .cart {
+    position: static;
+  }
+}
