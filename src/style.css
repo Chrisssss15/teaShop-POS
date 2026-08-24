@@ -12581,3 +12581,542 @@ body:has(.pos-page) {
   font-size: 8px;
   white-space: nowrap;
 }
+
+/* ========================================================= */
+/* POS FOOTER — SMALLER + VOLLEDIGE CATEGORIETEKST           */
+/* ========================================================= */
+
+.page.staff-footer-page {
+  padding-bottom: 96px !important;
+}
+
+.page.staff-footer-page .pos-action-dock {
+  min-height: 76px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.page.staff-footer-page .pos-footer-category-btn {
+  flex: 0 0 106px;
+  width: 106px;
+  min-width: 106px;
+  min-height: 62px;
+  padding: 4px 6px;
+  gap: 4px;
+}
+
+.page.staff-footer-page .pos-footer-category-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+}
+
+.page.staff-footer-page .pos-footer-category-btn strong {
+  width: 100%;
+  max-width: 96px;
+  min-height: 21px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: normal;
+  color: #ffffff;
+  font-size: 9px;
+  line-height: 1.12;
+  font-weight: 800;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  width: 84px;
+  min-width: 84px;
+  height: 62px;
+  min-height: 62px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  font-size: 17px;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  font-size: 8px;
+  white-space: normal;
+  line-height: 1.05;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy small {
+  font-size: 7px;
+}
+
+.page.staff-footer-page .pos-action-tile-availability {
+  width: 94px;
+  min-width: 94px;
+}
+
+@media (max-width: 700px) {
+  .page.staff-footer-page {
+    padding-bottom: 90px !important;
+  }
+
+  .page.staff-footer-page .pos-action-dock {
+    min-height: 72px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-btn {
+    flex-basis: 98px;
+    width: 98px;
+    min-width: 98px;
+    min-height: 58px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-icon {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-btn strong {
+    max-width: 90px;
+    font-size: 8.5px;
+  }
+
+  .page.staff-footer-page .pos-footer-actions .pos-action-tile {
+    width: 80px;
+    min-width: 80px;
+    height: 58px;
+    min-height: 58px;
+  }
+
+  .page.staff-footer-page .pos-action-tile-availability {
+    width: 90px;
+    min-width: 90px;
+  }
+}
+
+/* ========================================================= */
+/* POS FOOTER — GELIJKE ICOONGROOTTE                         */
+/* ========================================================= */
+
+.page.staff-footer-page .pos-footer-category-icon,
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 10px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.page.staff-footer-page .pos-footer-category-icon {
+  font-size: 18px;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  font-size: 18px;
+}
+
+/* ========================================================= */
+/* POS FOOTER — GELIJKE SCHEIDINGSLIJNEN                     */
+/* ========================================================= */
+
+.page.staff-footer-page .pos-footer-actions {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-left: none !important;
+}
+
+/* Geen gebogen borders meer op de actieknoppen */
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  position: relative;
+  border: none !important;
+  border-left: none !important;
+  border-radius: 0 !important;
+}
+
+/* Scheidingslijn vóór elke actieknop */
+.page.staff-footer-page .pos-footer-actions .pos-action-tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+/* Geen extra dubbele lijn vanuit het container-element */
+.page.staff-footer-page .pos-footer-actions::before {
+  display: none !important;
+}
+
+/* ========================================================= */
+/* POS FOOTER — FINAL BALANCED ALIGNMENT                     */
+/* ========================================================= */
+
+.page.staff-footer-page {
+  padding-bottom: 108px !important;
+}
+
+.page.staff-footer-page .pos-action-dock {
+  min-height: 86px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+/* Links en rechts dezelfde verticale opbouw */
+.page.staff-footer-page .pos-footer-category-btn,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  display: grid !important;
+  grid-template-rows: 40px 28px;
+  justify-items: center;
+  align-content: center;
+  gap: 8px !important;
+
+  min-height: 76px !important;
+  padding: 4px 8px !important;
+}
+
+/* Categorieknoppen links */
+.page.staff-footer-page .pos-footer-category-btn {
+  flex: 0 0 126px;
+  width: 126px;
+  min-width: 126px;
+}
+
+/* Actieknoppen rechts */
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  width: 104px;
+  min-width: 104px;
+}
+
+.page.staff-footer-page .pos-action-tile-availability {
+  width: 116px !important;
+  min-width: 116px !important;
+}
+
+/* Alle icoonblokken exact gelijk */
+.page.staff-footer-page .pos-footer-category-icon,
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  flex: 0 0 40px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+  align-self: center !important;
+
+  border-radius: 11px;
+  font-size: 19px !important;
+  line-height: 1;
+}
+
+/* Tekst links: vaste ruimte van 2 regels */
+.page.staff-footer-page .pos-footer-category-btn strong {
+  width: 100%;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+
+  overflow: hidden;
+  white-space: normal;
+  text-overflow: clip;
+
+  margin: 0 !important;
+
+  color: #ffffff;
+  font-size: 10px !important;
+  line-height: 1.18;
+  font-weight: 800;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Tekst rechts: dezelfde vaste teksthoogte */
+.page.staff-footer-page .pos-footer-actions .pos-action-copy {
+  width: 100%;
+  height: 28px;
+  min-height: 28px;
+  max-height: 28px;
+
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  margin: 0 !important;
+  color: #ffffff;
+  font-size: 9px !important;
+  line-height: 1.18;
+  font-weight: 800;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy small {
+  display: none !important;
+}
+
+/* Rechte, gelijke scheidingslijnen */
+.page.staff-footer-page .pos-footer-actions {
+  border-left: none !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  position: relative;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+
+.page.staff-footer-page .pos-footer-actions::before {
+  display: none !important;
+}
+
+@media (max-width: 700px) {
+  .page.staff-footer-page {
+    padding-bottom: 102px !important;
+  }
+
+  .page.staff-footer-page .pos-action-dock {
+    min-height: 82px;
+  }
+
+  .page.staff-footer-page .pos-footer-category-btn {
+    flex-basis: 116px;
+    width: 116px;
+    min-width: 116px;
+  }
+
+  .page.staff-footer-page .pos-footer-actions .pos-action-tile {
+    width: 96px;
+    min-width: 96px;
+  }
+
+  .page.staff-footer-page .pos-action-tile-availability {
+    width: 108px !important;
+    min-width: 108px !important;
+  }
+}
+
+/* ========================================================= */
+/* POS FOOTER — RECHTS ZELFDE STYLING ALS LINKS              */
+/* ========================================================= */
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  display: grid !important;
+  grid-template-rows: 40px 28px !important;
+  justify-items: center !important;
+  align-content: center !important;
+  gap: 8px !important;
+
+  width: 126px !important;
+  min-width: 126px !important;
+  min-height: 76px !important;
+
+  padding: 4px 8px !important;
+  margin: 0 !important;
+
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.page.staff-footer-page .pos-action-tile-availability {
+  width: 126px !important;
+  min-width: 126px !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-icon {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  flex: 0 0 40px !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+  align-self: center !important;
+
+  border-radius: 11px !important;
+  font-size: 19px !important;
+  line-height: 1 !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy {
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+
+  overflow: hidden !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
+
+  margin: 0 !important;
+  padding: 0 !important;
+
+  color: #ffffff !important;
+  font-size: 10px !important;
+  line-height: 1.18 !important;
+  font-weight: 800 !important;
+  text-align: center !important;
+  overflow-wrap: anywhere !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-copy small {
+  display: none !important;
+}
+
+.page.staff-footer-page .pos-footer-actions .pos-action-tile::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 10px !important;
+  bottom: 10px !important;
+  width: 1px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  pointer-events: none !important;
+}
+
+@media (max-width: 700px) {
+  .page.staff-footer-page .pos-footer-actions .pos-action-tile,
+  .page.staff-footer-page .pos-action-tile-availability {
+    width: 116px !important;
+    min-width: 116px !important;
+  }
+}
+
+/* ========================================================= */
+/* POS FOOTER — RECHTER CONTAINER EXACT GELIJK               */
+/* ========================================================= */
+
+/* De hele rechter groep exact in het midden van dezelfde footerhoogte */
+.page.staff-footer-page .pos-footer-actions {
+  height: 100% !important;
+  min-height: 100% !important;
+
+  display: flex !important;
+  align-items: center !important;
+  align-self: stretch !important;
+
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Links en rechts exact dezelfde vaste knophoogte */
+.page.staff-footer-page .pos-footer-category-btn,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  height: 76px !important;
+  min-height: 76px !important;
+  max-height: 76px !important;
+
+  align-self: center !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* Geen verborgen translate/top-offsets op de rechter knoppen */
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  top: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+}
+
+/* Ook de inhoud binnen iedere rechter knop exact centreren */
+.page.staff-footer-page .pos-footer-actions .pos-action-icon,
+.page.staff-footer-page .pos-footer-actions .pos-action-copy {
+  position: static !important;
+  transform: none !important;
+}
+
+/* Scheidingslijnen volgen exact dezelfde knophoogte */
+.page.staff-footer-page .pos-footer-actions .pos-action-tile::before {
+  top: 8px !important;
+  bottom: 8px !important;
+}
+
+/* ========================================================= */
+/* POS FOOTER — EXTRA RUIMTE BOVEN ICONEN                    */
+/* ========================================================= */
+
+.page.staff-footer-page .pos-action-dock {
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+
+/* Zorg dat links en rechts dezelfde afstand houden */
+.page.staff-footer-page .pos-footer-category-btn,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile {
+  align-self: center !important;
+}
+
+.page.staff-footer-page .pos-footer-category-btn {
+  flex: 0 0 104px !important;
+  width: 104px !important;
+  min-width: 104px !important;
+}
+
+.page.staff-footer-page .pos-footer-category-btn strong {
+  max-width: 92px !important;
+}
