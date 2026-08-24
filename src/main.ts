@@ -628,6 +628,8 @@ let posAvailabilityError = ''
 let orderHistorySearch = ''
 let selectedOrderHistoryId: string | null = null
 let orderHistoryReturnScreen: 'pos' | 'admin' = 'pos'
+let settingsReturnScreen: 'pos' | 'admin' = 'pos'
+let printPreviewReturnScreen: 'pos' | 'admin' = 'pos'
 let isLoadingKitchen = false
 let message = ''
 
@@ -3881,7 +3883,11 @@ async function savePickupWaitSettings() {
   render()
 }
 
-async function goToPosSettings() {
+async function goToPosSettings(
+  from: 'pos' | 'admin' = 'pos'
+) {
+  settingsReturnScreen = from
+
   stopAutoRefresh()
   stopCustomerProgressRefresh()
   removeCustomerScrollListeners()
@@ -3892,6 +3898,15 @@ async function goToPosSettings() {
 
   await loadPickupWaitSettings()
   render()
+}
+
+function goBackFromSettings() {
+  if (settingsReturnScreen === 'admin') {
+    void goToAdmin()
+    return
+  }
+
+  goToPos()
 }
 
 function schedulePickupRealtimeReload() {
@@ -4245,6 +4260,69 @@ async function goToAdminCategories() {
   updateModeInUrl('admin-categories')
 
   await loadAllAdminData()
+}
+
+
+async function goToAdminToppings() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'admin-products'
+  message = ''
+  adminMessage = ''
+  adminError = ''
+  updateModeInUrl('admin-products')
+
+  await loadAllAdminData()
+
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLElement>('#admin-toppings-section')
+      ?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+  })
+}
+
+async function goToAdminCash() {
+  await goToAdminDayClose()
+
+  requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLElement>('#admin-cash-section')
+      ?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+  })
+}
+
+async function goToPrintPreview(
+  from: 'pos' | 'admin' = 'pos'
+) {
+  printPreviewReturnScreen = from
+
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'print-preview'
+  message = ''
+  printPreviewError = ''
+  updateModeInUrl('print-preview')
+
+  await loadPrintPreviewData()
+}
+
+function goBackFromPrintPreview() {
+  if (printPreviewReturnScreen === 'admin') {
+    void goToAdmin()
+    return
+  }
+
+  goToPos()
 }
 
 
@@ -9464,76 +9542,172 @@ function renderAdminPaymentOverview() {
 
 function renderAdmin() {
   return `
-    <div class="page admin-page">
+    <div class="page admin-page admin-luxury-dashboard">
       ${renderNav()}
 
-      <header class="header">
-        <div class="staff-brand">
-          <img class="tea-shop-logo" src="/logo.jpg" alt="Blue Cup logo" />
+      <main class="admin-luxury-shell">
+        <header class="admin-luxury-header">
+          <div class="admin-luxury-brand">
+            <img class="tea-shop-logo" src="/logo.jpg" alt="Blue Cup logo" />
 
-          <div>
-            <h1>Blue Cup Admin</h1>
-            <p class="sub">Dashboard en dagoverzicht</p>
+            <div>
+              <span class="admin-luxury-eyebrow">BLUE CUP ADMIN</span>
+              <h1>Dashboard</h1>
+              <p>Alles wat je nodig hebt om Blue Cup te beheren.</p>
+            </div>
           </div>
-        </div>
+
+          <div class="admin-luxury-date">
+            ${escapeHtml(formatAdminTodayDate())}
+          </div>
+        </header>
 
         ${adminMessage ? `<p class="success-message">${escapeHtml(adminMessage)}</p>` : ''}
         ${adminError ? `<p class="error admin-error">${escapeHtml(adminError)}</p>` : ''}
-      </header>
 
-      ${renderAdminDailyStats()}
+        <section class="admin-luxury-section">
+          <div class="admin-luxury-section-heading">
+            <div>
+              <span class="admin-luxury-section-label">VANDAAG</span>
+              <h2>Overzicht</h2>
+            </div>
 
-      ${renderAdminPaymentOverview()}
+            <button class="admin-luxury-refresh" id="admin-refresh-stats" type="button">
+              ↻ Vernieuwen
+            </button>
+          </div>
 
-      <section class="admin-dashboard-actions">
-        <button class="admin-dashboard-card" id="go-admin-products">
-          <span class="admin-dashboard-card-icon">☰</span>
+          ${renderAdminDailyStats()}
+        </section>
 
-          <span class="admin-dashboard-card-content">
-            <strong>Producten beheren</strong>
-            <small>Producten, categorieën, prijzen en toppings aanpassen</small>
-          </span>
+        <section class="admin-luxury-section">
+          <div class="admin-luxury-section-heading">
+            <div>
+              <span class="admin-luxury-section-label">SNELLE ACTIES</span>
+              <h2>Menu & bestellingen</h2>
+            </div>
+          </div>
 
-          <span class="admin-dashboard-card-arrow">→</span>
-        </button>
+          <div class="admin-luxury-action-grid admin-luxury-action-grid-four">
+            <button class="admin-dashboard-card" id="go-admin-products">
+              <span class="admin-dashboard-card-icon">◫</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Producten</strong>
+                <small>Drankjes, prijzen en beschikbaarheid</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
 
-        <button class="admin-dashboard-card admin-dashboard-card-sales" id="go-admin-administration">
-          <span class="admin-dashboard-card-icon">🧾</span>
+            <button class="admin-dashboard-card" id="go-admin-dashboard-categories">
+              <span class="admin-dashboard-card-icon">≡</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Categorieën</strong>
+                <small>Menu-indeling en kortingen beheren</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
 
-          <span class="admin-dashboard-card-content">
-            <strong>Administratie</strong>
-            <small>Omzet, betalingen, bestellingen, cups en verkoophistorie bekijken</small>
-          </span>
+            <button class="admin-dashboard-card" id="go-admin-dashboard-toppings">
+              <span class="admin-dashboard-card-icon">＋</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Toppings</strong>
+                <small>Toppings bekijken en aanpassen</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
 
-          <span class="admin-dashboard-card-arrow">→</span>
-        </button>
+            <button class="admin-dashboard-card" id="go-admin-order-history">
+              <span class="admin-dashboard-card-icon">⌕</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Orderhistorie</strong>
+                <small>Bestellingen van vandaag terugzoeken</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
+          </div>
+        </section>
 
-        <button class="admin-dashboard-card" id="go-admin-order-history">
-          <span class="admin-dashboard-card-icon">📋</span>
+        <section class="admin-luxury-section">
+          <div class="admin-luxury-section-heading">
+            <div>
+              <span class="admin-luxury-section-label">FINANCIEEL</span>
+              <h2>Verkoop & kas</h2>
+            </div>
+          </div>
 
-          <span class="admin-dashboard-card-content">
-            <strong>Orderhistorie</strong>
-            <small>Bekijk en zoek alle bestellingen van vandaag</small>
-          </span>
+          <div class="admin-luxury-action-grid admin-luxury-action-grid-three">
+            <button class="admin-dashboard-card" id="go-admin-administration">
+              <span class="admin-dashboard-card-icon">↗</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Verkoopoverzicht</strong>
+                <small>Omzet, cups en historische verkoop</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
 
-          <span class="admin-dashboard-card-arrow">→</span>
-        </button>
+            <button class="admin-dashboard-card" id="go-admin-day-close">
+              <span class="admin-dashboard-card-icon">✓</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Dagafsluiting</strong>
+                <small>Controleer cijfers en maak het Z-rapport</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
 
-        <button class="admin-dashboard-card" id="go-admin-day-close">
-          <span class="admin-dashboard-card-icon">🌙</span>
+            <button class="admin-dashboard-card" id="go-admin-cash">
+              <span class="admin-dashboard-card-icon">€</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Kas</strong>
+                <small>Openen, storten, opnemen en afsluiten</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
+          </div>
+        </section>
 
-          <span class="admin-dashboard-card-content">
-            <strong>Dagafsluiting</strong>
-            <small>Bekijk de dagomzet en betalingen voordat je de kassa afsluit</small>
-          </span>
+        <section class="admin-luxury-section">
+          <div class="admin-luxury-section-heading">
+            <div>
+              <span class="admin-luxury-section-label">SYSTEEM</span>
+              <h2>Tools & instellingen</h2>
+            </div>
+          </div>
 
-          <span class="admin-dashboard-card-arrow">→</span>
-        </button>
-      </section>
+          <div class="admin-luxury-action-grid admin-luxury-action-grid-two">
+            <button class="admin-dashboard-card" id="go-admin-print-preview">
+              <span class="admin-dashboard-card-icon">▣</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Print test</strong>
+                <small>Sticker-preview en Zebra-print testen</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
+
+            <button class="admin-dashboard-card" id="go-admin-settings">
+              <span class="admin-dashboard-card-icon">⚙</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Instellingen</strong>
+                <small>Pickup-scherm en kassainstellingen beheren</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="admin-luxury-section admin-luxury-payments">
+          <div class="admin-luxury-section-heading">
+            <div>
+              <span class="admin-luxury-section-label">ACTIVITEIT</span>
+              <h2>Recente betalingen</h2>
+            </div>
+          </div>
+
+          ${renderAdminPaymentOverview()}
+        </section>
+      </main>
     </div>
   `
 }
-
 
 
 function renderAdminDayClosePage() {
@@ -9560,7 +9734,7 @@ function renderAdminDayClosePage() {
 
       ${renderAdminDailyStats()}
 
-      <div class="admin-cash-overview-row">
+      <div class="admin-cash-overview-row" id="admin-cash-section">
         <div class="admin-cash-overview-main">
           ${renderAdminCashSession()}
         </div>
@@ -10102,7 +10276,7 @@ function renderAdminProductsPage() {
           ${renderAdminProductsList()}
         </div>
 
-        <div class="admin-column">
+        <div class="admin-column" id="admin-toppings-section">
           ${renderAdminToppingsList()}
         </div>
       </main>
@@ -10810,7 +10984,7 @@ function renderPosSettings() {
               class="secondary-btn"
               id="pos-settings-back"
             >
-              ← Terug naar POS
+              ${settingsReturnScreen === 'admin' ? '← Terug naar Admin' : '← Terug naar POS'}
             </button>
           </div>
 
@@ -10881,7 +11055,7 @@ function renderPosSettings() {
         </section>
       </main>
 
-      ${renderStaffBottomBar(grouped)}
+      ${settingsReturnScreen === 'pos' ? renderStaffBottomBar(grouped) : ''}
     </div>
   `
 }
@@ -13612,7 +13786,9 @@ function renderPrintPreview() {
         </div>
 
         <div class="sticker-preview-actions">
-          <button class="nav-btn" id="go-pos" type="button">Terug naar POS</button>
+          <button class="nav-btn" id="print-preview-back" type="button">
+            ${printPreviewReturnScreen === 'admin' ? 'Terug naar Admin' : 'Terug naar POS'}
+          </button>
           <button class="nav-btn" id="refresh-sticker-preview" type="button">Vernieuwen</button>
           <button
             class="small-btn"
@@ -14127,11 +14303,11 @@ function bindEvents() {
   })
 
   document.querySelector<HTMLButtonElement>('#pos-wait-settings')?.addEventListener('click', () => {
-    void goToPosSettings()
+    void goToPosSettings('pos')
   })
 
-  document.querySelector<HTMLButtonElement>('#pos-settings-back')?.addEventListener('click', goToPos)
-  document.querySelector<HTMLButtonElement>('#pos-settings-back-bottom')?.addEventListener('click', goToPos)
+  document.querySelector<HTMLButtonElement>('#pos-settings-back')?.addEventListener('click', goBackFromSettings)
+  document.querySelector<HTMLButtonElement>('#pos-settings-back-bottom')?.addEventListener('click', goBackFromSettings)
 
   document.querySelector<HTMLButtonElement>('#pos-wait-save')?.addEventListener('click', () => {
     void savePickupWaitSettings()
@@ -14203,6 +14379,26 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#go-admin-sales')?.addEventListener('click', goToAdminSales)
   document.querySelector<HTMLButtonElement>('#go-admin-administration')?.addEventListener('click', goToAdminSales)
   document.querySelector<HTMLButtonElement>('#go-admin-day-close')?.addEventListener('click', goToAdminDayClose)
+
+  document.querySelector<HTMLButtonElement>('#go-admin-dashboard-categories')?.addEventListener('click', goToAdminCategories)
+
+  document.querySelector<HTMLButtonElement>('#go-admin-dashboard-toppings')?.addEventListener('click', () => {
+    void goToAdminToppings()
+  })
+
+  document.querySelector<HTMLButtonElement>('#go-admin-cash')?.addEventListener('click', () => {
+    void goToAdminCash()
+  })
+
+  document.querySelector<HTMLButtonElement>('#go-admin-print-preview')?.addEventListener('click', () => {
+    void goToPrintPreview('admin')
+  })
+
+  document.querySelector<HTMLButtonElement>('#go-admin-settings')?.addEventListener('click', () => {
+    void goToPosSettings('admin')
+  })
+
+  document.querySelector<HTMLButtonElement>('#print-preview-back')?.addEventListener('click', goBackFromPrintPreview)
   document.querySelector<HTMLButtonElement>('#back-admin-from-day-close')?.addEventListener('click', goToAdmin)
 
   document.querySelector<HTMLButtonElement>('#refresh-admin-sales')?.addEventListener('click', () => {
