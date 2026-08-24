@@ -13120,3 +13120,16 @@ body:has(.pos-page) {
 .page.staff-footer-page .pos-footer-category-btn strong {
   max-width: 92px !important;
 }
+
+.page.staff-footer-page .pos-footer-category-btn,
+.page.staff-footer-page .pos-footer-actions .pos-action-tile,
+.page.staff-footer-page .pos-action-tile-availability {
+  flex: 0 0 104px !important;
+  width: 104px !important;
+  min-width: 104px !important;
+}
+
+.page.staff-footer-page .pos-footer-category-btn strong,
+.page.staff-footer-page .pos-footer-actions .pos-action-copy strong {
+  max-width: 92px !important;
+}
