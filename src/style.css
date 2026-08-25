@@ -14452,3 +14452,315 @@ body:has(.pos-page){
     position: static;
   }
 }
+
+
+/* ========================================================= */
+/* CUSTOMER PRODUCT — TEA TYPE                               */
+/* Dynamische theesoort, alleen zichtbaar op mode=customer.  */
+/* ========================================================= */
+
+.customer-page .customer-product-tea-type {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1px 0 8px;
+  padding: 5px 9px;
+
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 8px;
+
+  background: rgba(255, 255, 255, 0.72);
+  color: #6e6e73;
+
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Cards met een theesoort krijgen wat nettere verticale ruimte */
+.customer-page .customer-menu-layout .product-card:has(.customer-product-tea-type) {
+  grid-template-rows: auto auto auto;
+}
+
+.customer-page .customer-menu-layout .product-card:has(.customer-product-tea-type) .product-name {
+  margin-bottom: 2px;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-tea-type {
+    margin-bottom: 6px;
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+}
+
+/* ========================================================= */
+/* CUSTOMER TEA TYPE — UNIFORM GREY STYLE                    */
+/* Alle theesoorten krijgen dezelfde rustige premium pill.   */
+/* ========================================================= */
+
+.customer-page .customer-product-tea-type {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1px 0 8px;
+  padding: 5px 9px;
+
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 999px;
+
+  background: #f2f2f7;
+  color: #6e6e73;
+
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* Zorg dat alle eerder gegenereerde tea-type classes dezelfde kleur houden */
+.customer-page .customer-product-tea-type.tea-type-default,
+.customer-page .customer-product-tea-type.tea-type-jasmine,
+.customer-page .customer-product-tea-type.tea-type-longjing,
+.customer-page .customer-product-tea-type.tea-type-oolong,
+.customer-page .customer-product-tea-type.tea-type-black,
+.customer-page .customer-product-tea-type.tea-type-green,
+.customer-page .customer-product-tea-type.tea-type-white,
+.customer-page .customer-product-tea-type.tea-type-earl-grey,
+.customer-page .customer-product-tea-type.tea-type-matcha {
+  border-color: rgba(0, 0, 0, 0.10);
+  background: #f2f2f7;
+  color: #6e6e73;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-tea-type {
+    margin-bottom: 6px;
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+}
+
+
+/* ========================================================= */
+/* CUSTOMER PRODUCT — TEA TYPE + TEMPERATURE PILLS           */
+/* Ice / Hot wordt automatisch uit bestaande productdata     */
+/* afgeleid. Alleen zichtbaar op mode=customer.              */
+/* ========================================================= */
+
+.customer-page .customer-product-meta-pills {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 1px 0 8px;
+}
+
+/* Tea type gebruikt de bestaande grijze stijl */
+.customer-page .customer-product-meta-pills .customer-product-tea-type {
+  grid-column: auto;
+  margin: 0;
+}
+
+/* Temperatuur-label krijgt dezelfde rustige premium stijl */
+.customer-page .customer-product-temperature {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 5px 9px;
+
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 999px;
+
+  background: #f2f2f7;
+  color: #6e6e73;
+
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* Cards met meta-pills krijgen dezelfde compacte verticale flow */
+.customer-page .customer-menu-layout .product-card:has(.customer-product-meta-pills) {
+  grid-template-rows: auto auto auto;
+}
+
+.customer-page .customer-menu-layout .product-card:has(.customer-product-meta-pills) .product-name {
+  margin-bottom: 2px;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-meta-pills {
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  .customer-page .customer-product-temperature,
+  .customer-page .customer-product-meta-pills .customer-product-tea-type {
+    padding: 4px 7px;
+    font-size: 9px;
+  }
+}
+
+
+/* ADMIN PRODUCT — FLEXIBELE THEESOORT + HANDMATIG TEMPERATUUR-LABEL */
+.admin-tea-type-field .admin-product-custom-tea-type {
+  margin-top: 8px;
+}
+
+.admin-tea-type-field .admin-product-custom-tea-type[hidden] {
+  display: none;
+}
+
+
+/* ========================================================= */
+/* ADMIN PRODUCT — PRODUCT INFORMATION SECTION               */
+/* ========================================================= */
+
+.admin-product-info-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  padding: 18px;
+  border: 1px solid #dfe7f2;
+  border-radius: 18px;
+  background: #f8faff;
+}
+
+.admin-product-info-header strong {
+  display: block;
+  color: #172033;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.admin-product-info-header span {
+  display: block;
+  margin-top: 4px;
+  color: #6b7890;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.admin-product-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-product-info-grid > label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid #d8e2ef;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.admin-product-info-grid > label > span {
+  color: #172033;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.admin-modal .admin-product-info-field {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 720px) {
+  .admin-product-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ========================================================= */
+/* CUSTOMER PRODUCT INFO PILLS — BLUE CUP SOFT BLUE          */
+/* ========================================================= */
+
+.customer-page .customer-product-tea-type,
+.customer-page .customer-product-temperature,
+.customer-page .customer-product-tea-type.tea-type-default,
+.customer-page .customer-product-tea-type.tea-type-jasmine,
+.customer-page .customer-product-tea-type.tea-type-longjing,
+.customer-page .customer-product-tea-type.tea-type-oolong,
+.customer-page .customer-product-tea-type.tea-type-black,
+.customer-page .customer-product-tea-type.tea-type-green,
+.customer-page .customer-product-tea-type.tea-type-white,
+.customer-page .customer-product-tea-type.tea-type-earl-grey,
+.customer-page .customer-product-tea-type.tea-type-matcha {
+  border-color: #dbe8f7;
+  background: #eef5ff;
+  color: #4f6480;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(18, 58, 105, 0.035);
+}
+
+
+/* ========================================================= */
+/* CUSTOMER PRODUCT INFO — CLOSER TO PRODUCT NAME            */
+/* ========================================================= */
+
+.customer-page .customer-product-meta-pills {
+  margin-top: -2px;
+  margin-bottom: 5px;
+}
+
+.customer-page .customer-menu-layout .product-card:has(.customer-product-meta-pills) .product-name {
+  margin-bottom: 0;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-meta-pills {
+    margin-top: -3px;
+    margin-bottom: 4px;
+  }
+}
+
+
+/* CUSTOMER PRODUCT INFO — EVEN CLOSER TO NAME */
+.customer-page .customer-product-meta-pills {
+  margin-top: -6px;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-meta-pills {
+    margin-top: -7px;
+  }
+}
+
+
+/* CUSTOMER PRODUCT INFO — TIGHT UNDER PRODUCT NAME */
+.customer-page .customer-product-meta-pills {
+  margin-top: -11px;
+}
+
+@media (max-width: 600px) {
+  .customer-page .customer-product-meta-pills {
+    margin-top: -12px;
+  }
+}

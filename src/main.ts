@@ -20,6 +20,8 @@ type Product = {
   id: string
   name: string
   category: string
+  tea_type: string | null
+  temperature_label: string | null
   base_price: number
   vat_rate: number
   is_active: boolean
@@ -295,6 +297,81 @@ const SUGAR_LEVELS: SugarLevel[] = [
   'normal',
   'sweet',
 ]
+
+
+const TEA_TYPES = [
+  'Jasmine Tea',
+  'Longjing Tea',
+  'Oolong Tea',
+  'Black Tea',
+  'Green Tea',
+  'White Tea',
+  'Earl Grey',
+  'Matcha',
+] as const
+
+function getAvailableTeaTypes() {
+  const existingTeaTypes = products
+    .map((product) => product.tea_type?.trim())
+    .filter((teaType): teaType is string => Boolean(teaType))
+
+  return Array.from(new Set([...TEA_TYPES, ...existingTeaTypes])).sort((a, b) =>
+    a.localeCompare(b)
+  )
+}
+
+function renderTeaTypeOptions(selectedTeaType: string | null | undefined) {
+  const selected = selectedTeaType?.trim() || ''
+
+  return `
+    <option value="">Geen theesoort</option>
+    ${getAvailableTeaTypes()
+      .map(
+        (teaType) => `
+          <option
+            value="${escapeHtml(teaType)}"
+            ${selected === teaType ? 'selected' : ''}
+          >
+            ${escapeHtml(teaType)}
+          </option>
+        `
+      )
+      .join('')}
+    <option value="__custom__">Anders...</option>
+  `
+}
+
+function setupTeaTypeCustomInputs() {
+  document
+    .querySelectorAll<HTMLSelectElement>('#admin-product-tea-type')
+    .forEach((select) => {
+      const field = select.closest<HTMLElement>('.admin-tea-type-field')
+      const customInput =
+        field?.querySelector<HTMLInputElement>('.admin-product-custom-tea-type')
+
+      if (!customInput) return
+
+      const updateState = () => {
+        const isCustom = select.value === '__custom__'
+        customInput.hidden = !isCustom
+
+        if (!isCustom) {
+          customInput.value = ''
+        }
+      }
+
+      select.addEventListener('change', () => {
+        updateState()
+
+        if (select.value === '__custom__') {
+          customInput.focus()
+        }
+      })
+
+      updateState()
+    })
+}
+
 
 const translations = {
   nl: {
@@ -2229,6 +2306,23 @@ async function ensureDiscountSystemCategory() {
   if (error) {
     console.error('Discount categorie aanmaken mislukt:', error)
   }
+}
+
+function getTeaTypeBadgeClass(teaType: string | null | undefined) {
+  if (!teaType) return ''
+
+  const normalized = teaType.trim().toLowerCase()
+
+  if (normalized === 'jasmine tea') return 'tea-type-jasmine'
+  if (normalized === 'longjing tea') return 'tea-type-longjing'
+  if (normalized === 'oolong tea') return 'tea-type-oolong'
+  if (normalized === 'black tea') return 'tea-type-black'
+  if (normalized === 'green tea') return 'tea-type-green'
+  if (normalized === 'white tea') return 'tea-type-white'
+  if (normalized === 'earl grey') return 'tea-type-earl-grey'
+  if (normalized === 'matcha') return 'tea-type-matcha'
+
+  return 'tea-type-default'
 }
 
 function getCategoryDisplayName(categoryKey: string) {
@@ -4754,6 +4848,9 @@ async function saveAdminProduct() {
   const nameInput = document.querySelector<HTMLInputElement>('#admin-product-name')
   const qrCodeInput = document.querySelector<HTMLInputElement>('#admin-product-qr-code')
   const categoryInput = document.querySelector<HTMLSelectElement>('#admin-product-category')
+  const teaTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-tea-type')
+  const customTeaTypeInput = document.querySelector<HTMLInputElement>('.admin-product-custom-tea-type:not([hidden])')
+  const temperatureLabelInput = document.querySelector<HTMLSelectElement>('#admin-product-temperature-label')
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
   const vatRateInput = document.querySelector<HTMLSelectElement>('#admin-product-vat-rate')
   const mediumSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-medium')
@@ -4777,6 +4874,13 @@ async function saveAdminProduct() {
   const name = nameInput?.value.trim() || ''
   const qrProductCode = qrCodeInput?.value.trim() || ''
   const category = categoryInput?.value.trim() || ''
+  const selectedTeaType = teaTypeInput?.value.trim() || ''
+  const customTeaType = customTeaTypeInput?.value.trim() || ''
+  const teaType =
+    selectedTeaType === '__custom__'
+      ? customTeaType || null
+      : selectedTeaType || null
+  const temperatureLabel = temperatureLabelInput?.value.trim() || null
   const vatRate = Number(vatRateInput?.value ?? 9)
 
   const availableSizes: CupSize[] = []
@@ -4857,6 +4961,12 @@ async function saveAdminProduct() {
 
   if (!category) {
     adminError = 'Vul een categorie in.'
+    render()
+    return
+  }
+
+  if (selectedTeaType === '__custom__' && !customTeaType) {
+    adminError = 'Vul een nieuwe theesoort in.'
     render()
     return
   }
@@ -4993,6 +5103,8 @@ async function saveAdminProduct() {
         .update({
           name,
           category,
+          tea_type: teaType,
+          temperature_label: temperatureLabel,
           base_price: basePrice,
           vat_rate: vatRate,
           discount_type: discountType,
@@ -5035,6 +5147,8 @@ async function saveAdminProduct() {
         .insert({
           name,
           category,
+          tea_type: teaType,
+          temperature_label: temperatureLabel,
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
@@ -7451,6 +7565,34 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
                     <span class="product-name">${escapeHtml(product.name)}</span>
 
                     ${
+                      screen === 'customer'
+                        ? `
+                          <div class="customer-product-meta-pills">
+                            ${
+                              product.tea_type
+                                ? `
+                                  <span class="customer-product-tea-type ${getTeaTypeBadgeClass(product.tea_type)}">
+                                    ${escapeHtml(product.tea_type)}
+                                  </span>
+                                `
+                                : ''
+                            }
+
+                            ${
+                              product.temperature_label
+                                ? `
+                                  <span class="customer-product-temperature">
+                                    ${escapeHtml(product.temperature_label)}
+                                  </span>
+                                `
+                                : ''
+                            }
+                          </div>
+                        `
+                        : ''
+                    }
+
+                    ${
                       product.is_sold_out
                         ? `<span class="product-sold-out-badge">Uitverkocht</span>`
                         : ''
@@ -8708,6 +8850,58 @@ function renderAdminProductForm() {
           </select>
         </label>
 
+
+        <div class="admin-product-info-field">
+          <div class="admin-product-info-header">
+            <div>
+              <strong>Productinformatie</strong>
+              <span>
+                Stel de theesoort en het temperatuur-label in dat de klant op het product ziet.
+              </span>
+            </div>
+          </div>
+
+          <div class="admin-product-info-grid">
+            <label class="admin-tea-type-field">
+              <span>Theesoort</span>
+              <select
+                id="admin-product-tea-type"
+                class="admin-input admin-select"
+              >
+                ${renderTeaTypeOptions(editingProduct?.tea_type)}
+              </select>
+
+              <input
+                class="admin-input admin-product-custom-tea-type"
+                type="text"
+                placeholder="Nieuwe theesoort, bijv. Hojicha"
+                hidden
+              />
+
+              <small class="admin-field-help">
+                Kies een bestaande soort of kies “Anders...” om zelf een nieuwe toe te voegen.
+              </small>
+            </label>
+
+            <label>
+              <span>Temperatuur-label</span>
+              <select
+                id="admin-product-temperature-label"
+                class="admin-input admin-select"
+              >
+                <option value="">Geen label</option>
+                <option value="Ice" ${editingProduct?.temperature_label === 'Ice' ? 'selected' : ''}>Ice</option>
+                <option value="Hot" ${editingProduct?.temperature_label === 'Hot' ? 'selected' : ''}>Hot</option>
+                <option value="Ice / Hot" ${editingProduct?.temperature_label === 'Ice / Hot' ? 'selected' : ''}>Ice / Hot</option>
+              </select>
+
+              <small class="admin-field-help">
+                Handmatig label voor de klantweergave. Staat los van de ice-level instellingen.
+              </small>
+            </label>
+          </div>
+        </div>
+
         <label>
           <span>Basisprijs (€)</span>
           <input
@@ -9819,6 +10013,58 @@ function renderAdminProductEditModal() {
                 .join('')}
             </select>
           </label>
+
+
+          <div class="admin-product-info-field">
+            <div class="admin-product-info-header">
+              <div>
+                <strong>Productinformatie</strong>
+                <span>
+                  Stel de theesoort en het temperatuur-label in dat de klant op het product ziet.
+                </span>
+              </div>
+            </div>
+
+            <div class="admin-product-info-grid">
+              <label class="admin-modal-field admin-tea-type-field">
+                <span>Theesoort</span>
+                <select
+                  id="admin-product-tea-type"
+                  class="admin-input admin-select"
+                >
+                  ${renderTeaTypeOptions(product.tea_type)}
+                </select>
+
+                <input
+                  class="admin-input admin-product-custom-tea-type"
+                  type="text"
+                  placeholder="Nieuwe theesoort, bijv. Hojicha"
+                  hidden
+                />
+
+                <small class="admin-field-help">
+                  Kies een bestaande soort of kies “Anders...” om zelf een nieuwe toe te voegen.
+                </small>
+              </label>
+
+              <label class="admin-modal-field">
+                <span>Temperatuur-label</span>
+                <select
+                  id="admin-product-temperature-label"
+                  class="admin-input admin-select"
+                >
+                  <option value="">Geen label</option>
+                  <option value="Ice" ${product.temperature_label === 'Ice' ? 'selected' : ''}>Ice</option>
+                  <option value="Hot" ${product.temperature_label === 'Hot' ? 'selected' : ''}>Hot</option>
+                  <option value="Ice / Hot" ${product.temperature_label === 'Ice / Hot' ? 'selected' : ''}>Ice / Hot</option>
+                </select>
+
+                <small class="admin-field-help">
+                  Handmatig label voor de klantweergave. Staat los van de ice-level instellingen.
+                </small>
+              </label>
+            </div>
+          </div>
 
           <label class="admin-modal-field">
             <span>Basisprijs (€)</span>
@@ -14617,6 +14863,8 @@ function bindEvents() {
   const adminProductDiscountType = document.querySelector<HTMLSelectElement>('#admin-product-discount-type')
   const adminProductDiscountValue = document.querySelector<HTMLInputElement>('#admin-product-discount-value')
   const adminProductPrice = document.querySelector<HTMLInputElement>('#admin-product-price')
+
+  setupTeaTypeCustomInputs()
 
   adminProductDiscountType?.addEventListener('change', updateProductDiscountPreview)
   adminProductDiscountValue?.addEventListener('input', updateProductDiscountPreview)
