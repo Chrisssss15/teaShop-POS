@@ -760,6 +760,7 @@ let posProductSearch = ''
 let isPosAvailabilityOpen = false
 let isLoadingPosAvailability = false
 let posAvailabilitySearch = ''
+let posAvailabilityTeaType = ''
 let posAvailabilityProducts: Product[] = []
 let posAvailabilityError = ''
 let orderHistorySearch = ''
@@ -1085,7 +1086,7 @@ async function loadPosAvailabilityProducts(showLoading = true) {
 
   if (error) {
     isLoadingPosAvailability = false
-    posAvailabilityError = `Productbeschikbaarheid laden mislukt: ${error.message}`
+    posAvailabilityError = `Productstatus laden mislukt: ${error.message}`
     render()
     return
   }
@@ -1098,6 +1099,7 @@ async function loadPosAvailabilityProducts(showLoading = true) {
 async function openPosAvailability() {
   isPosAvailabilityOpen = true
   posAvailabilitySearch = ''
+  posAvailabilityTeaType = ''
   posAvailabilityError = ''
   await loadPosAvailabilityProducts()
 }
@@ -1105,6 +1107,7 @@ async function openPosAvailability() {
 function closePosAvailability() {
   isPosAvailabilityOpen = false
   posAvailabilitySearch = ''
+  posAvailabilityTeaType = ''
   posAvailabilityError = ''
   render()
 }
@@ -1116,7 +1119,7 @@ async function setPosProductSoldOut(productId: string, isSoldOut: boolean) {
     .eq('id', productId)
 
   if (error) {
-    posAvailabilityError = `Beschikbaarheid aanpassen mislukt: ${error.message}`
+    posAvailabilityError = `Productstatus aanpassen mislukt: ${error.message}`
     render()
     return
   }
@@ -1185,6 +1188,95 @@ async function setPosProductVisible(productId: string, isVisible: boolean) {
   message = isVisible
     ? 'Product is weer zichtbaar.'
     : 'Product is verborgen uit het menu.'
+
+  render()
+}
+
+function getPosAvailabilityTeaTypes() {
+  return Array.from(
+    new Set(
+      posAvailabilityProducts
+        .filter(
+          (product) =>
+            product.product_type === 'drink' &&
+            Boolean(product.tea_type?.trim())
+        )
+        .map((product) => product.tea_type!.trim())
+    )
+  ).sort((a, b) => a.localeCompare(b))
+}
+
+function getPosAvailabilityTeaTypeCount(teaType: string) {
+  if (!teaType) return 0
+
+  return posAvailabilityProducts.filter(
+    (product) =>
+      product.product_type === 'drink' &&
+      product.tea_type?.trim() === teaType
+  ).length
+}
+
+async function setPosTeaTypeSoldOut(
+  teaType: string,
+  isSoldOut: boolean
+) {
+  const cleanTeaType = teaType.trim()
+  if (!cleanTeaType) {
+    posAvailabilityError = 'Kies eerst een theesoort.'
+    render()
+    return
+  }
+
+  const matchingProducts = posAvailabilityProducts.filter(
+    (product) =>
+      product.product_type === 'drink' &&
+      product.tea_type?.trim() === cleanTeaType
+  )
+
+  if (matchingProducts.length === 0) {
+    posAvailabilityError = `Geen drankjes gevonden met ${cleanTeaType}.`
+    render()
+    return
+  }
+
+  const actionText = isSoldOut ? 'uitverkocht zetten' : 'beschikbaar maken'
+  const confirmed = window.confirm(
+    `${matchingProducts.length} drankje${matchingProducts.length === 1 ? '' : 's'} met ${cleanTeaType} ${actionText}?`
+  )
+
+  if (!confirmed) return
+
+  posAvailabilityError = ''
+
+  const { error } = await supabase
+    .from('products')
+    .update({ is_sold_out: isSoldOut })
+    .eq('tea_type', cleanTeaType)
+    .eq('product_type', 'drink')
+
+  if (error) {
+    posAvailabilityError = `Productstatus aanpassen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  posAvailabilityProducts = posAvailabilityProducts.map((product) =>
+    product.product_type === 'drink' &&
+    product.tea_type?.trim() === cleanTeaType
+      ? { ...product, is_sold_out: isSoldOut }
+      : product
+  )
+
+  products = products.map((product) =>
+    product.product_type === 'drink' &&
+    product.tea_type?.trim() === cleanTeaType
+      ? { ...product, is_sold_out: isSoldOut }
+      : product
+  )
+
+  message = isSoldOut
+    ? `${matchingProducts.length} ${cleanTeaType} drankjes staan nu op uitverkocht.`
+    : `${matchingProducts.length} ${cleanTeaType} drankjes zijn weer beschikbaar.`
 
   render()
 }
@@ -11564,11 +11656,11 @@ function renderStaffBottomBar(grouped?: Record<string, Product[]>) {
                 type="button"
                 class="pos-action-tile pos-action-tile-availability"
                 id="pos-availability-open"
-                aria-label="Beschikbaarheid"
+                aria-label="Productstatus"
               >
                 <span class="pos-action-icon" aria-hidden="true">📦</span>
                 <span class="pos-action-copy">
-                  <strong>Beschikbaarheid</strong>
+                  <strong>Productstatus</strong>
                   <small>Producten beheren</small>
                 </span>
               </button>
@@ -11670,8 +11762,8 @@ function renderPosAvailabilityModal() {
         <header class="pos-availability-header">
           <div>
             <p class="pos-availability-eyebrow">Snel beheer</p>
-            <h2 id="pos-availability-title">Productbeschikbaarheid</h2>
-            <p>Markeer producten als uitverkocht of verberg ze tijdelijk uit het menu.</p>
+            <h2 id="pos-availability-title">Productstatus</h2>
+            <p>Beheer productstatussen of zet in één keer een hele theesoort op uitverkocht.</p>
           </div>
 
           <button
@@ -11683,6 +11775,68 @@ function renderPosAvailabilityModal() {
             ×
           </button>
         </header>
+
+        <section class="pos-availability-tea-bulk">
+          <div class="pos-availability-tea-copy">
+            <strong>Theesoort in bulk</strong>
+            <span>
+              Zet alle drankjes van één theesoort tegelijk op uitverkocht of beschikbaar.
+            </span>
+          </div>
+
+          <div class="pos-availability-tea-controls">
+            <label class="pos-availability-tea-select">
+              <span>Theesoort</span>
+              <select id="pos-availability-tea-type">
+                <option value="">Kies theesoort...</option>
+                ${getPosAvailabilityTeaTypes()
+                  .map(
+                    (teaType) => `
+                      <option
+                        value="${escapeHtml(teaType)}"
+                        ${posAvailabilityTeaType === teaType ? 'selected' : ''}
+                      >
+                        ${escapeHtml(teaType)}
+                      </option>
+                    `
+                  )
+                  .join('')}
+              </select>
+            </label>
+
+            <div class="pos-availability-tea-actions">
+              <button
+                class="pos-availability-tea-btn sold-out"
+                id="pos-tea-sold-out"
+                type="button"
+                ${!posAvailabilityTeaType ? 'disabled' : ''}
+              >
+                Alles uitverkocht
+              </button>
+
+              <button
+                class="pos-availability-tea-btn restore"
+                id="pos-tea-available"
+                type="button"
+                ${!posAvailabilityTeaType ? 'disabled' : ''}
+              >
+                Alles beschikbaar
+              </button>
+            </div>
+          </div>
+
+          ${
+            posAvailabilityTeaType
+              ? `
+                <small class="pos-availability-tea-count">
+                  ${getPosAvailabilityTeaTypeCount(posAvailabilityTeaType)}
+                  drankje${getPosAvailabilityTeaTypeCount(posAvailabilityTeaType) === 1 ? '' : 's'}
+                  met ${escapeHtml(posAvailabilityTeaType)}
+                </small>
+              `
+              : ''
+          }
+        </section>
 
         <div class="pos-availability-toolbar">
           <label class="pos-availability-search">
@@ -14694,6 +14848,20 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#pos-availability-refresh')?.addEventListener('click', () => {
     void loadPosAvailabilityProducts()
+  })
+
+  document.querySelector<HTMLSelectElement>('#pos-availability-tea-type')?.addEventListener('change', (event) => {
+    posAvailabilityTeaType = (event.target as HTMLSelectElement).value
+    posAvailabilityError = ''
+    render()
+  })
+
+  document.querySelector<HTMLButtonElement>('#pos-tea-sold-out')?.addEventListener('click', () => {
+    void setPosTeaTypeSoldOut(posAvailabilityTeaType, true)
+  })
+
+  document.querySelector<HTMLButtonElement>('#pos-tea-available')?.addEventListener('click', () => {
+    void setPosTeaTypeSoldOut(posAvailabilityTeaType, false)
   })
 
   document.querySelector<HTMLInputElement>('#pos-availability-search')?.addEventListener('input', (event) => {

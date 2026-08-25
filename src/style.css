@@ -14975,3 +14975,120 @@ body:has(.pos-page){
     grid-template-columns: 1fr !important;
   }
 }
+
+
+/* ========================================================= */
+/* POS PRODUCTSTATUS — BULK PER THEESOORT                    */
+/* ========================================================= */
+
+.pos-availability-tea-bulk {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #dce5f1;
+  border-radius: 16px;
+  background: #f7f9fc;
+}
+
+.pos-availability-tea-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.pos-availability-tea-copy strong {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pos-availability-tea-copy span {
+  color: #6f7a8a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.pos-availability-tea-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.pos-availability-tea-select {
+  display: grid;
+  gap: 6px;
+}
+
+.pos-availability-tea-select > span {
+  color: #2f4d78;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.pos-availability-tea-select select {
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #dce4ef;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pos-availability-tea-select select:focus {
+  outline: none;
+  border-color: #1B478F;
+  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.10);
+}
+
+.pos-availability-tea-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pos-availability-tea-btn {
+  min-height: 42px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pos-availability-tea-btn.sold-out {
+  background: #fdeaea;
+  color: #a92a2a;
+}
+
+.pos-availability-tea-btn.restore {
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.pos-availability-tea-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pos-availability-tea-count {
+  color: #617089;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .pos-availability-tea-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-availability-tea-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
