@@ -22,6 +22,8 @@ type Product = {
   category: string
   tea_type: string | null
   temperature_label: string | null
+  pos_only: boolean
+  product_type: 'drink' | 'item'
   base_price: number
   vat_rate: number
   is_active: boolean
@@ -339,6 +341,64 @@ function renderTeaTypeOptions(selectedTeaType: string | null | undefined) {
       .join('')}
     <option value="__custom__">Anders...</option>
   `
+}
+
+
+function setupAdminProductTypeControls() {
+  const productTypeInput =
+    document.querySelector<HTMLSelectElement>('#admin-product-type')
+
+  const basePriceInput =
+    document.querySelector<HTMLInputElement>('#admin-product-price')
+
+  if (!productTypeInput) return
+
+  const root =
+    productTypeInput.closest<HTMLElement>('.admin-modal') ??
+    productTypeInput.closest<HTMLElement>('.admin-panel') ??
+    document.body
+
+  const drinkOnlySelectors = [
+    '.admin-product-info-field',
+    '.admin-product-size-field',
+    '.admin-product-customization-field',
+    '.admin-product-toppings-field',
+  ]
+
+  const update = () => {
+    const isItem = productTypeInput.value === 'item'
+
+    drinkOnlySelectors.forEach((selector) => {
+      root.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+        element.hidden = isItem
+      })
+    })
+
+    if (basePriceInput) {
+      basePriceInput.readOnly = !isItem
+      basePriceInput.classList.toggle('admin-base-price-readonly', !isItem)
+      basePriceInput.placeholder = isItem
+        ? 'Bijv. 3.50'
+        : 'Wordt automatisch bepaald'
+    }
+
+    const priceHelp = basePriceInput
+      ?.closest('label')
+      ?.querySelector<HTMLElement>('.admin-field-help')
+
+    if (priceHelp) {
+      priceHelp.textContent = isItem
+        ? 'Vul voor een los item één vaste verkoopprijs in.'
+        : 'Wordt automatisch Medium, of Large als alleen Large beschikbaar is.'
+    }
+
+    if (isItem && basePriceInput && !basePriceInput.value) {
+      basePriceInput.value = ''
+    }
+  }
+
+  productTypeInput.addEventListener('change', update)
+  update()
 }
 
 function setupTeaTypeCustomInputs() {
@@ -991,7 +1051,12 @@ async function loadProducts() {
     return
   }
 
-  products = (data ?? []) as Product[]
+  const loadedProducts = (data ?? []) as Product[]
+
+  products =
+    screen === 'customer'
+      ? loadedProducts.filter((product) => product.pos_only !== true)
+      : loadedProducts
 
   if (screen === 'customer') {
     loadCustomerStateAfterProducts()
@@ -1594,6 +1659,10 @@ function getSafeCupSizeForProduct(
 }
 
 function getProductSizePrice(product: Product, size: CupSize) {
+  if (product.product_type === 'item') {
+    return Math.max(0, Number(product.base_price))
+  }
+
   if (size === 'large' && product.large_price != null) {
     return Math.max(0, Number(product.large_price))
   }
@@ -1793,6 +1862,24 @@ function addToCart(productId: string) {
     message = product.is_sold_out
       ? `${product.name} is uitverkocht.`
       : `${product.name} is momenteel niet beschikbaar.`
+    render()
+    return
+  }
+
+  if (product.product_type === 'item') {
+    const existingItem = cart.find(
+      (item) =>
+        String(item.product.id) === String(productId) &&
+        item.product.product_type === 'item'
+    )
+
+    if (existingItem) {
+      existingItem.quantity += 1
+    } else {
+      cart.push(createDefaultCartItem(product))
+    }
+
+    saveCustomerState()
     render()
     return
   }
@@ -3411,6 +3498,14 @@ async function createKitchenLabelsForOrder(
   const labels = []
 
   for (const item of savedItems) {
+    const sourceProduct = products.find(
+      (product) => String(product.id) === String(item.product_id)
+    )
+
+    if (sourceProduct?.product_type === 'item') {
+      continue
+    }
+
     const quantity = Number(item.quantity ?? 1)
     const productName =
       item.product_name_snapshot ||
@@ -4851,6 +4946,8 @@ async function saveAdminProduct() {
   const teaTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-tea-type')
   const customTeaTypeInput = document.querySelector<HTMLInputElement>('.admin-product-custom-tea-type:not([hidden])')
   const temperatureLabelInput = document.querySelector<HTMLSelectElement>('#admin-product-temperature-label')
+  const posOnlyInput = document.querySelector<HTMLInputElement>('#admin-product-pos-only')
+  const productTypeInput = document.querySelector<HTMLSelectElement>('#admin-product-type')
   const priceInput = document.querySelector<HTMLInputElement>('#admin-product-price')
   const vatRateInput = document.querySelector<HTMLSelectElement>('#admin-product-vat-rate')
   const mediumSizeInput = document.querySelector<HTMLInputElement>('#admin-product-size-medium')
@@ -4881,32 +4978,42 @@ async function saveAdminProduct() {
       ? customTeaType || null
       : selectedTeaType || null
   const temperatureLabel = temperatureLabelInput?.value.trim() || null
+  const posOnly = posOnlyInput?.checked ?? false
+  const productType = productTypeInput?.value === 'item' ? 'item' : 'drink'
   const vatRate = Number(vatRateInput?.value ?? 9)
 
   const availableSizes: CupSize[] = []
 
-  if (mediumSizeInput?.checked) {
+  if (productType === 'drink') {
+    if (mediumSizeInput?.checked) {
+      availableSizes.push('medium')
+    }
+
+    if (largeSizeInput?.checked) {
+      availableSizes.push('large')
+    }
+  } else {
+    // Losse items gebruiken geen bekermaten, maar we bewaren een veilige
+    // interne default zodat bestaande order/cart-code compatibel blijft.
     availableSizes.push('medium')
   }
 
-  if (largeSizeInput?.checked) {
-    availableSizes.push('large')
-  }
-
   const mediumPrice =
-    mediumSizeInput?.checked
+    productType === 'drink' && mediumSizeInput?.checked
       ? Number(mediumPriceInput?.value || 0)
       : null
 
   const largePrice =
-    largeSizeInput?.checked
+    productType === 'drink' && largeSizeInput?.checked
       ? Number(largePriceInput?.value || 0)
       : null
 
   const basePrice =
-    availableSizes.includes('medium')
-      ? Number(mediumPrice ?? 0)
-      : Number(largePrice ?? 0)
+    productType === 'item'
+      ? Number(priceInput?.value || 0)
+      : availableSizes.includes('medium')
+        ? Number(mediumPrice ?? 0)
+        : Number(largePrice ?? 0)
 
   const discountType = normalizeDiscountType(discountTypeInput?.value)
   const discountValue =
@@ -4965,7 +5072,11 @@ async function saveAdminProduct() {
     return
   }
 
-  if (selectedTeaType === '__custom__' && !customTeaType) {
+  if (
+    productType === 'drink' &&
+    selectedTeaType === '__custom__' &&
+    !customTeaType
+  ) {
     adminError = 'Vul een nieuwe theesoort in.'
     render()
     return
@@ -4977,13 +5088,14 @@ async function saveAdminProduct() {
     return
   }
 
-  if (availableSizes.length === 0) {
+  if (productType === 'drink' && availableSizes.length === 0) {
     adminError = 'Kies minimaal één bekergrootte: Medium of Large.'
     render()
     return
   }
 
   if (
+    productType === 'drink' &&
     availableSizes.includes('medium') &&
     (!Number.isFinite(mediumPrice) || Number(mediumPrice) < 0)
   ) {
@@ -4993,6 +5105,7 @@ async function saveAdminProduct() {
   }
 
   if (
+    productType === 'drink' &&
     availableSizes.includes('large') &&
     (!Number.isFinite(largePrice) || Number(largePrice) < 0)
   ) {
@@ -5020,6 +5133,7 @@ async function saveAdminProduct() {
   }
 
   if (
+    productType === 'drink' &&
     allowIceCustomization &&
     availableSizes.includes('medium') &&
     selectedMediumIceLevels.length === 0
@@ -5031,6 +5145,7 @@ async function saveAdminProduct() {
   }
 
   if (
+    productType === 'drink' &&
     allowIceCustomization &&
     availableSizes.includes('large') &&
     selectedLargeIceLevels.length === 0
@@ -5041,13 +5156,21 @@ async function saveAdminProduct() {
     return
   }
 
-  if (defaultIceLevel && !ICE_LEVELS.includes(defaultIceLevel)) {
+  if (
+    productType === 'drink' &&
+    defaultIceLevel &&
+    !ICE_LEVELS.includes(defaultIceLevel)
+  ) {
     adminError = 'Kies een geldige vaste temperatuur / ijsniveau.'
     render()
     return
   }
 
-  if (allowSugarCustomization && selectedSugarLevels.length === 0) {
+  if (
+    productType === 'drink' &&
+    allowSugarCustomization &&
+    selectedSugarLevels.length === 0
+  ) {
     adminError =
       'Kies minimaal één optie voor Sugar level.'
     render()
@@ -5103,8 +5226,10 @@ async function saveAdminProduct() {
         .update({
           name,
           category,
-          tea_type: teaType,
-          temperature_label: temperatureLabel,
+          tea_type: productType === 'item' ? null : teaType,
+          temperature_label: productType === 'item' ? null : temperatureLabel,
+          pos_only: posOnly,
+          product_type: productType,
           base_price: basePrice,
           vat_rate: vatRate,
           discount_type: discountType,
@@ -5117,19 +5242,23 @@ async function saveAdminProduct() {
           is_sold_out: isSoldOut,
           is_active: isActive,
           image_url: imageUrl,
-          allow_ice_customization: allowIceCustomization,
-          allowed_ice_levels: selectedIceLevels,
+          allow_ice_customization: productType === 'item' ? false : allowIceCustomization,
+          allowed_ice_levels: productType === 'item' ? [] : selectedIceLevels,
           medium_allowed_ice_levels:
-            availableSizes.includes('medium')
-              ? selectedMediumIceLevels
-              : null,
+            productType === 'item'
+              ? null
+              : availableSizes.includes('medium')
+                ? selectedMediumIceLevels
+                : null,
           large_allowed_ice_levels:
-            availableSizes.includes('large')
-              ? selectedLargeIceLevels
-              : null,
-          default_ice_level: defaultIceLevel,
-          allow_sugar_customization: allowSugarCustomization,
-          allowed_sugar_levels: selectedSugarLevels,
+            productType === 'item'
+              ? null
+              : availableSizes.includes('large')
+                ? selectedLargeIceLevels
+                : null,
+          default_ice_level: productType === 'item' ? null : defaultIceLevel,
+          allow_sugar_customization: productType === 'item' ? false : allowSugarCustomization,
+          allowed_sugar_levels: productType === 'item' ? [] : selectedSugarLevels,
         })
         .eq('id', productId)
 
@@ -5139,7 +5268,7 @@ async function saveAdminProduct() {
         return
       }
 
-      await saveProductToppingLinks(productId, selectedToppingIds)
+      await saveProductToppingLinks(productId, productType === 'item' ? [] : selectedToppingIds)
       adminMessage = 'Product, toppings en foto aangepast.'
     } else {
       const { data, error } = await supabase
@@ -5147,8 +5276,10 @@ async function saveAdminProduct() {
         .insert({
           name,
           category,
-          tea_type: teaType,
-          temperature_label: temperatureLabel,
+          tea_type: productType === 'item' ? null : teaType,
+          temperature_label: productType === 'item' ? null : temperatureLabel,
+          pos_only: posOnly,
+          product_type: productType,
           base_price: basePrice,
           discount_type: discountType,
           discount_value: discountValue,
@@ -5160,19 +5291,23 @@ async function saveAdminProduct() {
           is_sold_out: isSoldOut,
           is_active: isActive,
           image_url: null,
-          allow_ice_customization: allowIceCustomization,
-          allowed_ice_levels: selectedIceLevels,
+          allow_ice_customization: productType === 'item' ? false : allowIceCustomization,
+          allowed_ice_levels: productType === 'item' ? [] : selectedIceLevels,
           medium_allowed_ice_levels:
-            availableSizes.includes('medium')
-              ? selectedMediumIceLevels
-              : null,
+            productType === 'item'
+              ? null
+              : availableSizes.includes('medium')
+                ? selectedMediumIceLevels
+                : null,
           large_allowed_ice_levels:
-            availableSizes.includes('large')
-              ? selectedLargeIceLevels
-              : null,
-          default_ice_level: defaultIceLevel,
-          allow_sugar_customization: allowSugarCustomization,
-          allowed_sugar_levels: selectedSugarLevels,
+            productType === 'item'
+              ? null
+              : availableSizes.includes('large')
+                ? selectedLargeIceLevels
+                : null,
+          default_ice_level: productType === 'item' ? null : defaultIceLevel,
+          allow_sugar_customization: productType === 'item' ? false : allowSugarCustomization,
+          allowed_sugar_levels: productType === 'item' ? [] : selectedSugarLevels,
         })
         .select('id')
         .single()
@@ -5198,7 +5333,7 @@ async function saveAdminProduct() {
         }
       }
 
-      await saveProductToppingLinks(productId, selectedToppingIds)
+      await saveProductToppingLinks(productId, productType === 'item' ? [] : selectedToppingIds)
       adminMessage = 'Product, toppings en foto toegevoegd.'
     }
   } catch (error) {
@@ -7597,7 +7732,6 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
                         ? `<span class="product-sold-out-badge">Uitverkocht</span>`
                         : ''
                     }
-
                     ${
                       hasProductDiscount(product)
                         ? `
@@ -7650,7 +7784,7 @@ function renderCart(isCustomer: boolean) {
                       <div class="pos-cart-item-info">
                         <div class="cart-item-name">${escapeHtml(item.product.name)}</div>
                         <div class="cart-item-price">€ ${getCartItemUnitPrice(item).toFixed(2)} per stuk</div>
-                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
+                        ${item.product.product_type === 'item' ? '' : renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                       </div>
 
                       <div class="pos-cart-item-controls">
@@ -8015,7 +8149,7 @@ function renderCustomerCartDrawer() {
                       <div>
                         <h3>${escapeHtml(item.product.name)}</h3>
                         <p>€ ${getCartItemUnitPrice(item).toFixed(2)} ${escapeHtml(t('perItem'))}</p>
-                        ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
+                        ${item.product.product_type === 'item' ? '' : renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                         <strong>€ ${getCartItemLineTotal(item).toFixed(2)}</strong>
                       </div>
 
@@ -8141,7 +8275,7 @@ function renderCustomerCheckoutScreen() {
                         <div class="customer-checkout-item-row customer-checkout-item-with-modifiers">
                           <div>
                             <span>${item.quantity}x ${escapeHtml(item.product.name)}</span>
-                            ${renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
+                            ${item.product.product_type === 'item' ? '' : renderModifierSummary(item.iceLevel, item.sugarLevel, item.toppings, item.cupSize)}
                           </div>
                           <strong>€ ${getCartItemLineTotal(item).toFixed(2)}</strong>
                         </div>
@@ -8851,6 +8985,29 @@ function renderAdminProductForm() {
         </label>
 
 
+        <div class="admin-product-type-field">
+          <div class="admin-product-info-header">
+            <div>
+              <strong>Producttype</strong>
+              <span>
+                Drankjes gebruiken maten en modifiers. Een los item gebruikt alleen één vaste prijs.
+              </span>
+            </div>
+          </div>
+
+          <label>
+            <span>Type</span>
+            <select id="admin-product-type" class="admin-input admin-select">
+              <option value="drink" ${(editingProduct?.product_type ?? 'drink') === 'drink' ? 'selected' : ''}>
+                Drankje
+              </option>
+              <option value="item" ${editingProduct?.product_type === 'item' ? 'selected' : ''}>
+                Los item
+              </option>
+            </select>
+          </label>
+        </div>
+
         <div class="admin-product-info-field">
           <div class="admin-product-info-header">
             <div>
@@ -8899,6 +9056,7 @@ function renderAdminProductForm() {
                 Handmatig label voor de klantweergave. Staat los van de ice-level instellingen.
               </small>
             </label>
+
           </div>
         </div>
 
@@ -9094,32 +9252,43 @@ function renderAdminProductForm() {
         </div>
 
 
-        <label class="admin-checkbox-label">
-          <input
-            id="admin-product-bestseller"
-            type="checkbox"
-            ${editingProduct?.is_bestseller ? 'checked' : ''}
-          />
-          <span>Best Seller</span>
-        </label>
+        <div class="admin-product-status-toggle-grid">
+          <label class="admin-checkbox-label">
+            <input
+              id="admin-product-bestseller"
+              type="checkbox"
+              ${editingProduct?.is_bestseller ? 'checked' : ''}
+            />
+            <span>Best Seller</span>
+          </label>
 
-        <label class="admin-checkbox-label admin-sold-out-checkbox">
-          <input
-            id="admin-product-sold-out"
-            type="checkbox"
-            ${editingProduct?.is_sold_out ? 'checked' : ''}
-          />
-          <span>Uitverkocht</span>
-        </label>
+          <label class="admin-checkbox-label admin-sold-out-checkbox">
+            <input
+              id="admin-product-sold-out"
+              type="checkbox"
+              ${editingProduct?.is_sold_out ? 'checked' : ''}
+            />
+            <span>Uitverkocht</span>
+          </label>
 
-        <label class="admin-checkbox-label">
-          <input
-            id="admin-product-active"
-            type="checkbox"
-            ${editingProduct ? (editingProduct.is_active ? 'checked' : '') : 'checked'}
-          />
-          <span>Actief</span>
-        </label>
+          <label class="admin-checkbox-label">
+            <input
+              id="admin-product-active"
+              type="checkbox"
+              ${editingProduct ? (editingProduct.is_active ? 'checked' : '') : 'checked'}
+            />
+            <span>Actief</span>
+          </label>
+
+          <label class="admin-checkbox-label admin-pos-only-checkbox">
+            <input
+              id="admin-product-pos-only"
+              type="checkbox"
+              ${editingProduct?.pos_only ? 'checked' : ''}
+            />
+            <span>Alleen POS</span>
+          </label>
+        </div>
       </div>
 
       <div class="admin-form-actions">
@@ -9223,6 +9392,12 @@ function renderAdminProductsList() {
                         ${
                           product.is_sold_out
                             ? `<span class="admin-sold-out-badge">Uitverkocht</span>`
+                            : ''
+                        }
+
+                        ${
+                          product.pos_only
+                            ? `<span class="admin-pos-only-badge">Alleen POS</span>`
                             : ''
                         }
 
@@ -10015,6 +10190,29 @@ function renderAdminProductEditModal() {
           </label>
 
 
+          <div class="admin-product-type-field">
+            <div class="admin-product-info-header">
+              <div>
+                <strong>Producttype</strong>
+                <span>
+                  Drankjes gebruiken maten en modifiers. Een los item gebruikt alleen één vaste prijs.
+                </span>
+              </div>
+            </div>
+
+            <label class="admin-modal-field">
+              <span>Type</span>
+              <select id="admin-product-type" class="admin-input admin-select">
+                <option value="drink" ${(product.product_type ?? 'drink') === 'drink' ? 'selected' : ''}>
+                  Drankje
+                </option>
+                <option value="item" ${product.product_type === 'item' ? 'selected' : ''}>
+                  Los item
+                </option>
+              </select>
+            </label>
+          </div>
+
           <div class="admin-product-info-field">
             <div class="admin-product-info-header">
               <div>
@@ -10063,6 +10261,7 @@ function renderAdminProductEditModal() {
                   Handmatig label voor de klantweergave. Staat los van de ice-level instellingen.
                 </small>
               </label>
+
             </div>
           </div>
 
@@ -10255,7 +10454,7 @@ function renderAdminProductEditModal() {
             </div>
           </div>
 
-          <div class="admin-product-toggle-row">
+          <div class="admin-product-toggle-row admin-product-status-toggle-grid">
             <label class="admin-checkbox-label admin-modal-checkbox admin-bestseller-checkbox">
               <input
                 id="admin-product-bestseller"
@@ -10277,6 +10476,15 @@ function renderAdminProductEditModal() {
             <label class="admin-checkbox-label admin-modal-checkbox">
               <input id="admin-product-active" type="checkbox" ${product.is_active ? 'checked' : ''} />
               <span>Actief</span>
+            </label>
+
+            <label class="admin-checkbox-label admin-modal-checkbox admin-pos-only-checkbox">
+              <input
+                id="admin-product-pos-only"
+                type="checkbox"
+                ${product.pos_only ? 'checked' : ''}
+              />
+              <span>Alleen POS</span>
             </label>
           </div>
         </div>
@@ -14865,6 +15073,7 @@ function bindEvents() {
   const adminProductPrice = document.querySelector<HTMLInputElement>('#admin-product-price')
 
   setupTeaTypeCustomInputs()
+  setupAdminProductTypeControls()
 
   adminProductDiscountType?.addEventListener('change', updateProductDiscountPreview)
   adminProductDiscountValue?.addEventListener('input', updateProductDiscountPreview)
