@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
+type Screen = 'pos' | 'pos-product-status' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -53,6 +53,7 @@ type Topping = {
   name: string
   price: number
   is_active: boolean
+  is_sold_out: boolean
 }
 
 type ProductToppingLink = {
@@ -693,6 +694,7 @@ const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode')
 
 function getScreenFromMode(modeValue: string | null): Screen {
+  if (modeValue === 'pos-product-status') return 'pos-product-status'
   if (modeValue === 'pos-settings') return 'pos-settings'
   if (modeValue === 'orders') return 'orders'
   if (modeValue === 'kitchen') return 'kitchen'
@@ -1078,37 +1080,75 @@ async function loadPosAvailabilityProducts(showLoading = true) {
     render()
   }
 
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .order('category', { ascending: true })
-    .order('name', { ascending: true })
+  const [
+    { data: productData, error: productError },
+    { data: toppingData, error: toppingError },
+  ] = await Promise.all([
+    supabase
+      .from('products')
+      .select('*')
+      .order('category', { ascending: true })
+      .order('name', { ascending: true }),
+    supabase
+      .from('toppings')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true }),
+  ])
 
-  if (error) {
+  if (productError) {
     isLoadingPosAvailability = false
-    posAvailabilityError = `Productstatus laden mislukt: ${error.message}`
+    posAvailabilityError = `Productstatus laden mislukt: ${productError.message}`
     render()
     return
   }
 
-  posAvailabilityProducts = (data ?? []) as Product[]
+  if (toppingError) {
+    isLoadingPosAvailability = false
+    posAvailabilityError = `Toppingstatus laden mislukt: ${toppingError.message}`
+    render()
+    return
+  }
+
+  posAvailabilityProducts = (productData ?? []) as Product[]
+  toppings = (toppingData ?? []) as Topping[]
   isLoadingPosAvailability = false
   render()
 }
 
 async function openPosAvailability() {
-  isPosAvailabilityOpen = true
-  posAvailabilitySearch = ''
-  posAvailabilityTeaType = ''
-  posAvailabilityError = ''
-  await loadPosAvailabilityProducts()
-}
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
 
-function closePosAvailability() {
+  screen = 'pos-product-status'
   isPosAvailabilityOpen = false
   posAvailabilitySearch = ''
   posAvailabilityTeaType = ''
   posAvailabilityError = ''
+
+  updateModeInUrl('pos-product-status')
+
+  await Promise.all([
+    loadPosAvailabilityProducts(false),
+    loadToppings(),
+  ])
+
+  render()
+}
+
+function closePosAvailability() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'pos'
+  isPosAvailabilityOpen = false
+  posAvailabilitySearch = ''
+  posAvailabilityTeaType = ''
+  posAvailabilityError = ''
+
+  updateModeInUrl('pos')
   render()
 }
 
@@ -1195,7 +1235,7 @@ async function setPosProductVisible(productId: string, isVisible: boolean) {
 function getPosAvailabilityTeaTypes() {
   return Array.from(
     new Set(
-      posAvailabilityProducts
+      (posAvailabilityProducts.length > 0 ? posAvailabilityProducts : products)
         .filter(
           (product) =>
             product.product_type === 'drink' &&
@@ -1209,7 +1249,7 @@ function getPosAvailabilityTeaTypes() {
 function getPosAvailabilityTeaTypeCount(teaType: string) {
   if (!teaType) return 0
 
-  return posAvailabilityProducts.filter(
+  return (posAvailabilityProducts.length > 0 ? posAvailabilityProducts : products).filter(
     (product) =>
       product.product_type === 'drink' &&
       product.tea_type?.trim() === teaType
@@ -1278,6 +1318,45 @@ async function setPosTeaTypeSoldOut(
     ? `${matchingProducts.length} ${cleanTeaType} drankjes staan nu op uitverkocht.`
     : `${matchingProducts.length} ${cleanTeaType} drankjes zijn weer beschikbaar.`
 
+  render()
+}
+
+async function setPosToppingSoldOut(
+  toppingId: string,
+  isSoldOut: boolean
+) {
+  const topping = toppings.find(
+    (item) => String(item.id) === String(toppingId)
+  )
+
+  if (!topping) {
+    posAvailabilityError = 'Topping niet gevonden.'
+    render()
+    return
+  }
+
+  const { error } = await supabase
+    .from('toppings')
+    .update({ is_sold_out: isSoldOut })
+    .eq('id', toppingId)
+
+  if (error) {
+    posAvailabilityError = `Toppingstatus aanpassen mislukt: ${error.message}`
+    render()
+    return
+  }
+
+  toppings = toppings.map((item) =>
+    String(item.id) === String(toppingId)
+      ? { ...item, is_sold_out: isSoldOut }
+      : item
+  )
+
+  message = isSoldOut
+    ? `${topping.name} staat nu op uitverkocht.`
+    : `${topping.name} is weer beschikbaar.`
+
+  posAvailabilityError = ''
   render()
 }
 
@@ -1422,6 +1501,7 @@ function getAllowedToppingsForProduct(productId: string) {
   return toppings.filter(
     (topping) =>
       topping.is_active &&
+      !topping.is_sold_out &&
       allowedIds.has(String(topping.id))
   )
 }
@@ -11746,37 +11826,43 @@ function applyPosProductSearchFilter() {
 // RENDER: STAFF POS
 // =============================
 
-function renderPosAvailabilityModal() {
-  if (!isPosAvailabilityOpen) return ''
+function renderPosProductStatusPage() {
+  const availabilitySource =
+    posAvailabilityProducts.length > 0 ? posAvailabilityProducts : products
 
-  const filteredProducts = getFilteredPosAvailabilityProducts()
+  const search = posAvailabilitySearch.trim().toLowerCase()
+  const filteredProducts = !search
+    ? availabilitySource
+    : availabilitySource.filter((product) =>
+        `${product.name} ${product.category}`.toLowerCase().includes(search)
+      )
 
   return `
-    <div class="pos-availability-overlay" id="pos-availability-overlay">
-      <section
-        class="pos-availability-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pos-availability-title"
-      >
-        <header class="pos-availability-header">
-          <div>
-            <p class="pos-availability-eyebrow">Snel beheer</p>
-            <h2 id="pos-availability-title">Productstatus</h2>
-            <p>Beheer productstatussen of zet in één keer een hele theesoort op uitverkocht.</p>
-          </div>
+    <div class="page pos-product-status-page">
+      <header class="pos-product-status-page-header">
+        <button
+          class="pos-product-status-back"
+          id="pos-availability-close"
+          type="button"
+        >
+          ← Terug naar POS
+        </button>
 
-          <button
-            class="pos-availability-close"
-            id="pos-availability-close"
-            type="button"
-            aria-label="Sluiten"
-          >
-            ×
-          </button>
-        </header>
+        <div>
+          <p class="pos-availability-eyebrow">Snel beheer</p>
+          <h1>Productstatus</h1>
+          <p>
+            Beheer theesoorten, toppings en producten zonder popup.
+          </p>
+        </div>
+      </header>
 
-        <section class="pos-availability-tea-bulk">
+      <main class="pos-product-status-content">
+        
+
+        <div class="pos-product-status-columns">
+        <div class="pos-product-status-column pos-product-status-products-column">
+          <section class="pos-availability-tea-bulk">
           <div class="pos-availability-tea-copy">
             <strong>Theesoort in bulk</strong>
             <span>
@@ -11838,86 +11924,139 @@ function renderPosAvailabilityModal() {
           }
         </section>
 
-        <div class="pos-availability-toolbar">
-          <label class="pos-availability-search">
-            <span aria-hidden="true">⌕</span>
-            <input
-              id="pos-availability-search"
-              type="search"
-              placeholder="Zoek product..."
-              autocomplete="off"
-              value="${escapeHtml(posAvailabilitySearch)}"
-            />
-          </label>
+          
+          <section class="pos-product-status-panel">
+          <div class="pos-product-status-products-header">
+            <div>
+              <strong>Producten</strong>
+              <span>Zet losse producten op uitverkocht of verberg ze tijdelijk.</span>
+            </div>
 
-          <button
-            class="pos-availability-refresh"
-            id="pos-availability-refresh"
-            type="button"
-            ${isLoadingPosAvailability ? 'disabled' : ''}
-          >
-            Vernieuwen
-          </button>
+            <label class="pos-availability-search">
+              <span aria-hidden="true">⌕</span>
+              <input
+                id="pos-availability-search"
+                type="search"
+                placeholder="Zoek product..."
+                autocomplete="off"
+                value="${escapeHtml(posAvailabilitySearch)}"
+              />
+            </label>
+          </div>
+
+          <div class="pos-availability-list">
+            ${
+              isLoadingPosAvailability
+                ? `<p class="pos-availability-empty">Producten laden...</p>`
+                : filteredProducts.length === 0
+                  ? `<p class="pos-availability-empty">Geen producten gevonden.</p>`
+                  : filteredProducts
+                      .map(
+                        (product) => `
+                          <article class="pos-availability-row ${!product.is_active ? 'is-hidden' : ''}">
+                            <div class="pos-availability-product">
+                              <strong>${escapeHtml(product.name)}</strong>
+                              <span>${escapeHtml(product.category)}</span>
+
+                              <div class="pos-availability-badges">
+                                ${
+                                  !product.is_active
+                                    ? `<span class="pos-availability-badge hidden">Verborgen</span>`
+                                    : product.is_sold_out
+                                      ? `<span class="pos-availability-badge sold-out">Uitverkocht</span>`
+                                      : `<span class="pos-availability-badge available">Beschikbaar</span>`
+                                }
+                              </div>
+                            </div>
+
+                            <div class="pos-availability-actions">
+                              <button
+                                class="pos-availability-action ${product.is_sold_out ? 'restore' : 'sold-out'}"
+                                type="button"
+                                data-pos-sold-out="${product.id}"
+                                data-next-sold-out="${product.is_sold_out ? 'false' : 'true'}"
+                                ${!product.is_active ? 'disabled' : ''}
+                              >
+                                ${product.is_sold_out ? 'Weer beschikbaar' : 'Uitverkocht'}
+                              </button>
+
+                              <button
+                                class="pos-availability-action ${product.is_active ? 'hide' : 'show'}"
+                                type="button"
+                                data-pos-visible="${product.id}"
+                                data-next-visible="${product.is_active ? 'false' : 'true'}"
+                              >
+                                ${product.is_active ? 'Verbergen' : 'Weergeven'}
+                              </button>
+                            </div>
+                          </article>
+                        `
+                      )
+                      .join('')
+            }
+          </div>
+        </section>
         </div>
 
-        ${
-          posAvailabilityError
-            ? `<p class="pos-availability-error">${escapeHtml(posAvailabilityError)}</p>`
-            : ''
-        }
+        <div class="pos-product-status-column pos-product-status-toppings-column">
+          <section class="pos-product-status-panel">
+          <div class="pos-availability-toppings-header">
+            <div>
+              <strong>Toppings</strong>
+              <span>Zet toppings tijdelijk op uitverkocht of weer beschikbaar.</span>
+            </div>
 
-        <div class="pos-availability-list">
+            <button
+              class="pos-availability-refresh"
+              id="pos-availability-refresh"
+              type="button"
+              ${isLoadingPosAvailability ? 'disabled' : ''}
+            >
+              Vernieuwen
+            </button>
+          </div>
+
           ${
-            isLoadingPosAvailability
-              ? `<p class="pos-availability-empty">Producten laden...</p>`
-              : filteredProducts.length === 0
-                ? `<p class="pos-availability-empty">Geen producten gevonden.</p>`
-                : filteredProducts
+            posAvailabilityError
+              ? `<p class="pos-availability-error">${escapeHtml(posAvailabilityError)}</p>`
+              : ''
+          }
+
+          <div class="pos-availability-toppings-list">
+            ${
+              toppings.length === 0
+                ? `<p class="pos-availability-empty">Geen actieve toppings gevonden.</p>`
+                : toppings
                     .map(
-                      (product) => `
-                        <article class="pos-availability-row ${!product.is_active ? 'is-hidden' : ''}">
-                          <div class="pos-availability-product">
-                            <strong>${escapeHtml(product.name)}</strong>
-                            <span>${escapeHtml(product.category)}</span>
+                      (topping) => `
+                        <article class="pos-availability-topping-row">
+                          <div class="pos-availability-topping-info">
+                            <strong>${escapeHtml(topping.name)}</strong>
+                            <span>€ ${Number(topping.price).toFixed(2)}</span>
 
-                            <div class="pos-availability-badges">
-                              ${
-                                !product.is_active
-                                  ? `<span class="pos-availability-badge hidden">Verborgen</span>`
-                                  : product.is_sold_out
-                                    ? `<span class="pos-availability-badge sold-out">Uitverkocht</span>`
-                                    : `<span class="pos-availability-badge available">Beschikbaar</span>`
-                              }
-                            </div>
+                            <span class="pos-availability-badge ${topping.is_sold_out === true ? 'sold-out' : 'available'}">
+                              ${topping.is_sold_out === true ? 'Uitverkocht' : 'Beschikbaar'}
+                            </span>
                           </div>
 
-                          <div class="pos-availability-actions">
-                            <button
-                              class="pos-availability-action ${product.is_sold_out ? 'restore' : 'sold-out'}"
-                              type="button"
-                              data-pos-sold-out="${product.id}"
-                              data-next-sold-out="${product.is_sold_out ? 'false' : 'true'}"
-                              ${!product.is_active ? 'disabled' : ''}
-                            >
-                              ${product.is_sold_out ? 'Weer beschikbaar' : 'Uitverkocht'}
-                            </button>
-
-                            <button
-                              class="pos-availability-action ${product.is_active ? 'hide' : 'show'}"
-                              type="button"
-                              data-pos-visible="${product.id}"
-                              data-next-visible="${product.is_active ? 'false' : 'true'}"
-                            >
-                              ${product.is_active ? 'Verbergen' : 'Weergeven'}
-                            </button>
-                          </div>
+                          <button
+                            class="pos-availability-action ${topping.is_sold_out === true ? 'restore' : 'sold-out'}"
+                            type="button"
+                            data-pos-topping-sold-out="${topping.id}"
+                            data-next-topping-sold-out="${topping.is_sold_out === true ? 'false' : 'true'}"
+                          >
+                            ${topping.is_sold_out === true ? 'Weer beschikbaar' : 'Uitverkocht'}
+                          </button>
                         </article>
                       `
                     )
                     .join('')
-          }
+            }
+          </div>
+        </section>
         </div>
-      </section>
+      </div>
+      </main>
     </div>
   `
 }
@@ -11944,7 +12083,6 @@ function renderPos() {
       </header>
 
       ${renderCustomerCustomizer()}
-      ${renderPosAvailabilityModal()}
 
       <main class="layout">
         <section class="products">
@@ -14665,6 +14803,16 @@ function renderPaymentTest() {
 }
 
 
+async function ensurePosProductStatusData() {
+  if (screen !== 'pos-product-status') return
+
+  await Promise.all([
+    loadPosAvailabilityProducts(false),
+    loadToppings(),
+  ])
+}
+
+
 // =============================
 // APP RENDER
 // =============================
@@ -14674,6 +14822,10 @@ function render() {
 
   if (screen === 'pos') {
     app.innerHTML = renderPos()
+  }
+
+  if (screen === 'pos-product-status') {
+    app.innerHTML = renderPosProductStatusPage()
   }
 
   if (screen === 'pos-settings') {
@@ -14840,14 +14992,11 @@ function bindEvents() {
     closePosAvailability()
   })
 
-  document.querySelector<HTMLDivElement>('#pos-availability-overlay')?.addEventListener('click', (event) => {
-    if (event.target === event.currentTarget) {
-      closePosAvailability()
-    }
-  })
-
   document.querySelector<HTMLButtonElement>('#pos-availability-refresh')?.addEventListener('click', () => {
-    void loadPosAvailabilityProducts()
+    void Promise.all([
+      loadPosAvailabilityProducts(false),
+      loadToppings(),
+    ]).then(() => render())
   })
 
   document.querySelector<HTMLSelectElement>('#pos-availability-tea-type')?.addEventListener('change', (event) => {
@@ -14873,6 +15022,16 @@ function bindEvents() {
       if (!input) return
       input.focus()
       input.setSelectionRange(input.value.length, input.value.length)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-pos-topping-sold-out]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const toppingId = button.dataset.posToppingSoldOut
+      const nextValue = button.dataset.nextToppingSoldOut === 'true'
+      if (!toppingId) return
+
+      void setPosToppingSoldOut(toppingId, nextValue)
     })
   })
 

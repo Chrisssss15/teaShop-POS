@@ -15092,3 +15092,252 @@ body:has(.pos-page){
     grid-template-columns: 1fr 1fr;
   }
 }
+
+
+/* ========================================================= */
+/* POS PRODUCTSTATUS — TOPPINGS                              */
+/* ========================================================= */
+
+.pos-availability-toppings-section {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid #dce5f1;
+  border-radius: 16px;
+  background: #ffffff;
+}
+
+.pos-availability-toppings-header strong,
+.pos-availability-section-title strong {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.pos-availability-toppings-header span {
+  display: block;
+  margin-top: 3px;
+  color: #6f7a8a;
+  font-size: 11px;
+}
+
+.pos-availability-toppings-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pos-availability-topping-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid #e3e9f2;
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.pos-availability-topping-info {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.pos-availability-topping-info > strong {
+  color: #172033;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pos-availability-topping-info > span:not(.pos-availability-badge) {
+  color: #6f7a8a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pos-availability-section-title {
+  margin: 2px 0 10px;
+}
+
+@media (max-width: 620px) {
+  .pos-availability-topping-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-availability-topping-row .pos-availability-action {
+    width: 100%;
+  }
+}
+
+
+/* ========================================================= */
+/* POS PRODUCTSTATUS — EIGEN PAGINA                          */
+/* ========================================================= */
+
+.pos-product-status-page {
+  min-height: 100vh;
+  background: #f7f9fc;
+  padding: 24px;
+}
+
+.pos-product-status-page-header {
+  max-width: 1100px;
+  margin: 0 auto 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.pos-product-status-page-header h1 {
+  margin: 3px 0 6px;
+  color: #172033;
+  font-size: 32px;
+  line-height: 1.05;
+}
+
+.pos-product-status-page-header p {
+  margin: 0;
+  color: #6f7a8a;
+}
+
+.pos-product-status-back {
+  width: fit-content;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #d8e2f0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1B478F;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pos-product-status-back:hover {
+  background: #eef3fa;
+}
+
+.pos-product-status-content {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.pos-product-status-panel {
+  padding: 18px;
+  border: 1px solid #dce5f1;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.05);
+}
+
+.pos-product-status-products-header,
+.pos-availability-toppings-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.pos-product-status-products-header > div,
+.pos-availability-toppings-header > div {
+  display: grid;
+  gap: 4px;
+}
+
+.pos-product-status-products-header strong,
+.pos-availability-toppings-header strong {
+  color: #172033;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.pos-product-status-products-header span,
+.pos-availability-toppings-header span {
+  color: #6f7a8a;
+  font-size: 11px;
+}
+
+.pos-product-status-products-header .pos-availability-search {
+  width: min(340px, 100%);
+}
+
+.pos-product-status-page .pos-availability-list {
+  max-height: none;
+  overflow: visible;
+}
+
+.pos-product-status-page .pos-availability-overlay,
+.pos-product-status-page .pos-availability-modal {
+  position: static;
+  inset: auto;
+  width: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+@media (max-width: 700px) {
+  .pos-product-status-page {
+    padding: 14px;
+  }
+
+  .pos-product-status-page-header h1 {
+    font-size: 27px;
+  }
+
+  .pos-product-status-products-header,
+  .pos-availability-toppings-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pos-product-status-products-header .pos-availability-search {
+    width: 100%;
+  }
+}
+
+
+/* ========================================================= */
+/* POS PRODUCTSTATUS — PRODUCTEN LINKS, TOPPINGS RECHTS      */
+/* ========================================================= */
+
+.pos-product-status-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.pos-product-status-column {
+  min-width: 0;
+}
+
+.pos-product-status-column .pos-product-status-panel {
+  margin: 0;
+}
+
+.pos-product-status-products-column .pos-availability-list,
+.pos-product-status-toppings-column .pos-availability-toppings-list {
+  width: 100%;
+}
+
+@media (max-width: 950px) {
+  .pos-product-status-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* THEESOORT BULK HOORT BIJ PRODUCTEN/DRANKJES */
+.pos-product-status-products-column {
+  display: grid;
+  gap: 18px;
+}
+
+.pos-product-status-products-column .pos-availability-tea-bulk {
+  margin: 0;
+}
