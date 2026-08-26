@@ -10,7 +10,7 @@ import QRCode from 'qrcode'
 // TYPES
 // =============================
 
-type Screen = 'pos' | 'pos-product-status' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
+type Screen = 'pos' | 'pos-product-status' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-bookkeeper' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
@@ -705,6 +705,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'admin-products') return 'admin-products'
   if (modeValue === 'admin-sales') return 'admin-sales'
   if (modeValue === 'admin-day-close') return 'admin-day-close'
+  if (modeValue === 'admin-bookkeeper') return 'admin-bookkeeper'
   if (modeValue === 'admin-add-product') return 'admin-add-product'
   if (modeValue === 'admin-add-topping') return 'admin-add-topping'
   if (modeValue === 'admin-categories') return 'admin-categories'
@@ -818,6 +819,15 @@ let adminSelectedDailyClosing: DailyClosing | null = null
 let adminSelectedDailyClosingVat: DailyClosingVat[] = []
 let isLoadingDailyClosingHistory = false
 let isLoadingAdminSales = false
+
+// Boekhouderrapport: gebruikt uitsluitend opgeslagen Z-rapporten als bron.
+const bookkeeperToday = new Date()
+const bookkeeperMonthStart = new Date(bookkeeperToday.getFullYear(), bookkeeperToday.getMonth(), 1)
+let adminBookkeeperFrom = bookkeeperMonthStart.toISOString().slice(0, 10)
+let adminBookkeeperTo = bookkeeperToday.toISOString().slice(0, 10)
+let adminBookkeeperClosings: DailyClosing[] = []
+let adminBookkeeperVat: DailyClosingVat[] = []
+let isLoadingAdminBookkeeper = false
 
 let bestSellerSales: Record<string, number> = {}
 
@@ -3196,30 +3206,45 @@ async function submitOrder(paymentMethod: PaymentMethod) {
     .select('*')
     .single()
 
-  if (paymentRecordError) {
+  if (paymentRecordError || !paymentRecord) {
     console.error('POS payment-record opslaan mislukt:', paymentRecordError)
+
+    // Compensating rollback: voorkom een betaalde order zonder payment-record.
+    await supabase.from('order_items').delete().eq('order_id', orderData.id)
+    await supabase.from('orders').delete().eq('id', orderData.id)
+
+    isSubmitting = false
+    message = `Betaling opslaan mislukt. De verkoop is teruggedraaid: ${paymentRecordError?.message ?? 'onbekende fout'}`
+    render()
+    return
   }
 
   // Bij een cashbetaling registreren we de geldbeweging in de open kas.
   if (paymentMethod === 'cash' && cashSessionForSale) {
-    if (!paymentRecord) {
-      console.error('Cash movement niet opgeslagen: payment-record ontbreekt.')
-    } else {
-      const { error: cashMovementError } = await supabase
-        .from('cash_movements')
-        .insert({
-          cash_session_id: cashSessionForSale.id,
-          movement_type: 'sale',
-          amount: paymentAmountCents,
-          order_id: orderData.id,
-          payment_id: paymentRecord.id,
-          reason: `Contante verkoop ${orderNumber}`,
-          actor: 'staff',
-        })
+    const { error: cashMovementError } = await supabase
+      .from('cash_movements')
+      .insert({
+        cash_session_id: cashSessionForSale.id,
+        movement_type: 'sale',
+        amount: paymentAmountCents,
+        order_id: orderData.id,
+        payment_id: paymentRecord.id,
+        reason: `Contante verkoop ${orderNumber}`,
+        actor: 'staff',
+      })
 
-      if (cashMovementError) {
-        console.error('Cash movement opslaan mislukt:', cashMovementError)
-      }
+    if (cashMovementError) {
+      console.error('Cash movement opslaan mislukt:', cashMovementError)
+
+      // Ook hier terugrollen: order, payment en kas moeten financieel gelijk blijven.
+      await supabase.from('payments').delete().eq('id', paymentRecord.id)
+      await supabase.from('order_items').delete().eq('order_id', orderData.id)
+      await supabase.from('orders').delete().eq('id', orderData.id)
+
+      isSubmitting = false
+      message = `Kasboeking mislukt. De verkoop is teruggedraaid: ${cashMovementError.message}`
+      render()
+      return
     }
   }
 
@@ -4572,6 +4597,20 @@ async function goToAdminDayClose() {
   await loadAllAdminData()
 }
 
+async function goToAdminBookkeeper() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'admin-bookkeeper'
+  message = ''
+  adminMessage = ''
+  adminError = ''
+  updateModeInUrl('admin-bookkeeper')
+
+  await loadAdminBookkeeperData()
+}
+
 async function goToAdminAddProduct() {
   stopAutoRefresh()
   stopCustomerProgressRefresh()
@@ -5798,7 +5837,15 @@ function getAdminSalesRevenue() {
 }
 
 function getAdminSalesOrderCount() {
-  return getAdminSalesValidOrders().length
+  return getAdminSalesPaidOrders().length
+}
+
+function getAdminSalesRefundCount() {
+  return adminSalesOrders.filter(
+    (order) =>
+      order.status !== 'cancelled' &&
+      order.payment_status === 'refunded'
+  ).length
 }
 
 function getAdminSalesDrinkCount() {
@@ -6658,8 +6705,191 @@ function closeAdminDailyClosingHistoryItem() {
   render()
 }
 
+function getAdminBookkeeperTotals() {
+  const sum = (key: keyof DailyClosing) =>
+    adminBookkeeperClosings.reduce(
+      (total, closing) => total + Number(closing[key] ?? 0),
+      0
+    )
+
+  return {
+    days: adminBookkeeperClosings.length,
+    orderCount: sum('order_count'),
+    grossSales: sum('gross_sales'),
+    netSales: sum('net_sales'),
+    vatTotal: sum('vat_total'),
+    cashSales: sum('cash_sales'),
+    cardSales: sum('card_sales'),
+    onlineSales: sum('online_sales'),
+    refundTotal: sum('refund_total'),
+    cashDifference: sum('difference_amount'),
+  }
+}
+
+function getAdminBookkeeperVatTotals() {
+  const grouped = new Map<number, { gross: number; net: number; vat: number }>()
+
+  for (const row of adminBookkeeperVat) {
+    const rate = Number(row.vat_rate ?? 0)
+    const current = grouped.get(rate) ?? { gross: 0, net: 0, vat: 0 }
+
+    current.gross += Number(row.gross_amount ?? 0)
+    current.net += Number(row.net_amount ?? 0)
+    current.vat += Number(row.vat_amount ?? 0)
+    grouped.set(rate, current)
+  }
+
+  return Array.from(grouped.entries())
+    .map(([rate, amounts]) => ({ rate, ...amounts }))
+    .sort((a, b) => a.rate - b.rate)
+}
+
+async function loadAdminBookkeeperData() {
+  if (!adminBookkeeperFrom || !adminBookkeeperTo) {
+    adminError = 'Kies een geldige begin- en einddatum.'
+    render()
+    return
+  }
+
+  if (adminBookkeeperFrom > adminBookkeeperTo) {
+    adminError = 'De begindatum kan niet na de einddatum liggen.'
+    render()
+    return
+  }
+
+  isLoadingAdminBookkeeper = true
+  adminError = ''
+  render()
+
+  const { data: closingData, error: closingError } = await supabase
+    .from('daily_closings')
+    .select('*')
+    .gte('business_date', adminBookkeeperFrom)
+    .lte('business_date', adminBookkeeperTo)
+    .order('business_date', { ascending: true })
+
+  if (closingError) {
+    adminBookkeeperClosings = []
+    adminBookkeeperVat = []
+    isLoadingAdminBookkeeper = false
+    adminError = `Boekhouderrapport laden mislukt: ${closingError.message}`
+    render()
+    return
+  }
+
+  adminBookkeeperClosings = (closingData ?? []) as DailyClosing[]
+  const closingIds = adminBookkeeperClosings.map((closing) => closing.id)
+
+  if (closingIds.length === 0) {
+    adminBookkeeperVat = []
+    isLoadingAdminBookkeeper = false
+    render()
+    return
+  }
+
+  const { data: vatData, error: vatError } = await supabase
+    .from('daily_closing_vat')
+    .select('*')
+    .in('daily_closing_id', closingIds)
+    .order('vat_rate', { ascending: true })
+
+  if (vatError) {
+    adminBookkeeperVat = []
+    isLoadingAdminBookkeeper = false
+    adminError = `BTW-details laden mislukt: ${vatError.message}`
+    render()
+    return
+  }
+
+  adminBookkeeperVat = (vatData ?? []) as DailyClosingVat[]
+  isLoadingAdminBookkeeper = false
+  render()
+}
+
+function downloadAdminBookkeeperCsv() {
+  if (adminBookkeeperClosings.length === 0) {
+    window.alert('Er zijn in deze periode geen afgesloten Z-rapporten om te exporteren.')
+    return
+  }
+
+  const totals = getAdminBookkeeperTotals()
+  const vatTotals = getAdminBookkeeperVatTotals()
+
+  const summaryRows = [
+    ['Blue Cup POS - Boekhouderrapport', `${adminBookkeeperFrom} t/m ${adminBookkeeperTo}`],
+    ['Aantal afgesloten dagen', totals.days],
+    ['Betaalde orders (Z-rapporten)', totals.orderCount],
+    ['Netto omzet incl. BTW na refunds', centsToCsvMoney(totals.grossSales)],
+    ['Omzet excl. BTW', centsToCsvMoney(totals.netSales)],
+    ['BTW totaal', centsToCsvMoney(totals.vatTotal)],
+    ['Contante omzet', centsToCsvMoney(totals.cashSales)],
+    ['Kaartomzet', centsToCsvMoney(totals.cardSales)],
+    ['Online omzet', centsToCsvMoney(totals.onlineSales)],
+    ['Refunds', centsToCsvMoney(totals.refundTotal)],
+    ['Kasverschillen totaal', centsToCsvMoney(totals.cashDifference)],
+  ] as Array<[string, string | number]>
+
+  const lines = [
+    'Samenvatting;Waarde',
+    ...summaryRows.map(([label, value]) =>
+      `${escapeCsvValue(label)};${escapeCsvValue(value)}`
+    ),
+    '',
+    'BTW-tarief;Omzet incl. BTW;Omzet excl. BTW;BTW-bedrag',
+    ...vatTotals.map((row) =>
+      [
+        `${row.rate.toFixed(2).replace('.', ',')}%`,
+        centsToCsvMoney(row.gross),
+        centsToCsvMoney(row.net),
+        centsToCsvMoney(row.vat),
+      ].map(escapeCsvValue).join(';')
+    ),
+    '',
+    'Datum;Orders;Omzet incl. BTW;Omzet excl. BTW;BTW;Cash;Card;Online;Refunds;Kasverschil',
+    ...adminBookkeeperClosings.map((closing) =>
+      [
+        closing.business_date,
+        Number(closing.order_count ?? 0),
+        centsToCsvMoney(closing.gross_sales),
+        centsToCsvMoney(closing.net_sales),
+        centsToCsvMoney(closing.vat_total),
+        centsToCsvMoney(closing.cash_sales),
+        centsToCsvMoney(closing.card_sales),
+        centsToCsvMoney(closing.online_sales),
+        centsToCsvMoney(closing.refund_total),
+        centsToCsvMoney(closing.difference_amount),
+      ].map(escapeCsvValue).join(';')
+    ),
+  ]
+
+  const csv = '\uFEFF' + lines.join('\r\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = `blue-cup-boekhouder-${adminBookkeeperFrom}-tot-${adminBookkeeperTo}.csv`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 async function createDailyClosing() {
-  if (activeCashSession) {
+  const { data: settingsData, error: settingsError } = await supabase
+    .from('shop_settings')
+    .select('cash_registration_enabled')
+    .eq('id', 1)
+    .maybeSingle()
+
+  if (settingsError) {
+    window.alert(`Kasregistratie-instelling laden mislukt: ${settingsError.message}`)
+    return
+  }
+
+  cashRegistrationEnabled = settingsData?.cash_registration_enabled ?? true
+
+  if (cashRegistrationEnabled && activeCashSession) {
     window.alert('Sluit eerst de kas af. Daarna kun je het Z-rapport / de dagafsluiting maken.')
     return
   }
@@ -6685,28 +6915,32 @@ async function createDailyClosing() {
     return
   }
 
-  const { data: closedSessions, error: closedSessionError } = await supabase
-    .from('cash_sessions')
-    .select('*')
-    .eq('status', 'closed')
-    .gte('opened_at', startIso)
-    .lt('opened_at', endIso)
-    .order('closed_at', { ascending: false })
-    .limit(1)
+  let closedCashSession: CashSession | null = null
 
-  if (closedSessionError) {
-    window.alert(`Afgesloten kassasessie laden mislukt: ${closedSessionError.message}`)
-    return
+  if (cashRegistrationEnabled) {
+    const { data: closedSessions, error: closedSessionError } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'closed')
+      .gte('opened_at', startIso)
+      .lt('opened_at', endIso)
+      .order('closed_at', { ascending: false })
+      .limit(1)
+
+    if (closedSessionError) {
+      window.alert(`Afgesloten kassasessie laden mislukt: ${closedSessionError.message}`)
+      return
+    }
+
+    closedCashSession = (closedSessions?.[0] ?? null) as CashSession | null
+
+    if (!closedCashSession) {
+      window.alert('Er is voor vandaag nog geen afgesloten kassasessie gevonden. Open en sluit eerst de kas voordat je de dag afsluit.')
+      return
+    }
   }
 
-  const closedCashSession = (closedSessions?.[0] ?? null) as CashSession | null
-
-  if (!closedCashSession) {
-    window.alert('Er is voor vandaag nog geen afgesloten kassasessie gevonden. Open en sluit eerst de kas voordat je de dag afsluit.')
-    return
-  }
-
-  const [ordersResult, itemsResult, paymentsResult, movementsResult] = await Promise.all([
+  const [ordersResult, itemsResult, paymentsResult] = await Promise.all([
     supabase
       .from('orders')
       .select('*')
@@ -6722,11 +6956,14 @@ async function createDailyClosing() {
       .select('*')
       .gte('created_at', startIso)
       .lt('created_at', endIso),
-    supabase
-      .from('cash_movements')
-      .select('*')
-      .eq('cash_session_id', closedCashSession.id),
   ])
+
+  const movementsResult = cashRegistrationEnabled && closedCashSession
+    ? await supabase
+        .from('cash_movements')
+        .select('*')
+        .eq('cash_session_id', closedCashSession.id)
+    : { data: [], error: null }
 
   if (ordersResult.error) {
     window.alert(`Orders voor dagafsluiting laden mislukt: ${ordersResult.error.message}`)
@@ -6753,18 +6990,13 @@ async function createDailyClosing() {
   const dayPayments = (paymentsResult.data ?? []) as Payment[]
   const dayMovements = movementsResult.data ?? []
 
-  // Een betaalde én later volledig terugbetaalde order telt fiscaal netto als 0 omzet.
-  // Geannuleerde orders tellen niet mee.
+  // Alleen daadwerkelijk betaalde, niet-geannuleerde orders tellen als omzet.
+  // Een volledig terugbetaalde order telt netto als 0 omzet en wordt apart
+  // zichtbaar via refund_total. Zo wordt een refund niet per ongeluk -1x omzet.
   const fiscalOrders = dayOrders.filter(
     (order) =>
       order.status !== 'cancelled' &&
-      (order.payment_status === 'paid' || order.payment_status === 'refunded')
-  )
-
-  const refundedOrderIds = new Set(
-    fiscalOrders
-      .filter((order) => order.payment_status === 'refunded')
-      .map((order) => String(order.id))
+      order.payment_status === 'paid'
   )
 
   const fiscalOrderIds = new Set(fiscalOrders.map((order) => String(order.id)))
@@ -6777,18 +7009,17 @@ async function createDailyClosing() {
   let onlineSales = 0
 
   for (const order of fiscalOrders) {
-    const sign = refundedOrderIds.has(String(order.id)) ? -1 : 1
     const gross = getOrderGrossCents(order)
     const net = getOrderNetCents(order)
     const vat = getOrderVatCents(order)
 
-    grossSales += sign * gross
-    netSales += sign * net
-    vatTotal += sign * vat
+    grossSales += gross
+    netSales += net
+    vatTotal += vat
 
-    if (order.payment_method === 'cash') cashSales += sign * gross
-    if (order.payment_method === 'card') cardSales += sign * gross
-    if (order.payment_method === 'online_fake') onlineSales += sign * gross
+    if (order.payment_method === 'cash') cashSales += gross
+    if (order.payment_method === 'card') cardSales += gross
+    if (order.payment_method === 'online_fake') onlineSales += gross
   }
 
   const refundTotal = dayPayments
@@ -6811,16 +7042,15 @@ async function createDailyClosing() {
   for (const item of dayItems) {
     if (!fiscalOrderIds.has(String(item.order_id))) continue
 
-    const sign = refundedOrderIds.has(String(item.order_id)) ? -1 : 1
     const vatRate = Number(item.vat_rate ?? 0)
     const gross = moneyToCents(Number(item.gross_amount ?? item.line_total ?? 0))
     const net = moneyToCents(Number(item.net_amount ?? 0))
     const vat = moneyToCents(Number(item.vat_amount ?? 0))
 
     const current = vatByRate.get(vatRate) ?? { gross: 0, net: 0, vat: 0 }
-    current.gross += sign * gross
-    current.net += sign * net
-    current.vat += sign * vat
+    current.gross += gross
+    current.net += net
+    current.vat += vat
     vatByRate.set(vatRate, current)
   }
 
@@ -6844,7 +7074,7 @@ async function createDailyClosing() {
       business_date: businessDate,
       closed_at: closedAt,
       closed_by: actor,
-      cash_session_id: closedCashSession.id,
+      cash_session_id: closedCashSession?.id ?? null,
       order_count: fiscalOrders.length,
       gross_sales: grossSales,
       net_sales: netSales,
@@ -6855,10 +7085,10 @@ async function createDailyClosing() {
       refund_total: refundTotal,
       cash_in: cashIn,
       cash_out: cashOut,
-      opening_amount: Number(closedCashSession.opening_amount ?? 0),
-      expected_amount: Number(closedCashSession.expected_amount ?? 0),
-      counted_amount: Number(closedCashSession.counted_amount ?? 0),
-      difference_amount: Number(closedCashSession.difference_amount ?? 0),
+      opening_amount: Number(closedCashSession?.opening_amount ?? 0),
+      expected_amount: Number(closedCashSession?.expected_amount ?? 0),
+      counted_amount: Number(closedCashSession?.counted_amount ?? 0),
+      difference_amount: Number(closedCashSession?.difference_amount ?? 0),
     })
     .select('*')
     .single()
@@ -6900,7 +7130,7 @@ async function createDailyClosing() {
       old_data: null,
       new_data: {
         business_date: businessDate,
-        cash_session_id: closedCashSession.id,
+        cash_session_id: closedCashSession?.id ?? null,
         order_count: fiscalOrders.length,
         gross_sales: grossSales,
         net_sales: netSales,
@@ -7739,6 +7969,7 @@ function renderNav() {
         screen === 'admin-products' ||
         screen === 'admin-sales' ||
         screen === 'admin-day-close' ||
+        screen === 'admin-bookkeeper' ||
         screen === 'admin-add-product' ||
         screen === 'admin-add-topping' ||
         screen === 'admin-categories'
@@ -9844,32 +10075,48 @@ async function refundAdminPayment(paymentId: string) {
   const now = new Date().toISOString()
   const actor = 'staff'
 
-  // Voor een cash-refund moet er een open kassasessie zijn, zodat de
-  // terugbetaling ook echt uit de kasadministratie wordt geboekt.
+  // Bij kasregistratie AAN moet een cash-refund aan een open kassasessie
+  // gekoppeld worden. Staat kasregistratie UIT, dan mag de refund zonder
+  // cash_movement worden verwerkt, net als een cashverkoop in die modus.
   let cashSessionForRefund: CashSession | null = null
 
   if (payment.payment_method === 'cash') {
-    const { data: cashSessionData, error: cashSessionError } = await supabase
-      .from('cash_sessions')
-      .select('*')
-      .eq('status', 'open')
-      .order('opened_at', { ascending: false })
-      .limit(1)
+    const { data: settingsData, error: settingsError } = await supabase
+      .from('shop_settings')
+      .select('cash_registration_enabled')
+      .eq('id', 1)
       .maybeSingle()
 
-    if (cashSessionError) {
-      window.alert(`Open kas controleren mislukt: ${cashSessionError.message}`)
+    if (settingsError) {
+      window.alert(`Kasregistratie-instelling controleren mislukt: ${settingsError.message}`)
       return
     }
 
-    if (!cashSessionData) {
-      window.alert(
-        'Open eerst de kas in Admin voordat je een contante betaling terugbetaalt.'
-      )
-      return
-    }
+    cashRegistrationEnabled = settingsData?.cash_registration_enabled ?? true
 
-    cashSessionForRefund = cashSessionData as CashSession
+    if (cashRegistrationEnabled) {
+      const { data: cashSessionData, error: cashSessionError } = await supabase
+        .from('cash_sessions')
+        .select('*')
+        .eq('status', 'open')
+        .order('opened_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (cashSessionError) {
+        window.alert(`Open kas controleren mislukt: ${cashSessionError.message}`)
+        return
+      }
+
+      if (!cashSessionData) {
+        window.alert(
+          'Open eerst de kas in Admin voordat je een contante betaling terugbetaalt, of zet kasregistratie uit.'
+        )
+        return
+      }
+
+      cashSessionForRefund = cashSessionData as CashSession
+    }
   }
 
   const { error: paymentError } = await supabase
@@ -9897,7 +10144,20 @@ async function refundAdminPayment(paymentId: string) {
     .eq('id', payment.order_id)
 
   if (orderError) {
-    window.alert(`Orderstatus bijwerken mislukt: ${orderError.message}`)
+    // Payment terugzetten zodat payment en order niet uit elkaar lopen.
+    await supabase
+      .from('payments')
+      .update({
+        status: 'paid',
+        refund_amount: null,
+        refund_reason: null,
+        refunded_at: null,
+        refunded_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', payment.id)
+
+    window.alert(`Orderstatus bijwerken mislukt. De refund is teruggedraaid: ${orderError.message}`)
     return
   }
 
@@ -9920,8 +10180,27 @@ async function refundAdminPayment(paymentId: string) {
 
     if (cashMovementError) {
       console.error('Cash refund movement opslaan mislukt:', cashMovementError)
+
+      // Refund terugdraaien: zonder kasboeking mag een cash-refund niet definitief zijn.
+      await supabase
+        .from('payments')
+        .update({
+          status: 'paid',
+          refund_amount: null,
+          refund_reason: null,
+          refunded_at: null,
+          refunded_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payment.id)
+
+      await supabase
+        .from('orders')
+        .update({ payment_status: 'paid' })
+        .eq('id', payment.order_id)
+
       window.alert(
-        `De terugbetaling is geregistreerd, maar de kasbeweging kon niet worden opgeslagen: ${cashMovementError.message}`
+        `Kasboeking voor de refund mislukt. De refund is teruggedraaid: ${cashMovementError.message}`
       )
       await loadAllAdminData()
       return
@@ -10178,12 +10457,21 @@ function renderAdmin() {
             </div>
           </div>
 
-          <div class="admin-luxury-action-grid admin-luxury-action-grid-three">
+          <div class="admin-luxury-action-grid admin-luxury-action-grid-four">
             <button class="admin-dashboard-card" id="go-admin-administration">
               <span class="admin-dashboard-card-icon">↗</span>
               <span class="admin-dashboard-card-content">
                 <strong>Verkoopoverzicht</strong>
                 <small>Omzet, cups en historische verkoop</small>
+              </span>
+              <span class="admin-dashboard-card-arrow">›</span>
+            </button>
+
+            <button class="admin-dashboard-card" id="go-admin-bookkeeper">
+              <span class="admin-dashboard-card-icon">⇩</span>
+              <span class="admin-dashboard-card-content">
+                <strong>Boekhouder</strong>
+                <small>Periodeoverzicht, BTW en CSV-export</small>
               </span>
               <span class="admin-dashboard-card-arrow">›</span>
             </button>
@@ -10252,6 +10540,101 @@ function renderAdmin() {
   `
 }
 
+
+function renderAdminBookkeeperPage() {
+  const totals = getAdminBookkeeperTotals()
+  const vatTotals = getAdminBookkeeperVatTotals()
+
+  return `
+    <div class="page admin-page">
+      ${renderNav()}
+
+      <div class="admin-products-header" style="margin-bottom:20px;">
+        <div>
+          <h1 style="margin:0;">Boekhouder</h1>
+          <p class="muted">Rapportage op basis van definitief opgeslagen Z-rapporten.</p>
+        </div>
+        <button class="admin-secondary-btn" id="back-admin-from-bookkeeper">← Terug naar Admin</button>
+      </div>
+
+      ${adminError ? `<p class="error admin-error">${escapeHtml(adminError)}</p>` : ''}
+
+      <section class="admin-panel" style="margin-bottom:20px;">
+        <div class="admin-panel-header">
+          <div>
+            <h2>Periode</h2>
+            <p class="muted">Alleen dagen die al zijn afgesloten met een Z-rapport worden meegenomen.</p>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+          <label class="admin-modal-field" style="min-width:180px;">
+            <span>Van</span>
+            <input id="admin-bookkeeper-from" class="admin-input" type="date" value="${escapeHtml(adminBookkeeperFrom)}" />
+          </label>
+          <label class="admin-modal-field" style="min-width:180px;">
+            <span>Tot en met</span>
+            <input id="admin-bookkeeper-to" class="admin-input" type="date" value="${escapeHtml(adminBookkeeperTo)}" />
+          </label>
+          <button class="admin-primary-btn" id="admin-bookkeeper-load" type="button">Rapport laden</button>
+          <button class="admin-secondary-btn" id="admin-bookkeeper-export" type="button" ${adminBookkeeperClosings.length === 0 ? 'disabled' : ''}>CSV voor boekhouder</button>
+        </div>
+      </section>
+
+      ${isLoadingAdminBookkeeper ? `<section class="admin-panel"><p class="muted">Boekhouderrapport laden...</p></section>` : `
+        <section class="admin-stats-section">
+          <div class="admin-stats-heading">
+            <div>
+              <h2>Samenvatting</h2>
+              <p class="muted">${escapeHtml(adminBookkeeperFrom)} t/m ${escapeHtml(adminBookkeeperTo)}</p>
+            </div>
+          </div>
+          <div class="admin-stats-grid">
+            <article class="admin-stat-card admin-stat-card-revenue"><span>Netto omzet na refunds</span><strong>${escapeHtml(formatPaymentAmount(totals.grossSales))}</strong><small>Incl. BTW</small></article>
+            <article class="admin-stat-card"><span>Omzet excl. BTW</span><strong>${escapeHtml(formatPaymentAmount(totals.netSales))}</strong><small>Boekhoudkundige omzet</small></article>
+            <article class="admin-stat-card"><span>BTW totaal</span><strong>${escapeHtml(formatPaymentAmount(totals.vatTotal))}</strong><small>Volgens Z-rapporten</small></article>
+            <article class="admin-stat-card"><span>Refunds</span><strong>${escapeHtml(formatPaymentAmount(totals.refundTotal))}</strong><small>Terugbetaald in periode</small></article>
+            <article class="admin-stat-card"><span>Betaalde orders</span><strong>${totals.orderCount}</strong><small>${totals.days} afgesloten dag${totals.days === 1 ? '' : 'en'}</small></article>
+            <article class="admin-stat-card"><span>Kasverschillen</span><strong>${escapeHtml(formatPaymentAmount(totals.cashDifference))}</strong><small>Totaal van afgesloten kassen</small></article>
+          </div>
+        </section>
+
+        <section class="admin-panel" style="margin-bottom:20px;">
+          <div class="admin-panel-header"><div><h2>Betaalmethodes</h2><p class="muted">Omzet na refunds.</p></div></div>
+          <div class="admin-stats-grid">
+            <article class="admin-stat-card"><span>Cash</span><strong>${escapeHtml(formatPaymentAmount(totals.cashSales))}</strong></article>
+            <article class="admin-stat-card"><span>Card</span><strong>${escapeHtml(formatPaymentAmount(totals.cardSales))}</strong></article>
+            <article class="admin-stat-card"><span>Online</span><strong>${escapeHtml(formatPaymentAmount(totals.onlineSales))}</strong></article>
+          </div>
+        </section>
+
+        <section class="admin-panel" style="margin-bottom:20px;">
+          <div class="admin-panel-header"><div><h2>BTW-uitsplitsing</h2><p class="muted">Samengevoegd per BTW-tarief over de gekozen periode.</p></div></div>
+          ${vatTotals.length === 0 ? `<p class="muted">Geen BTW-regels gevonden.</p>` : `
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse;">
+                <thead><tr><th style="text-align:left;padding:10px;">Tarief</th><th style="text-align:right;padding:10px;">Incl. BTW</th><th style="text-align:right;padding:10px;">Excl. BTW</th><th style="text-align:right;padding:10px;">BTW</th></tr></thead>
+                <tbody>${vatTotals.map((row) => `<tr style="border-top:1px solid #e3e9f2;"><td style="padding:10px;">${row.rate.toFixed(2).replace('.', ',')}%</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(row.gross))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(row.net))}</td><td style="text-align:right;padding:10px;"><strong>${escapeHtml(formatPaymentAmount(row.vat))}</strong></td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+          `}
+        </section>
+
+        <section class="admin-panel">
+          <div class="admin-panel-header"><div><h2>Z-rapporten in periode</h2><p class="muted">Dagregels die ook in de CSV-export komen.</p></div></div>
+          ${adminBookkeeperClosings.length === 0 ? `<p class="muted">Geen afgesloten dagen gevonden in deze periode.</p>` : `
+            <div style="overflow-x:auto;">
+              <table style="width:100%; border-collapse:collapse; min-width:900px;">
+                <thead><tr><th style="text-align:left;padding:10px;">Datum</th><th style="text-align:right;padding:10px;">Orders</th><th style="text-align:right;padding:10px;">Incl. BTW</th><th style="text-align:right;padding:10px;">Excl. BTW</th><th style="text-align:right;padding:10px;">BTW</th><th style="text-align:right;padding:10px;">Cash</th><th style="text-align:right;padding:10px;">Card</th><th style="text-align:right;padding:10px;">Online</th><th style="text-align:right;padding:10px;">Refunds</th></tr></thead>
+                <tbody>${adminBookkeeperClosings.map((closing) => `<tr style="border-top:1px solid #e3e9f2;"><td style="padding:10px;">${escapeHtml(closing.business_date)}</td><td style="text-align:right;padding:10px;">${Number(closing.order_count ?? 0)}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.gross_sales ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.net_sales ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.vat_total ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.cash_sales ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.card_sales ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.online_sales ?? 0)))}</td><td style="text-align:right;padding:10px;">${escapeHtml(formatPaymentAmount(Number(closing.refund_total ?? 0)))}</td></tr>`).join('')}</tbody>
+              </table>
+            </div>
+          `}
+        </section>
+      `}
+    </div>
+  `
+}
 
 function renderAdminDayClosePage() {
   return `
@@ -11470,9 +11853,9 @@ function renderAdminSalesPage() {
           : `
             <section class="admin-sales-kpi-grid">
               <article class="admin-sales-kpi admin-sales-kpi-primary">
-                <span>Omzet</span>
+                <span>Netto omzet na refunds</span>
                 <strong>€ ${getAdminSalesRevenue().toFixed(2)}</strong>
-                <small>Alleen betaalde orders</small>
+                <small>Alleen orders die nog betaald zijn</small>
               </article>
 
               <article class="admin-sales-kpi">
@@ -11482,15 +11865,21 @@ function renderAdminSalesPage() {
               </article>
 
               <article class="admin-sales-kpi">
-                <span>Bestellingen</span>
+                <span>Betaalde bestellingen</span>
                 <strong>${getAdminSalesOrderCount()}</strong>
-                <small>Niet geannuleerd</small>
+                <small>Exclusief refunds en annuleringen</small>
               </article>
 
               <article class="admin-sales-kpi">
-                <span>Gemiddeld per order</span>
+                <span>Refunds</span>
+                <strong>${getAdminSalesRefundCount()}</strong>
+                <small>Volledig terugbetaalde bestellingen</small>
+              </article>
+
+              <article class="admin-sales-kpi">
+                <span>Gemiddeld per betaalde bestelling</span>
                 <strong>€ ${getAdminAverageOrderValue().toFixed(2)}</strong>
-                <small>Betaalde orders</small>
+                <small>Netto omzet ÷ betaalde bestellingen</small>
               </article>
             </section>
 
@@ -14868,6 +15257,10 @@ function render() {
     app.innerHTML = renderAdminDayClosePage()
   }
 
+  if (screen === 'admin-bookkeeper') {
+    app.innerHTML = renderAdminBookkeeperPage()
+  }
+
   if (screen === 'admin-add-product') {
     app.innerHTML = renderAdminAddProductPage()
   }
@@ -15162,6 +15555,7 @@ function bindEvents() {
   document.querySelector<HTMLButtonElement>('#go-admin-sales')?.addEventListener('click', goToAdminSales)
   document.querySelector<HTMLButtonElement>('#go-admin-administration')?.addEventListener('click', goToAdminSales)
   document.querySelector<HTMLButtonElement>('#go-admin-day-close')?.addEventListener('click', goToAdminDayClose)
+  document.querySelector<HTMLButtonElement>('#go-admin-bookkeeper')?.addEventListener('click', goToAdminBookkeeper)
 
   document.querySelector<HTMLButtonElement>('#go-admin-dashboard-categories')?.addEventListener('click', goToAdminCategories)
 
@@ -15183,6 +15577,17 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#print-preview-back')?.addEventListener('click', goBackFromPrintPreview)
   document.querySelector<HTMLButtonElement>('#back-admin-from-day-close')?.addEventListener('click', goToAdmin)
+  document.querySelector<HTMLButtonElement>('#back-admin-from-bookkeeper')?.addEventListener('click', goToAdmin)
+
+  document.querySelector<HTMLButtonElement>('#admin-bookkeeper-load')?.addEventListener('click', async () => {
+    adminBookkeeperFrom = document.querySelector<HTMLInputElement>('#admin-bookkeeper-from')?.value || adminBookkeeperFrom
+    adminBookkeeperTo = document.querySelector<HTMLInputElement>('#admin-bookkeeper-to')?.value || adminBookkeeperTo
+    await loadAdminBookkeeperData()
+  })
+
+  document.querySelector<HTMLButtonElement>('#admin-bookkeeper-export')?.addEventListener('click', () => {
+    downloadAdminBookkeeperCsv()
+  })
 
   document.querySelector<HTMLButtonElement>('#refresh-admin-sales')?.addEventListener('click', () => {
     void loadAdminSalesData()
@@ -15804,6 +16209,11 @@ window.addEventListener('popstate', async () => {
     return
   }
 
+  if (screen === 'admin-bookkeeper') {
+    await loadAdminBookkeeperData()
+    return
+  }
+
   if (screen === 'admin' || screen === 'admin-products' || screen === 'admin-day-close' || screen === 'admin-add-product' || screen === 'admin-add-topping') {
     await loadAllAdminData()
     return
@@ -15879,6 +16289,11 @@ async function startApp() {
 
   if (screen === 'admin-sales') {
     await loadAdminSalesData()
+    return
+  }
+
+  if (screen === 'admin-bookkeeper') {
+    await loadAdminBookkeeperData()
     return
   }
 
