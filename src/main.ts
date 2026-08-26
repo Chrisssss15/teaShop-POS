@@ -809,7 +809,9 @@ let adminTodayOrders: Order[] = []
 let adminTodayOrderItems: OrderItem[] = []
 let adminSalesOrders: Order[] = []
 let adminSalesOrderItems: OrderItem[] = []
-let adminSalesRange: 'today' | '7d' | '30d' | 'all' = 'today'
+let adminSalesRange: 'today' | '7d' | '30d' | 'month' | 'custom' | 'all' = 'today'
+let adminSalesCustomFrom = ''
+let adminSalesCustomTo = ''
 let activeCashSession: CashSession | null = null
 let adminDailyClosing: DailyClosing | null = null
 let adminDailyClosingVat: DailyClosingVat[] = []
@@ -5725,11 +5727,55 @@ function getTodayDateRange() {
 }
 
 
+function parseAdminSalesDate(value: string, endOfDay = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+
+  if (endOfDay) {
+    date.setHours(23, 59, 59, 999)
+  } else {
+    date.setHours(0, 0, 0, 0)
+  }
+
+  return date
+}
+
+function formatAdminSalesFilterDate(value: string) {
+  const date = parseAdminSalesDate(value)
+  if (!date) return value
+
+  return new Intl.DateTimeFormat('nl-NL', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
 function getAdminSalesDateRange() {
   if (adminSalesRange === 'all') {
     return {
       startIso: null as string | null,
       endIso: null as string | null,
+    }
+  }
+
+  if (adminSalesRange === 'custom') {
+    const start = parseAdminSalesDate(adminSalesCustomFrom)
+    const end = parseAdminSalesDate(adminSalesCustomTo, true)
+
+    return {
+      startIso: start?.toISOString() ?? null,
+      endIso: end?.toISOString() ?? null,
     }
   }
 
@@ -5747,6 +5793,10 @@ function getAdminSalesDateRange() {
     start.setDate(start.getDate() - 29)
   }
 
+  if (adminSalesRange === 'month') {
+    start.setDate(1)
+  }
+
   return {
     startIso: start.toISOString(),
     endIso: end.toISOString(),
@@ -5757,6 +5807,10 @@ function getAdminSalesRangeLabel() {
   if (adminSalesRange === 'today') return 'Vandaag'
   if (adminSalesRange === '7d') return 'Laatste 7 dagen'
   if (adminSalesRange === '30d') return 'Laatste 30 dagen'
+  if (adminSalesRange === 'month') return 'Deze maand'
+  if (adminSalesRange === 'custom' && adminSalesCustomFrom && adminSalesCustomTo) {
+    return `${formatAdminSalesFilterDate(adminSalesCustomFrom)} t/m ${formatAdminSalesFilterDate(adminSalesCustomTo)}`
+  }
   return 'Alle verkopen'
 }
 
@@ -5946,7 +6000,7 @@ function getAdminHistoricalToppingSalesRows(): AdminToppingSalesRow[] {
 }
 
 function setAdminSalesRange(
-  range: 'today' | '7d' | '30d' | 'all'
+  range: 'today' | '7d' | '30d' | 'month' | 'all'
 ) {
   adminSalesRange = range
   void loadAdminSalesData()
@@ -11818,6 +11872,7 @@ function renderAdminSalesPage() {
             ['today', 'Vandaag'],
             ['7d', '7 dagen'],
             ['30d', '30 dagen'],
+            ['month', 'Deze maand'],
             ['all', 'Alles'],
           ]
             .map(
@@ -11832,6 +11887,36 @@ function renderAdminSalesPage() {
               `
             )
             .join('')}
+        </div>
+
+        <div class="admin-sales-custom-filter">
+          <label>
+            <span>Van</span>
+            <input
+              class="admin-input"
+              type="date"
+              id="admin-sales-from"
+              value="${escapeHtml(adminSalesCustomFrom)}"
+            />
+          </label>
+
+          <label>
+            <span>Tot</span>
+            <input
+              class="admin-input"
+              type="date"
+              id="admin-sales-to"
+              value="${escapeHtml(adminSalesCustomTo)}"
+            />
+          </label>
+
+          <button
+            type="button"
+            class="admin-primary-btn"
+            id="apply-admin-sales-custom-range"
+          >
+            Periode toepassen
+          </button>
         </div>
 
         <button
@@ -15593,12 +15678,37 @@ function bindEvents() {
     void loadAdminSalesData()
   })
 
+  document.querySelector<HTMLButtonElement>('#apply-admin-sales-custom-range')?.addEventListener('click', () => {
+    const from = document.querySelector<HTMLInputElement>('#admin-sales-from')?.value || ''
+    const to = document.querySelector<HTMLInputElement>('#admin-sales-to')?.value || ''
+    const start = parseAdminSalesDate(from)
+    const end = parseAdminSalesDate(to, true)
+
+    if (!start || !end) {
+      adminError = 'Kies een geldige van- en tot-datum.'
+      render()
+      return
+    }
+
+    if (start.getTime() > end.getTime()) {
+      adminError = 'De van-datum mag niet na de tot-datum liggen.'
+      render()
+      return
+    }
+
+    adminSalesCustomFrom = from
+    adminSalesCustomTo = to
+    adminSalesRange = 'custom'
+    void loadAdminSalesData()
+  })
+
   document.querySelectorAll<HTMLButtonElement>('[data-admin-sales-range]').forEach((button) => {
     button.addEventListener('click', () => {
       const range = button.dataset.adminSalesRange as
         | 'today'
         | '7d'
         | '30d'
+        | 'month'
         | 'all'
         | undefined
 
