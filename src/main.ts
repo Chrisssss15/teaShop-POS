@@ -12896,9 +12896,34 @@ function renderOrderHistoryDetailPanel() {
                           )}
                         </div>
 
-                        <strong class="history-detail-item-price">
-                          € ${getOrderItemTotal(item).toFixed(2)}
-                        </strong>
+                        <div class="history-detail-item-price-actions">
+                          <strong class="history-detail-item-price">
+                            € ${getOrderItemTotal(item).toFixed(2)}
+                          </strong>
+
+                          ${
+                            item.id
+                              ? `
+                                <button
+                                  type="button"
+                                  class="history-detail-print-btn"
+                                  data-history-reprint-item="${escapeHtml(String(item.id))}"
+                                  data-history-reprint-order="${escapeHtml(String(order.id))}"
+                                  title="Sticker opnieuw printen"
+                                  aria-label="Sticker voor ${escapeHtml(name)} opnieuw printen"
+                                >
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    aria-hidden="true"
+                                    focusable="false"
+                                  >
+                                    <path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v4a2 2 0 0 1-2 2h-2M7 14h10v7H7zM17.5 11.5h.01"/>
+                                  </svg>
+                                </button>
+                              `
+                              : ''
+                          }
+                        </div>
                       </div>
                     `
                   })
@@ -14465,6 +14490,56 @@ async function updateStickerPrintResult(
   await loadPrintPreviewData(false)
 }
 
+
+async function reprintOrderHistoryItemSticker(orderId: string, orderItemId: string) {
+  if (!orderId || !orderItemId) return
+
+  const { data: labelData, error: labelError } = await supabase
+    .from('kitchen_labels')
+    .select('*')
+    .eq('order_id', orderId)
+    .eq('order_item_id', orderItemId)
+    .order('label_index', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (labelError) {
+    message = `Sticker ophalen mislukt: ${labelError.message}`
+    render()
+    return
+  }
+
+  if (!labelData) {
+    message = 'Voor dit item is geen dranksticker gevonden.'
+    render()
+    return
+  }
+
+  const label = labelData as KitchenLabel
+
+  const { error: resetError } = await supabase
+    .from('kitchen_labels')
+    .update({
+      print_status: 'pending',
+      printed_at: null,
+      print_error: null,
+    })
+    .eq('id', label.id)
+
+  if (resetError) {
+    message = `Sticker opnieuw klaarzetten mislukt: ${resetError.message}`
+    render()
+    return
+  }
+
+  ignoredPendingLabelIds.delete(String(label.id))
+
+  message = `Sticker voor ${label.product_name} opnieuw naar de printer gestuurd.`
+  render()
+
+  scheduleAutomaticPrintCheck()
+}
+
 async function resetStickerPrintStatus(labelId: string) {
   const { error } = await supabase
     .from('kitchen_labels')
@@ -15599,6 +15674,23 @@ function bindEvents() {
 
       selectedOrderHistoryId = orderId
       render()
+    })
+  })
+
+
+  document.querySelectorAll<HTMLButtonElement>('[data-history-reprint-item]').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+
+      const orderItemId = button.dataset.historyReprintItem
+      const orderId = button.dataset.historyReprintOrder
+
+      if (!orderItemId || !orderId) return
+
+      button.disabled = true
+      button.classList.add('is-printing')
+
+      void reprintOrderHistoryItemSticker(orderId, orderItemId)
     })
   })
 

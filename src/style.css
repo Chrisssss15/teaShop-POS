@@ -17035,3 +17035,92 @@ body:has(.orders-page) .status-done{
     font-size: 28px !important;
   }
 }
+/* ========================================================= */
+/* ORDER HISTORY — SINGLE DRINK STICKER REPRINT              */
+/* Printer-icoon rechts van het bedrag in het detailpaneel.  */
+/* ========================================================= */
+
+.history-detail-item-price-actions{
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: flex-start;
+  gap: 7px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.history-detail-item-price-actions .history-detail-item-price{
+  margin: 0;
+  white-space: nowrap;
+}
+
+.history-detail-print-btn{
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+
+  border: 1px solid rgba(8, 68, 163, 0.12);
+  border-radius: 9px;
+
+  background: #f3f6fb;
+  color: #0844a3;
+
+  cursor: pointer;
+  box-shadow: none;
+
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease,
+    box-shadow 150ms ease;
+}
+
+.history-detail-print-btn svg{
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.history-detail-print-btn:hover:not(:disabled){
+  background: #eaf0f9;
+  border-color: rgba(8, 68, 163, 0.24);
+  box-shadow: 0 3px 8px rgba(8, 68, 163, 0.09);
+  transform: translateY(-1px);
+}
+
+.history-detail-print-btn:active:not(:disabled){
+  transform: scale(0.95);
+}
+
+.history-detail-print-btn.is-printing,
+.history-detail-print-btn:disabled{
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.history-detail-print-btn:focus-visible{
+  outline: 3px solid rgba(8, 68, 163, 0.16);
+  outline-offset: 2px;
+}
+
+@media (max-width: 700px){
+  .history-detail-item-price-actions{
+    gap: 5px;
+  }
+
+  .history-detail-print-btn{
+    width: 29px;
+    height: 29px;
+    flex-basis: 29px;
+  }
+}
