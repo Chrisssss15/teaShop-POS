@@ -6038,11 +6038,11 @@ function getAdminPieGradient() {
   }
 
   const chartColors = [
-    '#1B478F',
-    '#3C68AD',
-    '#6689BF',
-    '#91A9D2',
-    '#BCCBE4',
+    '#0844a3',
+    '#0844a3',
+    '#0844a3',
+    '#0844a3',
+    '#0844a3',
   ]
 
   let currentDegrees = 0
@@ -8162,7 +8162,7 @@ function renderCustomerCustomizer() {
                   <span>${escapeHtml(t('required'))}</span>
                 </div>
 
-                <div class="customer-modifier-options">
+                <div class="customer-modifier-options ice-options">
                   ${allowedIceLevels.map(
                     (level) => `
                       <button
@@ -13943,10 +13943,10 @@ function getPrintStatusStyle(status?: PrintStatus | null) {
   }
 
   if (status === 'printing') {
-    return 'background:#dce8f8;color:#1B478F;border:1px solid #bfd0e8;'
+    return 'background:#dce8f8;color:#0844a3;border:1px solid #bfd0e8;'
   }
 
-  return 'background:#eef3fa;color:#1B478F;border:1px solid #d1ddec;'
+  return 'background:#eef3fa;color:#0844a3;border:1px solid #d1ddec;'
 }
 
 async function updateStickerPrintResult(

@@ -295,7 +295,7 @@ button:disabled{
 }
 
 .checkout-btn.card{
-  background: #0d81ff;
+  background: #0844a3;
 }
 
 .checkout-btn.cash:hover:not(:disabled){
@@ -303,7 +303,7 @@ button:disabled{
 }
 
 .checkout-btn.card:hover:not(:disabled){
-  background: #006fe6;
+  background: #0844a3;
 }
 
 /* ============================= */
@@ -401,7 +401,7 @@ button:disabled{
 
 .status-preparing{
   background: #d7ecff;
-  color: #004b82;
+  color: #0844a3;
 }
 
 .status-ready,
@@ -462,7 +462,7 @@ button:disabled{
 }
 
 .status-btn.blue{
-  background: #0d81ff;
+  background: #0844a3;
 }
 
 .status-btn.green{
@@ -2110,7 +2110,7 @@ button:disabled{
 /* ========================================================= */
 /* FULL SYSTEM THEME — WHITE + BLUE                           */
 /* Only visual color overrides. No functions / logic touched. */
-/* Primary: #1B478F                                           */
+/* Primary: #0844a3                                           */
 /* ========================================================= */
 
 :root{
@@ -2139,13 +2139,13 @@ body,
   background: #ffffff;
   color: #172033;
   border-color: #dce4ef;
-  box-shadow: 0 2px 8px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 2px 8px rgba(8, 68, 163, 0.06);
 }
 
 .nav-btn.active{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
-  border-color: #1B478F;
+  border-color: #0844a3;
 }
 
 /* ============================= */
@@ -2157,11 +2157,11 @@ body,
 .orders-page{
   background: #ffffff;
   border-color: #e3e9f2;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.08);
 }
 
 .category-block h3{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .product-card{
@@ -2171,12 +2171,12 @@ body,
 }
 
 .product-card:hover{
-  border-color: #1B478F;
-  box-shadow: 0 8px 18px rgba(27, 71, 143, 0.12);
+  border-color: #0844a3;
+  box-shadow: 0 8px 18px rgba(8, 68, 163, 0.12);
 }
 
 .product-price{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
@@ -2190,12 +2190,12 @@ body,
 }
 
 .qty-controls button{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .qty-controls button:hover{
-  background: #153a76;
+  background: #0844a3;
 }
 
 .cart-footer{
@@ -2203,23 +2203,23 @@ body,
 }
 
 .checkout-btn{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .checkout-btn:hover:not(:disabled){
-  background: #153a76;
+  background: #0844a3;
 }
 
 /* Keep semantic payment colors subtle but consistent */
 .checkout-btn.cash,
 .checkout-btn.card{
-  background: #1B478F;
+  background: #0844a3;
 }
 
 .checkout-btn.cash:hover:not(:disabled),
 .checkout-btn.card:hover:not(:disabled){
-  background: #153a76;
+  background: #0844a3;
 }
 
 /* ============================= */
@@ -2227,12 +2227,12 @@ body,
 /* ============================= */
 
 .small-btn{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .small-btn:hover{
-  background: #153a76;
+  background: #0844a3;
 }
 
 .filter-btn{
@@ -2246,9 +2246,9 @@ body,
 }
 
 .filter-btn.active{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
-  border-color: #1B478F;
+  border-color: #0844a3;
 }
 
 .order-card{
@@ -2263,12 +2263,12 @@ body,
 /* Semantic statuses stay recognizable */
 .status-new{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .status-preparing{
   background: #dce8f8;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .status-ready,
@@ -2290,7 +2290,7 @@ body,
 .status-btn.orange,
 .status-btn.blue,
 .status-btn.green{
-  background: #1B478F;
+  background: #0844a3;
 }
 
 .status-btn.red{
@@ -2303,7 +2303,7 @@ body,
 
 .kitchen-order-card{
   background: #ffffff;
-  border-color: #1B478F;
+  border-color: #0844a3;
 }
 
 .order-phase-text{
@@ -2344,7 +2344,7 @@ body,
 /* Sidebar */
 .customer-page .customer-category-sidebar{
   background: #f5f7fb;
-  box-shadow: 0 10px 22px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 10px 22px rgba(8, 68, 163, 0.06);
 }
 
 .customer-page .customer-category-link{
@@ -2355,7 +2355,7 @@ body,
 
 .customer-page .customer-category-link.active{
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Products */
@@ -2366,24 +2366,24 @@ body,
 .customer-page .customer-menu-layout .product-card{
   background: #ffffff;
   border-color: #e3e9f2;
-  box-shadow: 0 8px 22px rgba(27, 71, 143, 0.07);
+  box-shadow: 0 8px 22px rgba(8, 68, 163, 0.07);
 }
 
 .customer-page .customer-menu-layout .product-card:hover{
   border-color: #cbd6e7;
-  box-shadow: 0 8px 22px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 8px 22px rgba(8, 68, 163, 0.08);
 }
 
 .customer-page .customer-menu-layout .product-card::before{
-  color: #1B478F;
+  color: #0844a3;
   background: #f1f5fb;
   border-color: #aebfd9;
 }
 
 .customer-page .customer-menu-layout .product-card::after{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
-  box-shadow: 0 10px 22px rgba(27, 71, 143, 0.24);
+  box-shadow: 0 10px 22px rgba(8, 68, 163, 0.24);
 }
 
 .customer-page .customer-menu-layout .product-name{
@@ -2391,18 +2391,18 @@ body,
 }
 
 .customer-page .customer-menu-layout .product-price{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Customer cart button */
 .customer-cart-button{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
-  box-shadow: 0 10px 24px rgba(27, 71, 143, 0.24);
+  box-shadow: 0 10px 24px rgba(8, 68, 163, 0.24);
 }
 
 .customer-cart-count{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
   border-color: #ffffff;
 }
@@ -2435,11 +2435,11 @@ body,
 .customer-cart-drawer-item{
   background: #ffffff;
   border-color: #e3e9f2;
-  box-shadow: 0 6px 18px rgba(27, 71, 143, 0.05);
+  box-shadow: 0 6px 18px rgba(8, 68, 163, 0.05);
 }
 
 .customer-cart-drawer-item strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-cart-item-actions{
@@ -2448,13 +2448,13 @@ body,
 }
 
 .customer-cart-item-actions button{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .customer-cart-edit{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-cart-remove{
@@ -2488,17 +2488,17 @@ body,
 .customer-cart-close,
 .customer-customizer-close{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-checkout-card{
   background: #ffffff;
   border-color: #e3e9f2;
-  box-shadow: 0 6px 18px rgba(27, 71, 143, 0.05);
+  box-shadow: 0 6px 18px rgba(8, 68, 163, 0.05);
 }
 
 .customer-checkout-label{
-  color: #2f4d78;
+  color: #0844a3;
 }
 
 .customer-checkout-input{
@@ -2508,8 +2508,8 @@ body,
 }
 
 .customer-checkout-input:focus{
-  border-color: #1B478F;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.12);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.12);
 }
 
 .customer-payment-option{
@@ -2523,9 +2523,9 @@ body,
 }
 
 .customer-payment-option.active{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
-  border-color: #1B478F;
+  border-color: #0844a3;
 }
 
 .customer-payment-option.active span{
@@ -2533,13 +2533,13 @@ body,
 }
 
 .customer-checkout-item-row strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Customer customizer */
 .customer-customizer{
   background: #f7f9fc;
-  box-shadow: 0 -18px 50px rgba(27, 71, 143, 0.16);
+  box-shadow: 0 -18px 50px rgba(8, 68, 163, 0.16);
 }
 
 .customer-customizer-header,
@@ -2556,7 +2556,7 @@ body,
 
 .customer-customizer-header strong,
 .customer-topping-option strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-customizer-section-title span{
@@ -2572,9 +2572,9 @@ body,
 
 .customer-modifier-option.active,
 .customer-topping-option.active{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Modifier pills */
@@ -2594,7 +2594,7 @@ body,
 }
 
 .customer-language-btn.active{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
@@ -2602,11 +2602,11 @@ body,
 .customer-success-card{
   background: #ffffff;
   border-color: #e3e9f2;
-  box-shadow: 0 10px 28px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 10px 28px rgba(8, 68, 163, 0.08);
 }
 
 .customer-success-card h2{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-progress-box{
@@ -2615,11 +2615,11 @@ body,
 }
 
 .customer-progress-box h3{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .customer-drink-status-row strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Keep semantic progress colors */
@@ -2708,7 +2708,7 @@ body,
 /* Compacte orderkaart */
 .kitchen-order-card{
   padding: 16px;
-  border: 1.5px solid #1B478F;
+  border: 1.5px solid #0844a3;
   border-radius: 18px;
   background: #ffffff;
   min-width: 0;
@@ -3000,7 +3000,7 @@ body,
 
 .pos-cart-edit{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .pos-cart-remove{
@@ -3064,7 +3064,7 @@ body,
   border: 1px solid #e3e9f2;
   border-radius: 22px;
   padding: 20px;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.06);
 }
 
 .admin-panel-header{
@@ -3098,7 +3098,7 @@ body,
 }
 
 .admin-form-grid label > span{
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 800;
 }
@@ -3116,8 +3116,8 @@ body,
 
 .admin-input:focus{
   outline: none;
-  border-color: #1B478F;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.10);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.10);
 }
 
 .admin-checkbox-label{
@@ -3135,7 +3135,7 @@ body,
 .admin-checkbox-label input{
   width: 18px;
   height: 18px;
-  accent-color: #1B478F;
+  accent-color: #0844a3;
 }
 
 .admin-form-actions{
@@ -3157,12 +3157,12 @@ body,
   min-height: 44px;
   padding: 0 18px;
   border-radius: 12px;
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .admin-primary-btn:hover{
-  background: #153a76;
+  background: #0844a3;
 }
 
 .admin-secondary-btn{
@@ -3170,7 +3170,7 @@ body,
   padding: 0 18px;
   border-radius: 12px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-error{
@@ -3219,7 +3219,7 @@ body,
 }
 
 .admin-list-price{
-  color: #1B478F;
+  color: #0844a3;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -3253,7 +3253,7 @@ body,
   padding: 7px 9px;
   border-radius: 9px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 10px;
 }
 
@@ -3325,7 +3325,7 @@ body,
   background: #ffffff;
   border: 1px solid #e3e9f2;
   border-radius: 22px;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.06);
 }
 
 .admin-stats-heading{
@@ -3372,7 +3372,7 @@ body,
 
 .admin-stat-card strong{
   margin: 7px 0 4px;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 32px;
   line-height: 1;
   font-weight: 950;
@@ -3421,14 +3421,14 @@ body,
   color: #172033;
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.06);
   transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .admin-dashboard-card:hover{
   transform: translateY(-2px);
-  border-color: #1B478F;
-  box-shadow: 0 10px 28px rgba(27, 71, 143, 0.10);
+  border-color: #0844a3;
+  box-shadow: 0 10px 28px rgba(8, 68, 163, 0.10);
 }
 
 .admin-dashboard-card-icon{
@@ -3439,7 +3439,7 @@ body,
   align-items: center;
   justify-content: center;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 24px;
   font-weight: 900;
 }
@@ -3462,7 +3462,7 @@ body,
 }
 
 .admin-dashboard-card-arrow{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 24px;
   font-weight: 900;
 }
@@ -3517,7 +3517,7 @@ body,
 .admin-inline-link-btn{
   border: none;
   background: transparent;
-  color: #1B478F;
+  color: #0844a3;
   padding: 4px 0;
   font-size: 11px;
   font-weight: 900;
@@ -3543,7 +3543,7 @@ body,
   border-radius: 50%;
   display: grid;
   place-items: center;
-  box-shadow: inset 0 0 0 1px rgba(27, 71, 143, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(8, 68, 163, 0.06);
 }
 
 .admin-pie-chart-hole{
@@ -3555,7 +3555,7 @@ body,
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 3px 10px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 3px 10px rgba(8, 68, 163, 0.08);
 }
 
 .admin-pie-chart-hole span{
@@ -3566,7 +3566,7 @@ body,
 
 .admin-pie-chart-hole strong{
   margin: 2px 0 0;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 20px;
 }
 
@@ -3590,11 +3590,11 @@ body,
   border-radius: 50%;
 }
 
-.admin-chart-dot-1{ background: #1B478F; }
-.admin-chart-dot-2{ background: #3C68AD; }
-.admin-chart-dot-3{ background: #6689BF; }
-.admin-chart-dot-4{ background: #91A9D2; }
-.admin-chart-dot-5{ background: #BCCBE4; }
+.admin-chart-dot-1{ background: #0844a3; }
+.admin-chart-dot-2{ background: #0844a3; }
+.admin-chart-dot-3{ background: #0844a3; }
+.admin-chart-dot-4{ background: #0844a3; }
+.admin-chart-dot-5{ background: #0844a3; }
 
 .admin-chart-name{
   min-width: 0;
@@ -3608,7 +3608,7 @@ body,
 
 .admin-chart-legend-row strong{
   margin: 0;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 11px;
 }
 
@@ -3666,13 +3666,13 @@ body,
   color: #172033;
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.05);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.05);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
 .admin-manage-action-card:hover{
   transform: translateY(-2px);
-  border-color: #1B478F;
+  border-color: #0844a3;
 }
 
 .admin-manage-action-icon{
@@ -3682,7 +3682,7 @@ body,
   place-items: center;
   border-radius: 14px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 28px;
   font-weight: 900;
 }
@@ -3703,7 +3703,7 @@ body,
 }
 
 .admin-manage-action-arrow{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 22px;
   font-weight: 900;
 }
@@ -3744,7 +3744,7 @@ body,
   border: 1px solid #d8e2f0;
   border-radius: 12px;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
   box-shadow: none;
 }
 
@@ -3761,7 +3761,7 @@ body,
   place-items: center;
   border-radius: 8px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 18px;
   line-height: 1;
 }
@@ -3822,7 +3822,7 @@ body,
 }
 
 .admin-category-form > label:first-child > span{
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 800;
 }
@@ -3920,7 +3920,7 @@ body,
   border: none;
   border-radius: 50%;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 26px;
   font-weight: 800;
   cursor: pointer;
@@ -3938,7 +3938,7 @@ body,
 }
 
 .admin-modal-field > span{
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 800;
 }
@@ -3989,7 +3989,7 @@ body,
   padding: 5px 8px;
   border-radius: 999px;
   background: #e8f0fb;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 10px;
   font-weight: 900;
   line-height: 1;
@@ -4016,7 +4016,7 @@ body,
 
 .customer-page .customer-menu-layout .product-sale-price,
 .product-sale-price{
-  color: #1B478F;
+  color: #0844a3;
   font-weight: 950;
 }
 
@@ -4028,14 +4028,14 @@ body,
 }
 
 .customizer-price-discount strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .discount-mini-badge{
   padding: 4px 7px;
   border-radius: 999px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 10px;
   font-weight: 900;
 }
@@ -4054,11 +4054,11 @@ body,
 }
 
 .admin-list-price-with-discount strong{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-list-price-with-discount small{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 8px;
   font-weight: 800;
   white-space: nowrap;
@@ -4070,7 +4070,7 @@ body,
   padding: 3px 6px;
   border-radius: 999px;
   background: #eef3fa;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   font-size: 9px !important;
   font-weight: 850;
 }
@@ -4085,7 +4085,7 @@ body,
 }
 
 .admin-category-form > label:not(.admin-checkbox-label) > span{
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 800;
 }
@@ -4123,7 +4123,7 @@ body,
   left: 12px;
   z-index: 2;
   min-width: 16px;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 14px;
   font-weight: 900;
   pointer-events: none;
@@ -4163,7 +4163,7 @@ body,
 }
 
 .admin-live-discount-preview > strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 22px;
   line-height: 1.1;
 }
@@ -4239,7 +4239,7 @@ body,
   padding: 0 !important;
   margin: 0 !important;
   background: transparent !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   border-radius: 0 !important;
   font-size: 18px !important;
   font-weight: 950 !important;
@@ -4252,7 +4252,7 @@ body,
   position: static !important;
   inset: auto !important;
   background: transparent !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   box-shadow: none !important;
 }
 
@@ -4266,7 +4266,7 @@ body,
 }
 
 .customer-page .customer-menu-layout .product-card.has-discount .product-sale-price{
-  color: #1B478F !important;
+  color: #0844a3 !important;
   font-size: 21px !important;
 }
 
@@ -4286,7 +4286,7 @@ body,
 /* Kortingsbadge iets subtiel maar duidelijk */
 .product-discount-badge{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   border: 1px solid #d8e3f1;
 }
 
@@ -4302,7 +4302,7 @@ body,
   min-width: 0 !important;
   padding: 7px 11px !important;
   margin: 0 !important;
-  background: #1B478F !important;
+  background: #0844a3 !important;
   color: #ffffff !important;
   border-radius: 999px !important;
   font-size: 16px !important;
@@ -4371,7 +4371,7 @@ body,
   min-width: 0 !important;
   padding: 7px 12px !important;
   margin: 0 !important;
-  background: #1B478F !important;
+  background: #0844a3 !important;
   color: #ffffff !important;
   border-radius: 999px !important;
   font-size: 16px !important;
@@ -4476,7 +4476,7 @@ body,
 
 .admin-category-products-btn{
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-category-products-modal{
@@ -4500,7 +4500,7 @@ body,
 }
 
 .admin-category-products-summary strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 20px;
 }
 
@@ -4538,7 +4538,7 @@ body,
   padding: 4px 7px;
   border-radius: 999px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 9px;
   font-weight: 900;
 }
@@ -4551,7 +4551,7 @@ body,
 }
 
 .admin-category-product-price > strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 14px;
 }
 
@@ -4626,7 +4626,7 @@ body,
 }
 
 .admin-category-draggable:hover .admin-category-drag-handle{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-category-draggable.dragging{
@@ -4636,9 +4636,9 @@ body,
 }
 
 .admin-category-draggable.drag-over{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #f2f6fc;
-  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 0 0 2px rgba(8, 68, 163, 0.08);
 }
 
 /* Oude pijltjes niet meer nodig */
@@ -4763,7 +4763,7 @@ body,
 /* Producten button iets neutraler */
 .admin-category-products-btn{
   background: #f1f5fa !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
 }
 
 /* Drag states rustiger */
@@ -4775,7 +4775,7 @@ body,
 .admin-category-draggable.drag-over{
   background: #f7faff !important;
   border-color: #8eacd2 !important;
-  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.06) !important;
+  box-shadow: 0 0 0 2px rgba(8, 68, 163, 0.06) !important;
 }
 
 /* Desktop: panel wat rustiger */
@@ -4844,7 +4844,7 @@ body,
   padding: 3px 6px;
   border-radius: 999px;
   background: #e8f0fb;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   font-size: 8px !important;
   font-weight: 900;
 }
@@ -4860,11 +4860,11 @@ body,
 }
 
 .admin-discount-system-row .admin-category-drag-handle{
-  color: #1B478F !important;
+  color: #0844a3 !important;
 }
 
 .admin-discount-system-row .admin-list-main > strong{
-  color: #1B478F !important;
+  color: #0844a3 !important;
 }
 
 .admin-discount-system-row .admin-auto-category-label{
@@ -4873,7 +4873,7 @@ body,
   padding: 3px 6px;
   border-radius: 999px;
   background: #e8f0fb;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   font-size: 8px !important;
   font-weight: 900;
 }
@@ -5251,14 +5251,14 @@ body,
 }
 
 .admin-topping-checkbox:hover{
-  border-color: #1B478F;
-  box-shadow: 0 4px 12px rgba(27, 71, 143, 0.08);
+  border-color: #0844a3;
+  box-shadow: 0 4px 12px rgba(8, 68, 163, 0.08);
 }
 
 .admin-topping-checkbox input{
   width: 18px;
   height: 18px;
-  accent-color: #1B478F;
+  accent-color: #0844a3;
   flex: 0 0 auto;
 }
 
@@ -5302,17 +5302,17 @@ body,
   min-width: 66px;
   height: 36px;
   padding: 0 14px;
-  border: 1px solid #1B478F;
+  border: 1px solid #0844a3;
   border-radius: 10px;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
 }
 
 .admin-toppings-all-btn:hover{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
@@ -5371,9 +5371,9 @@ body,
 }
 
 .admin-product-search-input:focus{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.10);
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.10);
 }
 
 .admin-product-search-input::-webkit-search-cancel-button{
@@ -5550,7 +5550,7 @@ body,
 .admin-category-layout > .admin-panel:first-child .admin-category-form label > span:first-child{
   display: block;
   margin-bottom: 7px;
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 800;
 }
@@ -5647,8 +5647,8 @@ body,
   width: calc((100% - 8px) / 4);
   height: calc(100% - 8px);
   border-radius: 12px;
-  background: #1B478F;
-  box-shadow: 0 5px 14px rgba(27, 71, 143, 0.22);
+  background: #0844a3;
+  box-shadow: 0 5px 14px rgba(8, 68, 163, 0.22);
   transition:
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 220ms ease;
@@ -5692,7 +5692,7 @@ body,
 
 .order-filters .filter-btn:hover{
   background: transparent !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
 }
 
 .order-filters .filter-btn:active{
@@ -5708,7 +5708,7 @@ body,
 
 /* Kleine subtiele focus-ring voor keyboard gebruik */
 .order-filters .filter-btn:focus-visible{
-  outline: 2px solid #1B478F;
+  outline: 2px solid #0844a3;
   outline-offset: -3px;
 }
 
@@ -5776,17 +5776,17 @@ body,
 
 .order-filters .filter-btn:hover{
   background: #f5f8fc !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   border-color: #b9cae1 !important;
-  box-shadow: 0 4px 10px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 4px 10px rgba(8, 68, 163, 0.08);
   transform: translateY(-1px);
 }
 
 .order-filters .filter-btn.active{
-  background: #1B478F !important;
+  background: #0844a3 !important;
   color: #ffffff !important;
-  border-color: #1B478F !important;
-  box-shadow: 0 5px 12px rgba(27, 71, 143, 0.20);
+  border-color: #0844a3 !important;
+  box-shadow: 0 5px 12px rgba(8, 68, 163, 0.20);
   transform: translateY(-1px);
 }
 
@@ -5795,7 +5795,7 @@ body,
 }
 
 .order-filters .filter-btn:focus-visible{
-  outline: 3px solid rgba(27, 71, 143, 0.16);
+  outline: 3px solid rgba(8, 68, 163, 0.16);
   outline-offset: 2px;
 }
 
@@ -5885,7 +5885,7 @@ body,
 .orders-page .order-filters .filter-btn:hover,
 .order-filters .filter-btn:hover{
   background: #f5f8fc !important;
-  color: #1B478F !important;
+  color: #0844a3 !important;
   border-color: #b9cae1 !important;
   transform: translateY(-1px) !important;
 }
@@ -5893,10 +5893,10 @@ body,
 .page .order-filters .filter-btn.active,
 .orders-page .order-filters .filter-btn.active,
 .order-filters .filter-btn.active{
-  background: #1B478F !important;
+  background: #0844a3 !important;
   color: #ffffff !important;
-  border-color: #1B478F !important;
-  box-shadow: 0 4px 10px rgba(27, 71, 143, 0.18) !important;
+  border-color: #0844a3 !important;
+  box-shadow: 0 4px 10px rgba(8, 68, 163, 0.18) !important;
 }
 
 .page .order-filters .filter-btn:active,
@@ -6099,17 +6099,17 @@ body,
   justify-content: center;
   min-height: 40px;
   padding: 0 16px;
-  border: 1px solid #1B478F;
+  border: 1px solid #0844a3;
   border-radius: 11px;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
 }
 
 .admin-image-upload-btn:hover{
-  background: #1B478F;
+  background: #0844a3;
   color: #ffffff;
 }
 
@@ -6324,7 +6324,7 @@ body,
 /* Hover subtieler en moderner */
 .page:not(.customer-page) .product-card.has-image:not(.sold-out):hover{
   transform: translateY(-2px);
-  box-shadow: 0 8px 18px rgba(27, 71, 143, 0.10);
+  box-shadow: 0 8px 18px rgba(8, 68, 163, 0.10);
 }
 
 /* Cards zonder foto blijven hun bestaande compacte layout houden */
@@ -6566,7 +6566,7 @@ body,
 /* Hover subtiel */
 .page:not(.customer-page) .product-card.has-image:not(.sold-out):hover{
   transform: translateY(-2px);
-  box-shadow: 0 7px 16px rgba(27, 71, 143, 0.10);
+  box-shadow: 0 7px 16px rgba(8, 68, 163, 0.10);
 }
 
 /* Iets compacter op kleinere schermen */
@@ -6704,7 +6704,7 @@ body,
 .page:not(.customer-page) .product-card.has-image:not(.sold-out):hover{
   transform: translateY(-2px) !important;
   border-color: #aac0df !important;
-  box-shadow: 0 8px 18px rgba(27, 71, 143, 0.10) !important;
+  box-shadow: 0 8px 18px rgba(8, 68, 163, 0.10) !important;
 }
 
 /* Kleinere schermen */
@@ -7080,7 +7080,7 @@ body,
   border: 1px solid #dfe7f2;
   border-radius: 24px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 10px 28px rgba(8, 68, 163, 0.06);
   overflow: hidden;
 }
 
@@ -7102,7 +7102,7 @@ body,
   height: 42px;
   border-radius: 13px;
   background: #edf3fb;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 18px;
   font-weight: 900;
 }
@@ -7143,7 +7143,7 @@ body,
   border: 2px solid #dfe7f2;
   border-radius: 20px;
   background: #f9fbfe;
-  color: #1B478F;
+  color: #0844a3;
   font-size: clamp(30px, 3.2vw, 54px);
   font-weight: 900;
   letter-spacing: 0.02em;
@@ -7154,7 +7154,7 @@ body,
 .pickup-preparing .pickup-number-card{
   border-color: #c9d8eb;
   background: #f3f7fc;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .pickup-ready .pickup-number-card{
@@ -7223,7 +7223,7 @@ body,
 /* Preparation iets duidelijker blauw */
 .pickup-preparing .pickup-step{
   background: #edf3fb;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Nieuwe bestelling kolom bestaat niet meer */
@@ -7285,7 +7285,7 @@ body,
 
 .ready-back-btn:hover{
   background: #f3f6fa;
-  color: #1B478F;
+  color: #0844a3;
   border-color: #b9cae1;
 }
 
@@ -7294,7 +7294,7 @@ body,
 }
 
 .ready-back-btn:focus-visible{
-  outline: 2px solid rgba(27, 71, 143, 0.18);
+  outline: 2px solid rgba(8, 68, 163, 0.18);
   outline-offset: 2px;
 }
 
@@ -7321,7 +7321,7 @@ body,
 }
 
 .completed-back-btn:hover{
-  color: #1B478F;
+  color: #0844a3;
   border-color: #b9cae1;
   background: #f5f8fc;
 }
@@ -7358,7 +7358,7 @@ body,
 }
 
 .pickup-wait-value strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: clamp(58px, 6vw, 104px);
   line-height: 0.95;
   letter-spacing: -0.04em;
@@ -7469,7 +7469,7 @@ body,
 }
 
 .pos-wait-switch input:checked + .pos-wait-switch-track{
-  background: #1B478F;
+  background: #0844a3;
 }
 
 .pos-wait-switch input:checked + .pos-wait-switch-track .pos-wait-switch-thumb{
@@ -7479,7 +7479,7 @@ body,
 .pos-wait-field > span{
   display: block;
   margin-bottom: 9px;
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 13px;
   font-weight: 800;
 }
@@ -7667,7 +7667,7 @@ body,
   border: 1px solid #dce5f1;
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(27, 71, 143, 0.05);
+  box-shadow: 0 8px 22px rgba(8, 68, 163, 0.05);
 }
 
 .history-search-row{
@@ -7707,9 +7707,9 @@ body,
 }
 
 .history-search-wrap input:focus{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.09);
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.09);
 }
 
 .history-result-count{
@@ -7782,7 +7782,7 @@ body,
 
   transform: translateX(-50%);
 
-  border: 1px solid rgba(27, 71, 143, 0.14);
+  border: 1px solid rgba(8, 68, 163, 0.14);
   border-radius: 20px;
 
   background: rgba(19, 28, 43, 0.94);
@@ -7837,7 +7837,7 @@ body,
   height: 48px;
 
   border-radius: 12px;
-  background: #1B478F;
+  background: #0844a3;
 
   font-size: 23px;
   line-height: 1;
@@ -7949,16 +7949,16 @@ body,
 }
 
 .admin-sales-range-btn:hover{
-  color: #1B478F;
+  color: #0844a3;
   border-color: #b8cae1;
   background: #f6f9fd;
 }
 
 .admin-sales-range-btn.active{
   color: #ffffff;
-  border-color: #1B478F;
-  background: #1B478F;
-  box-shadow: 0 5px 12px rgba(27, 71, 143, 0.16);
+  border-color: #0844a3;
+  background: #0844a3;
+  box-shadow: 0 5px 12px rgba(8, 68, 163, 0.16);
 }
 
 .admin-sales-kpi-grid{
@@ -7993,7 +7993,7 @@ body,
   display: block;
   margin-top: 8px;
 
-  color: #1B478F;
+  color: #0844a3;
   font-size: clamp(28px, 3vw, 42px);
   line-height: 1;
 }
@@ -8041,7 +8041,7 @@ body,
 
   border-radius: 9px;
   background: #edf3fb;
-  color: #1B478F;
+  color: #0844a3;
 
   font-size: 11px;
   font-weight: 900;
@@ -8074,7 +8074,7 @@ body,
 }
 
 .admin-sales-history-value strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 17px;
 }
 
@@ -8286,7 +8286,7 @@ body,
   object-fit: contain;
   border-radius: 15px;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 8px 22px rgba(8, 68, 163, 0.08);
 }
 
 .payment-test-brand > div{
@@ -8310,7 +8310,7 @@ body,
   border: 1px solid #d4dfed;
   border-radius: 999px;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 10px;
   font-weight: 950;
   letter-spacing: 0.08em;
@@ -8322,7 +8322,7 @@ body,
   border: 1px solid #dce5f1;
   border-radius: 24px;
   background: #ffffff;
-  box-shadow: 0 18px 48px rgba(27, 71, 143, 0.10);
+  box-shadow: 0 18px 48px rgba(8, 68, 163, 0.10);
 }
 
 .payment-test-heading{
@@ -8357,7 +8357,7 @@ body,
 .payment-test-status-pending{
   border: 1px solid #cfdbea;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .payment-test-status-paid{
@@ -8397,7 +8397,7 @@ body,
 
 .payment-test-amount strong{
   margin: 7px 0 4px;
-  color: #1B478F;
+  color: #0844a3;
   font-size: clamp(38px, 8vw, 54px);
   line-height: 1;
   font-weight: 950;
@@ -8497,19 +8497,19 @@ body,
 }
 
 .payment-test-primary-btn{
-  border: 1px solid #1B478F;
-  background: #1B478F;
+  border: 1px solid #0844a3;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .payment-test-primary-btn:hover:not(:disabled){
-  background: #153a76;
+  background: #0844a3;
 }
 
 .payment-test-secondary-btn{
   border: 1px solid #d5dfec;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .payment-test-secondary-btn:hover:not(:disabled){
@@ -8627,7 +8627,7 @@ body,
 .order-payment-pending{
   border-color: #cfdbea;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .order-payment-failed{
@@ -8720,7 +8720,7 @@ body,
   border: 1px solid #e3e9f2;
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.06);
 }
 
 .admin-payment-panel-header{
@@ -8869,7 +8869,7 @@ body,
 
 .history-list-row:hover{
   border-color: #b9cbe3;
-  box-shadow: 0 5px 16px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 5px 16px rgba(8, 68, 163, 0.06);
 }
 
 .history-list-time{
@@ -8878,7 +8878,7 @@ body,
 }
 
 .history-list-time strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 16px;
   font-weight: 950;
 }
@@ -9047,9 +9047,9 @@ body,
 }
 
 .history-list-row.selected{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #f2f6fc;
-  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 0 0 2px rgba(8, 68, 163, 0.08);
 }
 
 .history-list-chevron{
@@ -9060,7 +9060,7 @@ body,
 }
 
 .history-list-row.selected .history-list-chevron{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Geen drankjes meer zichtbaar in de lijst */
@@ -9077,7 +9077,7 @@ body,
   border: 1px solid #dde6f1;
   border-radius: 18px;
   background: #ffffff;
-  box-shadow: 0 10px 28px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 10px 28px rgba(8, 68, 163, 0.08);
 }
 
 .history-detail-empty{
@@ -9097,7 +9097,7 @@ body,
   place-items: center;
   border-radius: 14px;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 22px;
 }
 
@@ -9154,7 +9154,7 @@ body,
   border: none;
   border-radius: 50%;
   background: #eef3fa;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 22px;
   font-weight: 800;
   cursor: pointer;
@@ -9283,7 +9283,7 @@ body,
 }
 
 .history-detail-total strong{
-  color: #1B478F;
+  color: #0844a3;
   font-size: 20px;
   font-weight: 950;
 }
@@ -9876,7 +9876,7 @@ body,
   border-radius: 22px;
   background: #ffffff;
   border: 1px solid #e2e9f2;
-  box-shadow: 0 10px 30px rgba(27, 71, 143, 0.07);
+  box-shadow: 0 10px 30px rgba(8, 68, 163, 0.07);
 }
 
 .admin-form-page .admin-panel-header{
@@ -9932,8 +9932,8 @@ body,
 }
 
 .admin-form-page .admin-input:focus{
-  border-color: #1B478F;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.10);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.10);
 }
 
 /* Productfoto volledig binnen de witte kaart */
@@ -10044,7 +10044,7 @@ body,
 
 .admin-form-page .admin-topping-checkbox:hover{
   border-color: #9db4d2;
-  box-shadow: 0 4px 12px rgba(27, 71, 143, 0.06);
+  box-shadow: 0 4px 12px rgba(8, 68, 163, 0.06);
 }
 
 .admin-form-page .admin-topping-checkbox-text strong{
@@ -10093,7 +10093,7 @@ body,
   border-radius: 12px;
   font-size: 13px;
   font-weight: 850;
-  box-shadow: 0 5px 14px rgba(27, 71, 143, 0.15);
+  box-shadow: 0 5px 14px rgba(8, 68, 163, 0.15);
 }
 
 /* Header op dezelfde breedte als formulier */
@@ -10227,13 +10227,13 @@ body,
 .admin-customization-toggle input{
   width: 18px;
   height: 18px;
-  accent-color: #1B478F;
+  accent-color: #0844a3;
 }
 
 .admin-customization-toggle:has(input:checked){
   border-color: #9eb7d7;
   background: #eef4fb;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-customization-options{
@@ -10267,16 +10267,16 @@ body,
 }
 
 .admin-customization-option:has(input:checked){
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #eef4fb;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .admin-customization-option input{
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  accent-color: #1B478F;
+  accent-color: #0844a3;
 }
 
 .admin-customization-option:has(input:disabled){
@@ -10461,7 +10461,7 @@ body,
 }
 
 .admin-size-card.selected{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #eef4fb;
 }
 
@@ -10475,7 +10475,7 @@ body,
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
-  accent-color: #1B478F;
+  accent-color: #0844a3;
 }
 
 .admin-size-card-top > span{
@@ -10523,8 +10523,8 @@ body,
 
 .admin-size-price-row input:focus{
   outline: none;
-  border-color: #1B478F;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.08);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.08);
 }
 
 .admin-size-price-row input:disabled{
@@ -10601,28 +10601,30 @@ body,
 }
 
 .customer-size-option.active{
-  border-color: #1B478F;
+  border-color: #0844a3;
   background: #eef4fb;
-  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 0 0 2px rgba(8, 68, 163, 0.08);
 }
 
 .customer-size-option > span{
-  font-size: 14px;
-  font-weight: 900;
+  font-size: 11px;
+  line-height: 1.15;
+  font-weight: 600;
 }
 
 .customer-size-option > strong{
-  color: #1B478F;
-  font-size: 14px;
-  font-weight: 900;
+  color: #0844a3;
+  font-size: 10.5px;
+  line-height: 1.15;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 @media (max-width: 520px) {
   .customer-size-options{
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-
 /* ========================================================= */
 /* POS MODE — COMPACT / PRAKTISCH / CLEAN                    */
 /* Alleen mode=pos wordt visueel aangepast                   */
@@ -10650,7 +10652,7 @@ body:has(.pos-page){
 .pos-page .category-section h2,
 .pos-page .category-section h3{
   margin: 0 0 8px;
-  color: #1b478f;
+  color: #0844a3;
   font-size: 18px;
   line-height: 1.1;
   font-weight: 900;
@@ -10693,8 +10695,8 @@ body:has(.pos-page){
 
 .pos-page .product-card.selected,
 .pos-page .product-card.active{
-  border-color: #1b478f;
-  box-shadow: 0 0 0 2px rgba(27, 71, 143, 0.08);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 2px rgba(8, 68, 163, 0.08);
 }
 
 /* Product cards with image */
@@ -10731,7 +10733,7 @@ body:has(.pos-page){
   min-height: 27px;
   padding: 0 9px;
   border-radius: 999px;
-  background: #1b478f;
+  background: #0844a3;
   color: #ffffff;
   font-size: 12px;
   font-weight: 900;
@@ -10756,7 +10758,7 @@ body:has(.pos-page){
   border: 1px solid #d5e2f0;
   border-radius: 999px;
   background: #eef4fb;
-  color: #1b478f;
+  color: #0844a3;
   font-size: 9px;
   font-weight: 900;
   box-shadow: none;
@@ -10896,8 +10898,8 @@ body:has(.pos-page){
 }
 
 .pos-page .pos-product-search:focus-within{
-  border-color: #1b478f;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.08);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.08);
 }
 
 .pos-page .pos-product-search-icon{
@@ -10995,7 +10997,7 @@ body:has(.pos-page){
   border: 1px solid #dce5f1;
   border-radius: 22px;
   background: #ffffff;
-  box-shadow: 0 10px 30px rgba(27, 71, 143, 0.08);
+  box-shadow: 0 10px 30px rgba(8, 68, 163, 0.08);
 }
 
 .pos-settings-card .pos-wait-modal-header{
@@ -11057,21 +11059,21 @@ body:has(.pos-page){
 }
 
 .pos-settings-card .primary-btn{
-  border: 1px solid #1B478F;
-  background: #1B478F;
+  border: 1px solid #0844a3;
+  background: #0844a3;
   color: #ffffff;
 }
 
 .pos-settings-card .primary-btn:hover{
-  background: #153a76;
-  border-color: #153a76;
+  background: #0844a3;
+  border-color: #0844a3;
 }
 
 .pos-settings-card .secondary-btn,
 .pos-settings-page .secondary-btn{
   border: 1px solid #d7e2f0;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 .pos-settings-card .secondary-btn:hover,
@@ -11360,7 +11362,7 @@ body:has(.pos-page){
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: #1B478F;
+  background: #0844a3;
   font-size: 21px;
 }
 
@@ -11449,13 +11451,13 @@ body:has(.pos-page){
 .admin-cash-registration-toggle-wrap:has(
   #admin-cash-registration-enabled:checked
 ) .admin-cash-registration-status{
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* Keyboard focus voor de switch */
 .admin-cash-registration-toggle-wrap .pos-wait-switch input:focus-visible
   + .pos-wait-switch-track{
-  outline: 3px solid rgba(27, 71, 143, 0.16);
+  outline: 3px solid rgba(8, 68, 163, 0.16);
   outline-offset: 3px;
 }
 
@@ -11595,7 +11597,7 @@ body:has(.pos-page){
 
 .pos-availability-eyebrow{
   margin: 0;
-  color: #1b478f;
+  color: #0844a3;
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
@@ -11609,7 +11611,7 @@ body:has(.pos-page){
   border: 0;
   border-radius: 50%;
   background: #eef3fa;
-  color: #1b478f;
+  color: #0844a3;
   font-size: 27px;
   font-weight: 800;
   line-height: 1;
@@ -11654,7 +11656,7 @@ body:has(.pos-page){
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
-  background: #1b478f;
+  background: #0844a3;
   color: #ffffff;
   font-size: 11px;
   font-weight: 900;
@@ -12419,7 +12421,7 @@ body:has(.pos-page){
   --admin-text: #1d1d1f;
   --admin-muted: #86868b;
   --admin-border: rgba(0, 0, 0, 0.075);
-  --admin-blue: #0071e3;
+  --admin-blue: #0844a3;
 
   min-height: 100vh;
   background:
@@ -12887,7 +12889,7 @@ body:has(.pos-page){
   min-width: 46px;
   border-radius: 14px;
   background: rgba(0, 113, 227, 0.08);
-  color: #0071e3;
+  color: #0844a3;
   font-size: 20px;
 }
 
@@ -12939,7 +12941,7 @@ body:has(.pos-page){
   --customer-text: #1d1d1f;
   --customer-muted: #86868b;
   --customer-border: rgba(0, 0, 0, 0.075);
-  --customer-blue: #0071e3;
+  --customer-blue: #0844a3;
   --customer-blue-dark: #0066cc;
 
   background:
@@ -14003,7 +14005,7 @@ body:has(.pos-page){
   --pos-text: #1d1d1f;
   --pos-muted: #86868b;
   --pos-border: rgba(0, 0, 0, 0.075);
-  --pos-blue: #0071e3;
+  --pos-blue: #0844a3;
   --pos-blue-dark: #0066cc;
 
   background:
@@ -14411,7 +14413,7 @@ body:has(.pos-page){
 
 .page.staff-footer-page .pos-footer-category-btn.active .pos-footer-category-icon {
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
 }
 
 /* --------------------------------------------------------- */
@@ -14791,7 +14793,7 @@ body:has(.pos-page){
   height: 18px;
   flex: 0 0 auto;
   margin: 1px 0 0;
-  accent-color: #0071e3;
+  accent-color: #0844a3;
   cursor: pointer;
 }
 
@@ -15021,7 +15023,7 @@ body:has(.pos-page){
 }
 
 .pos-availability-tea-select > span {
-  color: #2f4d78;
+  color: #0844a3;
   font-size: 11px;
   font-weight: 800;
 }
@@ -15041,8 +15043,8 @@ body:has(.pos-page){
 
 .pos-availability-tea-select select:focus {
   outline: none;
-  border-color: #1B478F;
-  box-shadow: 0 0 0 3px rgba(27, 71, 143, 0.10);
+  border-color: #0844a3;
+  box-shadow: 0 0 0 3px rgba(8, 68, 163, 0.10);
 }
 
 .pos-availability-tea-actions {
@@ -15209,7 +15211,7 @@ body:has(.pos-page){
   border: 1px solid #d8e2f0;
   border-radius: 12px;
   background: #ffffff;
-  color: #1B478F;
+  color: #0844a3;
   font-size: 12px;
   font-weight: 900;
   cursor: pointer;
@@ -15231,7 +15233,7 @@ body:has(.pos-page){
   border: 1px solid #dce5f1;
   border-radius: 18px;
   background: #ffffff;
-  box-shadow: 0 8px 24px rgba(27, 71, 143, 0.05);
+  box-shadow: 0 8px 24px rgba(8, 68, 163, 0.05);
 }
 
 .pos-product-status-products-header,
@@ -15341,3 +15343,175 @@ body:has(.pos-page){
 .pos-product-status-products-column .pos-availability-tea-bulk {
   margin: 0;
 }
+
+/* ========================================================= */
+/* CUSTOMER ICE OPTIONS — 4 OP ÉÉN RIJ                       */
+/* Alleen temperatuur / ijsniveau. Sugar blijft ongewijzigd. */
+/* ========================================================= */
+
+.customer-modifier-options.ice-options{
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.customer-modifier-options.ice-options .customer-modifier-option{
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 4px;
+  font-size: 12px;
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .customer-modifier-options.ice-options{
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .customer-modifier-options.ice-options .customer-modifier-option{
+    min-height: 46px;
+    padding: 7px 3px;
+    font-size: 11px;
+  }
+}
+
+/* ========================================================= */
+/* CUSTOMER SUCCESS HEADER — MOBILE FIX                      */
+/* Bestelling geplaatst + logo + taalkeuze zonder overlap.   */
+/* ========================================================= */
+
+.customer-success-page .customer-header{
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+
+  min-height: 118px !important;
+  padding: 18px 16px 16px !important;
+
+  background: #ffffff !important;
+  border-bottom: 1px solid #e3e9f2 !important;
+}
+
+.customer-success-page .customer-brand{
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 12px !important;
+  min-width: 0 !important;
+}
+
+.customer-success-page .customer-brand .tea-shop-logo{
+  width: 48px !important;
+  height: 48px !important;
+  flex-basis: 48px !important;
+  margin: 0 !important;
+  border-radius: 14px !important;
+}
+
+.customer-success-page .customer-brand > div{
+  min-width: 0 !important;
+}
+
+.customer-success-page .customer-header h1{
+  margin: 0 !important;
+  padding: 0 !important;
+
+  color: #172033 !important;
+  font-size: 23px !important;
+  line-height: 1.08 !important;
+  font-weight: 850 !important;
+  letter-spacing: -0.45px !important;
+
+  white-space: normal !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.customer-success-page .customer-header .sub{
+  margin: 5px 0 0 !important;
+  color: #7b8798 !important;
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+  font-weight: 600 !important;
+}
+
+.customer-success-page .customer-language-switcher{
+  position: static !important;
+  align-self: center !important;
+
+  margin: 0 !important;
+  padding: 3px !important;
+  gap: 2px !important;
+
+  background: #f7f9fc !important;
+  border: 1px solid #dce4ef !important;
+  border-radius: 999px !important;
+
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.customer-success-page .customer-language-btn{
+  min-width: 42px !important;
+  height: 34px !important;
+  padding: 0 9px !important;
+  font-size: 11px !important;
+}
+
+.customer-success-page .customer-language-btn.active{
+  background: #0844a3 !important;
+  color: #ffffff !important;
+}
+
+/* Mobile: taalkeuze onder de titel zetten zodat niets kan overlappen */
+@media (max-width: 600px){
+  .customer-success-page .customer-header{
+    grid-template-columns: 1fr !important;
+    gap: 11px !important;
+    min-height: 0 !important;
+    padding: 18px 16px 14px !important;
+  }
+
+  .customer-success-page .customer-brand{
+    grid-template-columns: 46px minmax(0, 1fr) !important;
+    gap: 11px !important;
+  }
+
+  .customer-success-page .customer-brand .tea-shop-logo{
+    width: 46px !important;
+    height: 46px !important;
+    flex-basis: 46px !important;
+  }
+
+  .customer-success-page .customer-header h1{
+    font-size: 22px !important;
+    line-height: 1.08 !important;
+  }
+
+  .customer-success-page .customer-header .sub{
+    font-size: 12.5px !important;
+  }
+
+  .customer-success-page .customer-language-switcher{
+    justify-self: start !important;
+    margin-left: 57px !important;
+  }
+}
+
+/* Extra smal: taalkeuze gewoon links onder de hele brand */
+@media (max-width: 390px){
+  .customer-success-page .customer-language-switcher{
+    margin-left: 0 !important;
+    justify-self: stretch !important;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  .customer-success-page .customer-language-btn{
+    width: 100% !important;
+  }
+}
+
