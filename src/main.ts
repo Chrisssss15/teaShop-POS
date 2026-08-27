@@ -470,7 +470,7 @@ const translations = {
     phonePlaceholder: 'Bijv. 0612345678',
     paymentMethod: 'Betaalmethode',
     onlinePayment: 'Online betalen',
-    onlinePaymentHint: 'Fake betaling voor MVP',
+    onlinePaymentHint: 'Veilig online betalen via MultiSafepay',
     payAtCounter: 'Betalen aan balie',
     payAtCounterHint: 'Betaal bij ophalen',
     overview: 'Overzicht',
@@ -537,7 +537,7 @@ const translations = {
     phonePlaceholder: 'E.g. 0612345678',
     paymentMethod: 'Payment method',
     onlinePayment: 'Pay online',
-    onlinePaymentHint: 'Fake payment for MVP',
+    onlinePaymentHint: 'Secure online payment via MultiSafepay',
     payAtCounter: 'Pay at counter',
     payAtCounterHint: 'Pay when collecting',
     overview: 'Overview',
@@ -604,7 +604,7 @@ const translations = {
     phonePlaceholder: '例如：0612345678',
     paymentMethod: '付款方式',
     onlinePayment: '在线付款',
-    onlinePaymentHint: 'MVP 模拟付款',
+    onlinePaymentHint: '通过 MultiSafepay 安全在线付款',
     payAtCounter: '柜台付款',
     payAtCounterHint: '取餐时付款',
     overview: '订单概览',
@@ -3337,13 +3337,16 @@ async function submitCustomerOrder() {
   const total = taxTotals.grossTotal
   const orderNumber = makeOrderNumber()
   const pickupCode = makePickupCode()
-  const now = new Date().toISOString()
   const customerSessionId = getCustomerSessionId()
 
-  const paymentStatus: PaymentStatus =
-    customerPaymentMethod === 'online_fake' ? 'pending' : 'unpaid'
+  const isOnlinePayment = customerPaymentMethod === 'online_fake'
 
-  const paidAt = null
+  const paymentStatus: PaymentStatus =
+    isOnlinePayment ? 'pending' : 'unpaid'
+
+  // =============================
+  // 1. ORDER OPSLAAN
+  // =============================
 
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
@@ -3359,7 +3362,7 @@ async function submitCustomerOrder() {
       gross_total: taxTotals.grossTotal,
       payment_status: paymentStatus,
       payment_method: customerPaymentMethod,
-      paid_at: paidAt,
+      paid_at: null,
       customer_session_id: customerSessionId,
       pickup_code: pickupCode,
       customer_name: cleanCustomerName,
@@ -3374,6 +3377,10 @@ async function submitCustomerOrder() {
     render()
     return
   }
+
+  // =============================
+  // 2. ORDER ITEMS OPSLAAN
+  // =============================
 
   const orderItemsPayload = cart.map((item) => {
     const tax = getCartItemTaxAmounts(item)
@@ -3404,53 +3411,76 @@ async function submitCustomerOrder() {
     }
   })
 
-  const { data: savedOrderItems, error: itemsError } = await supabase
+  const { error: itemsError } = await supabase
     .from('order_items')
     .insert(orderItemsPayload)
-    .select()
 
   if (itemsError) {
+    await supabase
+      .from('orders')
+      .delete()
+      .eq('id', orderData.id)
+
     isSubmitting = false
-    message = `Order gemaakt, maar orderregels opslaan mislukt: ${itemsError.message}`
+    message = `Orderregels opslaan mislukt: ${itemsError.message}`
     render()
     return
   }
 
-  const labelError = await createKitchenLabelsForOrder(
-    orderData.id,
-    orderNumber,
-    savedOrderItems as OrderItem[]
-  )
+  // BELANGRIJK:
+  // Bij customer-orders maken we hier GEEN kitchen labels.
+  // De MultiSafepay webhook maakt de labels pas nadat de betaling
+  // daadwerkelijk als completed/paid is bevestigd.
 
-  if (labelError) {
-    isSubmitting = false
-    message = `Order betaald, maar kitchen labels maken mislukt: ${labelError}`
-    render()
-    return
-  }
+  // =============================
+  // 3. ONLINE BETALING STARTEN
+  // =============================
 
-  let createdPayment: Payment | null = null
-
-  if (customerPaymentMethod === 'online_fake') {
+  if (isOnlinePayment) {
     try {
-      createdPayment = await createTestMultisafepayPayment(
+      const payment = await createMultisafepayPayment(
         String(orderData.id),
         orderNumber,
-        total
+        total,
+        cleanCustomerName
       )
+
+      customerOrderId = String(orderData.id)
+      customerPickupCode = pickupCode
+      customerOrderStatus = 'new'
+      customerOrderPlaced = true
+      isCustomerCartOpen = false
+      isCustomerCheckoutOpen = false
+
+      saveCustomerState()
+
+      cart = []
+      isSubmitting = false
+
+      window.location.href = payment.paymentUrl
+      return
     } catch (error) {
+      console.error('MultiSafepay betaling starten mislukt:', error)
+
       isSubmitting = false
       message =
         error instanceof Error
           ? error.message
-          : 'Payment aanmaken mislukt.'
+          : 'Online betaling starten mislukt.'
+
       render()
       return
     }
   }
 
+  // =============================
+  // 4. BETALEN AAN BALIE
+  // =============================
+  // Deze order blijft unpaid. Ook hier maken we geen labels zolang
+  // payment_status niet op paid staat.
+
   cart = []
-  customerOrderId = orderData.id
+  customerOrderId = String(orderData.id)
   customerPickupCode = pickupCode
   customerOrderStatus = 'new'
   customerOrderPlaced = true
@@ -3460,11 +3490,6 @@ async function submitCustomerOrder() {
 
   saveCustomerState()
 
-  if (createdPayment) {
-    await goToPaymentTest(createdPayment.id)
-    return
-  }
-
   await loadCustomerOrderProgress(false)
   startCustomerProgressRefresh()
   render()
@@ -3472,9 +3497,9 @@ async function submitCustomerOrder() {
 
 
 // =============================
-// PAYMENTS: MULTISAFEPAY PREPARATION
-// Voorlopig nog een lokale simulator.
-// Kitchen-label gedrag blijft voor nu hetzelfde.
+// PAYMENTS: MULTISAFEPAY
+// Echte payment creation via Supabase Edge Function.
+// De oude payment-test helpers hieronder blijven voorlopig staan voor debug.
 // =============================
 
 function getPaymentTestIdFromUrl() {
@@ -3502,19 +3527,32 @@ function getPaymentTestStatusClass(status?: PaymentRecordStatus | null) {
   return 'payment-test-status-pending'
 }
 
-async function createTestMultisafepayPayment(
+type MultisafepayPaymentResult = {
+  paymentUrl: string
+  multisafepayOrderId: string
+}
+
+async function createMultisafepayPayment(
   orderId: string,
   orderNumber: string,
-  total: number
-) {
+  total: number,
+  customerName: string
+): Promise<MultisafepayPaymentResult> {
   const amountInCents = Math.max(0, Math.round(total * 100))
 
-  const { data, error } = await supabase
+  // =============================
+  // 1. LOKALE PAYMENT OPSLAAN
+  // =============================
+
+  const {
+    data: paymentRecord,
+    error: paymentInsertError,
+  } = await supabase
     .from('payments')
     .insert({
       order_id: orderId,
       provider: 'multisafepay',
-      provider_order_id: `MSP-TEST-${orderNumber}`,
+      provider_order_id: orderNumber,
       amount: amountInCents,
       currency: 'EUR',
       status: 'pending',
@@ -3525,11 +3563,124 @@ async function createTestMultisafepayPayment(
     .select('*')
     .single()
 
-  if (error) {
-    throw new Error(`Payment aanmaken mislukt: ${error.message}`)
+  if (paymentInsertError || !paymentRecord) {
+    throw new Error(
+      `Payment opslaan mislukt: ${paymentInsertError?.message ?? 'onbekende fout'}`
+    )
   }
 
-  return data as Payment
+  // =============================
+  // 2. RETURN URLS
+  // =============================
+
+  const returnUrl = new URL(window.location.href)
+  returnUrl.searchParams.set('mode', 'customer')
+  returnUrl.searchParams.set('order', orderId)
+  returnUrl.searchParams.delete('payment')
+  returnUrl.searchParams.delete('payment_cancelled')
+
+  const cancelUrl = new URL(returnUrl.toString())
+  cancelUrl.searchParams.set('payment_cancelled', '1')
+
+  // =============================
+  // 3. EDGE FUNCTION AANROEPEN
+  // =============================
+
+  const {
+    data,
+    error: functionError,
+  } = await supabase.functions.invoke(
+    'create-multisafepay-payment',
+    {
+      body: {
+        orderNumber,
+        amount: amountInCents,
+        description: `Blue Cup bestelling ${orderNumber}`,
+        customerName,
+        redirectUrl: returnUrl.toString(),
+        cancelUrl: cancelUrl.toString(),
+      },
+    }
+  )
+
+  if (functionError) {
+    const now = new Date().toISOString()
+
+    await supabase
+      .from('payments')
+      .update({
+        status: 'failed',
+        failed_at: now,
+        failure_reason:
+          functionError.message || 'Edge Function fout',
+      })
+      .eq('id', paymentRecord.id)
+
+    await supabase
+      .from('orders')
+      .update({
+        payment_status: 'failed',
+        paid_at: null,
+      })
+      .eq('id', orderId)
+
+    throw new Error(
+      `MultiSafepay starten mislukt: ${functionError.message}`
+    )
+  }
+
+  if (!data?.success || !data?.paymentUrl) {
+    const now = new Date().toISOString()
+
+    await supabase
+      .from('payments')
+      .update({
+        status: 'failed',
+        failed_at: now,
+        failure_reason:
+          data?.error || 'Geen payment URL ontvangen',
+      })
+      .eq('id', paymentRecord.id)
+
+    await supabase
+      .from('orders')
+      .update({
+        payment_status: 'failed',
+        paid_at: null,
+      })
+      .eq('id', orderId)
+
+    throw new Error(
+      data?.error ||
+      'MultiSafepay gaf geen betaalpagina terug.'
+    )
+  }
+
+  // =============================
+  // 4. PAYMENT URL OPSLAAN
+  // =============================
+
+  const { error: paymentUpdateError } = await supabase
+    .from('payments')
+    .update({
+      payment_url: data.paymentUrl,
+      provider_order_id:
+        data.multisafepayOrderId || orderNumber,
+    })
+    .eq('id', paymentRecord.id)
+
+  if (paymentUpdateError) {
+    console.error(
+      'MultiSafepay payment URL opslaan mislukt:',
+      paymentUpdateError
+    )
+  }
+
+  return {
+    paymentUrl: data.paymentUrl,
+    multisafepayOrderId:
+      data.multisafepayOrderId || orderNumber,
+  }
 }
 
 async function loadPaymentTestData(showLoading = true) {
