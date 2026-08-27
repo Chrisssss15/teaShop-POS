@@ -7,266 +7,55 @@ import { supabase } from './lib/supabase'
 import QRCode from 'qrcode'
 import { printEpsonReceipt } from './lib/epsonPrinter'
 
+// Domain types moved to ./types/* — see FASE 1 refactor. Behaviour unchanged.
+import type {
+  DiscountType,
+  CupSize,
+  Product,
+  Topping,
+  ProductToppingLink,
+  Category,
+  IceLevel,
+  SugarLevel,
+  SelectedTopping,
+  CartItem,
+  SavedCartItem,
+} from './types/product'
+import type {
+  OrderStatus,
+  OrderFilter,
+  PaymentStatus,
+  PaymentMethod,
+  Order,
+  OrderItem,
+  CashSession,
+  DailyClosing,
+  DailyClosingVat,
+} from './types/order'
+import type { PaymentRecordStatus, Payment } from './types/payment'
+import type { LabelStatus, PrintStatus, KitchenLabel } from './types/kitchen'
+// Pure money helpers moved to ./utils/money (FASE 2). Behaviour unchanged.
+import {
+  roundMoney,
+  calculateDiscountPreviewPrice,
+  moneyToCents,
+  centsToCsvMoney,
+} from './utils/money'
+// Simple product-catalog Supabase queries moved to ./services/products (FASE 3).
+import {
+  fetchProducts,
+  fetchToppings,
+  fetchProductToppingLinks,
+  fetchCategories,
+} from './services/products'
+
 // =============================
 // TYPES
 // =============================
 
 type Screen = 'pos' | 'pos-product-status' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-bookkeeper' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
-type DiscountType = 'none' | 'percentage' | 'fixed'
-
-type CupSize = 'medium' | 'large'
-
-type Product = {
-  id: string
-  name: string
-  category: string
-  tea_type: string | null
-  temperature_label: string | null
-  pos_only: boolean
-  product_type: 'drink' | 'item'
-  base_price: number
-  vat_rate: number
-  is_active: boolean
-  is_bestseller: boolean
-  is_sold_out: boolean
-  image_url: string | null
-  discount_type: DiscountType
-  discount_value: number
-  qr_product_code: string | null
-
-  available_sizes: CupSize[]
-  medium_price: number | null
-  large_price: number | null
-
-  allow_ice_customization: boolean
-  allowed_ice_levels: IceLevel[]
-  medium_allowed_ice_levels: IceLevel[] | null
-  large_allowed_ice_levels: IceLevel[] | null
-  default_ice_level: IceLevel | null
-
-  allow_sugar_customization: boolean
-  allowed_sugar_levels: SugarLevel[]
-}
-
-type Topping = {
-  id: string
-  name: string
-  price: number
-  is_active: boolean
-  is_sold_out: boolean
-}
-
-type ProductToppingLink = {
-  product_id: string
-  topping_id: string
-}
-
-
-type Category = {
-  id: string
-  name: string
-  is_active: boolean
-  discount_type: DiscountType
-  discount_value: number
-  sort_order: number
-  created_at?: string | null
-}
-
-type IceLevel =
-  | 'no_ice'
-  | 'less_ice'
-  | 'normal_ice'
-  | 'warm'
-  | 'extra_ice'
-type SugarLevel = 'none' | 'minimal' | 'less' | 'normal' | 'sweet'
-
-type SelectedTopping = {
-  id: string
-  name: string
-  price: number
-}
-
-type CartItem = {
-  cartItemId: string
-  product: Product
-  quantity: number
-  cupSize: CupSize
-  iceLevel: IceLevel
-  sugarLevel: SugarLevel
-  toppings: SelectedTopping[]
-}
-
-type SavedCartItem = {
-  cartItemId: string
-  productId: string
-  quantity: number
-  cupSize?: CupSize
-  iceLevel: IceLevel
-  sugarLevel: SugarLevel
-  toppings: SelectedTopping[]
-}
-
-type OrderStatus = 'new' | 'preparing' | 'ready' | 'completed' | 'cancelled'
-type LabelStatus = 'new' | 'preparing' | 'done' | 'cancelled'
-type PrintStatus = 'pending' | 'printing' | 'printed' | 'failed'
-type OrderFilter = 'all' | 'active' | 'preparation' | 'completed'
-type PaymentStatus =
-  | 'unpaid'
-  | 'pending'
-  | 'paid'
-  | 'failed'
-  | 'cancelled'
-  | 'refunded'
-
-type PaymentMethod = 'cash' | 'card' | 'online_fake' | 'pay_at_counter'
-
-type PaymentRecordStatus = 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded'
-
-type Payment = {
-  id: string
-  order_id: string
-  provider: string
-  provider_order_id?: string | null
-  provider_transaction_id?: string | null
-  amount: number
-  currency: string
-  status: PaymentRecordStatus
-  payment_method?: string | null
-  payment_url?: string | null
-  failure_reason?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  paid_at?: string | null
-  failed_at?: string | null
-  refund_amount?: number | null
-  refund_reason?: string | null
-  refunded_at?: string | null
-  refunded_by?: string | null
-}
-type CashSession = {
-  id: string
-  opened_at: string
-  closed_at?: string | null
-  opening_amount: number
-  expected_amount?: number | null
-  counted_amount?: number | null
-  difference_amount?: number | null
-  opened_by?: string | null
-  closed_by?: string | null
-  status: string
-  created_at?: string | null
-}
-
-
-type DailyClosing = {
-  id: string
-  business_date: string
-  closed_at: string
-  closed_by?: string | null
-  cash_session_id?: string | null
-  order_count?: number | null
-  gross_sales?: number | null
-  net_sales?: number | null
-  vat_total?: number | null
-  cash_sales?: number | null
-  card_sales?: number | null
-  online_sales?: number | null
-  refund_total?: number | null
-  cash_in?: number | null
-  cash_out?: number | null
-  opening_amount?: number | null
-  expected_amount?: number | null
-  counted_amount?: number | null
-  difference_amount?: number | null
-  created_at?: string | null
-}
-
-type DailyClosingVat = {
-  id?: string
-  daily_closing_id: string
-  vat_rate: number
-  gross_amount: number
-  net_amount: number
-  vat_amount: number
-  created_at?: string | null
-}
-
 type CustomerLanguage = 'nl' | 'en' | 'cn'
-
-type Order = {
-  id: string
-  order_number?: string | null
-  order_type?: string | null
-  channel?: string | null
-  status: OrderStatus
-  subtotal?: number | null
-  total?: number | null
-  total_amount?: number | null
-  net_total?: number | null
-  vat_total?: number | null
-  gross_total?: number | null
-  payment_status?: PaymentStatus | null
-  payment_method?: PaymentMethod | null
-  paid_at?: string | null
-  customer_session_id?: string | null
-  pickup_code?: string | null
-  customer_name?: string | null
-  customer_phone?: string | null
-  created_at?: string | null
-  updated_at?: string | null
-  completed_at?: string | null
-  cancelled_at?: string | null
-  cancel_reason?: string | null
-  cancelled_by?: string | null
-}
-
-type OrderItem = {
-  id?: string
-  order_id: string
-  product_id?: string | null
-  product_name?: string | null
-  product_name_snapshot?: string | null
-  original_unit_price?: number | null
-  unit_price?: number | null
-  discount_type_snapshot?: DiscountType | null
-  discount_value_snapshot?: number | null
-  discount_amount?: number | null
-  quantity: number
-  line_total?: number | null
-  vat_rate?: number | null
-  net_amount?: number | null
-  vat_amount?: number | null
-  gross_amount?: number | null
-  cup_size?: CupSize | null
-  ice_level?: IceLevel | null
-  sugar_level?: SugarLevel | null
-  toppings?: SelectedTopping[] | null
-}
-
-type KitchenLabel = {
-  id: string
-  order_id: string
-  order_item_id?: string | null
-  product_id?: string | null
-  order_number?: string | null
-  product_name: string
-  status: LabelStatus
-  label_index: number
-  cup_size?: CupSize | null
-  ice_level?: IceLevel | null
-  sugar_level?: SugarLevel | null
-  toppings?: SelectedTopping[] | null
-  notes?: string | null
-  print_status?: PrintStatus | null
-  print_attempts?: number | null
-  printed_at?: string | null
-  print_error?: string | null
-  created_at?: string | null
-  started_at?: string | null
-  done_at?: string | null
-  cancelled_at?: string | null
-}
 
 // =============================
 // CONSTANTS
@@ -761,7 +550,6 @@ let isSubmitting = false
 let isLoadingOrders = false
 let isLoadingOrderHistory = false
 let posProductSearch = ''
-let isPosAvailabilityOpen = false
 let isLoadingPosAvailability = false
 let posAvailabilitySearch = ''
 let posAvailabilityTeaType = ''
@@ -1055,19 +843,14 @@ function loadCustomerStateAfterProducts() {
 // =============================
 
 async function loadProducts() {
-  const { data, error } = await supabase
-    .from('products')
-    .select('*')
-    .eq('is_active', true)
-    .order('category', { ascending: true })
-    .order('name', { ascending: true })
+  let loadedProducts: Product[]
 
-  if (error) {
-    showError(`Fout bij laden producten: ${error.message}`)
+  try {
+    loadedProducts = await fetchProducts()
+  } catch (error) {
+    showError(`Fout bij laden producten: ${(error as { message?: string })?.message}`)
     return
   }
-
-  const loadedProducts = (data ?? []) as Product[]
 
   products =
     screen === 'customer'
@@ -1135,7 +918,6 @@ async function openPosAvailability() {
   removeCustomerScrollListeners()
 
   screen = 'pos-product-status'
-  isPosAvailabilityOpen = false
   posAvailabilitySearch = ''
   posAvailabilityTeaType = ''
   posAvailabilityError = ''
@@ -1156,7 +938,6 @@ function closePosAvailability() {
   removeCustomerScrollListeners()
 
   screen = 'pos'
-  isPosAvailabilityOpen = false
   posAvailabilitySearch = ''
   posAvailabilityTeaType = ''
   posAvailabilityError = ''
@@ -1373,18 +1154,6 @@ async function setPosToppingSoldOut(
   render()
 }
 
-function getFilteredPosAvailabilityProducts() {
-  const search = posAvailabilitySearch.trim().toLowerCase()
-
-  if (!search) {
-    return posAvailabilityProducts
-  }
-
-  return posAvailabilityProducts.filter((product) =>
-    `${product.name} ${product.category}`.toLowerCase().includes(search)
-  )
-}
-
 async function loadBestSellerSales() {
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
@@ -1430,18 +1199,12 @@ async function loadBestSellerSales() {
 }
 
 async function loadCategories() {
-  const { data, error } = await supabase
-    .from('categories')
-    .select('*')
-    .order('sort_order', { ascending: true })
-    .order('name', { ascending: true })
-
-  if (error) {
+  try {
+    categories = await fetchCategories()
+  } catch (error) {
     console.error('Categorieën laden mislukt:', error)
     return
   }
-
-  categories = (data ?? []) as Category[]
 
   let shouldRefresh = false
 
@@ -1461,47 +1224,34 @@ async function loadCategories() {
   }
 
   if (shouldRefresh) {
-    const { data: refreshedData, error: refreshedError } = await supabase
-      .from('categories')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('name', { ascending: true })
-
-    if (!refreshedError) {
-      categories = (refreshedData ?? []) as Category[]
+    try {
+      categories = await fetchCategories()
+    } catch {
+      // Keep the categories from the first load if the refresh query fails
+      // (mirrors the original behaviour: categories stay unchanged on error).
     }
   }
 }
 
 async function loadToppings() {
-  const { data, error } = await supabase
-    .from('toppings')
-    .select('*')
-    .eq('is_active', true)
-    .order('name', { ascending: true })
-
-  if (error) {
+  try {
+    toppings = await fetchToppings()
+  } catch (error) {
     console.error('Toppings laden mislukt:', error)
     return
   }
 
-  toppings = (data ?? []) as Topping[]
   console.log('Toppings geladen:', toppings)
 }
 
 
 async function loadProductToppingLinks() {
-  const { data, error } = await supabase
-    .from('product_toppings')
-    .select('product_id,topping_id')
-
-  if (error) {
+  try {
+    productToppingLinks = await fetchProductToppingLinks()
+  } catch (error) {
     console.error('Product toppings laden mislukt:', error)
     productToppingLinks = []
-    return
   }
-
-  productToppingLinks = (data ?? []) as ProductToppingLink[]
 }
 
 function getAllowedToppingsForProduct(productId: string) {
@@ -2218,20 +1968,6 @@ function getProductDiscountLabel(product: Product) {
   return ''
 }
 
-function getDiscountSourceLabel(product: Product) {
-  const discount = getProductDiscount(product)
-
-  if (discount.source === 'category') {
-    return 'Categoriekorting'
-  }
-
-  if (discount.source === 'product') {
-    return 'Productkorting'
-  }
-
-  return ''
-}
-
 function getCartItemUnitPrice(item: CartItem) {
   const sizePrice = getProductSizePrice(item.product, item.cupSize)
   const discountedSizePrice =
@@ -2240,26 +1976,6 @@ function getCartItemUnitPrice(item: CartItem) {
   return discountedSizePrice + getToppingsTotal(item)
 }
 
-
-function calculateDiscountPreviewPrice(
-  originalPrice: number,
-  discountType: DiscountType,
-  discountValue: number
-) {
-  const safePrice = Math.max(0, Number(originalPrice) || 0)
-  const safeValue = Math.max(0, Number(discountValue) || 0)
-
-  if (discountType === 'percentage') {
-    const percentage = Math.min(100, safeValue)
-    return Math.max(0, safePrice - safePrice * (percentage / 100))
-  }
-
-  if (discountType === 'fixed') {
-    return Math.max(0, safePrice - safeValue)
-  }
-
-  return safePrice
-}
 
 function getDiscountInputSymbol(discountType: DiscountType) {
   if (discountType === 'percentage') return '%'
@@ -2381,10 +2097,6 @@ function getCartItemLineTotal(item: CartItem) {
 // Prices in the POS are stored and shown including VAT.
 // =============================
 
-function roundMoney(value: number) {
-  return Math.round((Number(value) + Number.EPSILON) * 100) / 100
-}
-
 function getProductVatRate(product: Product) {
   const rate = Number(product.vat_rate ?? 9)
 
@@ -2458,7 +2170,6 @@ const DISCOUNT_CATEGORY_LABEL = 'Discount'
 
 const BESTSELLER_CATEGORY_KEY = '__bestseller__'
 const BESTSELLER_CATEGORY_LABEL = 'Best Seller'
-const BESTSELLER_LIMIT = 5
 
 const HOT_CATEGORY_KEY = '__hot__'
 const HOT_CATEGORY_LABEL = 'Hot'
@@ -3833,23 +3544,6 @@ async function updatePaymentTestStatus(nextStatus: PaymentRecordStatus) {
   await loadPaymentTestData(false)
 }
 
-async function goToPaymentTest(paymentId: string) {
-  stopAutoRefresh()
-  stopCustomerProgressRefresh()
-  removeCustomerScrollListeners()
-
-  screen = 'payment-test'
-  message = ''
-  paymentTestError = ''
-
-  const url = new URL(window.location.href)
-  url.searchParams.set('mode', 'payment-test')
-  url.searchParams.set('payment', paymentId)
-  window.history.pushState({ screen: 'payment-test' }, '', url)
-
-  await loadPaymentTestData()
-}
-
 async function returnFromPaymentTestToCustomer() {
   stopAutoRefresh()
   stopCustomerProgressRefresh()
@@ -4698,23 +4392,6 @@ async function goToOrders() {
 }
 
 
-async function goToPickup() {
-  stopAutoRefresh()
-  stopCustomerProgressRefresh()
-  removeCustomerScrollListeners()
-
-  screen = 'pickup'
-  message = ''
-  updateModeInUrl('pickup')
-
-  await Promise.all([
-    loadOrders(),
-    loadPickupWaitSettings(),
-  ])
-
-  startPickupRealtime()
-}
-
 async function goToKitchen() {
   stopAutoRefresh()
   stopCustomerProgressRefresh()
@@ -4959,30 +4636,6 @@ function getOrderItemTotal(item: OrderItem) {
 
 function getOrderName(order: Order) {
   return order.order_number || `Order #${order.id}`
-}
-
-function getPaymentText(order: Order) {
-  if (order.payment_status === 'paid') {
-    return `Paid ${order.payment_method ? `(${order.payment_method})` : ''}`
-  }
-
-  if (order.payment_status === 'pending') {
-    return 'Payment pending'
-  }
-
-  if (order.payment_status === 'failed') {
-    return 'Payment failed'
-  }
-
-  if (order.payment_status === 'cancelled') {
-    return 'Payment cancelled'
-  }
-
-  if (order.payment_status === 'refunded') {
-    return 'Refunded'
-  }
-
-  return 'Unpaid'
 }
 
 function getPaymentBadgeText(order: Order) {
@@ -6277,47 +5930,6 @@ function getAdminTopDrinkSales(limit = 5) {
 }
 
 
-function getAdminToppingSalesRows(): AdminToppingSalesRow[] {
-  const validOrderIds = new Set(
-    getAdminTodayCompletedOrders().map((order) => String(order.id))
-  )
-
-  const grouped: Record<string, AdminToppingSalesRow> = {}
-
-  for (const item of adminTodayOrderItems) {
-    if (!validOrderIds.has(String(item.order_id))) {
-      continue
-    }
-
-    const quantity = Number(item.quantity ?? 0)
-    const selectedToppings = Array.isArray(item.toppings) ? item.toppings : []
-
-    for (const topping of selectedToppings) {
-      const name = topping.name || 'Onbekende topping'
-      const toppingPrice = Number(topping.price ?? 0)
-
-      if (!grouped[name]) {
-        grouped[name] = {
-          name,
-          quantity: 0,
-          revenue: 0,
-        }
-      }
-
-      grouped[name].quantity += quantity
-      grouped[name].revenue += toppingPrice * quantity
-    }
-  }
-
-  return Object.values(grouped).sort((a, b) => {
-    if (b.quantity !== a.quantity) {
-      return b.quantity - a.quantity
-    }
-
-    return a.name.localeCompare(b.name)
-  })
-}
-
 function getAdminPieGradient() {
   const rows = getAdminTopDrinkSales(5)
   const total = rows.reduce((sum, row) => sum + row.quantity, 0)
@@ -6710,10 +6322,6 @@ function getBusinessDateLocal(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-function moneyToCents(value: number | null | undefined) {
-  return Math.round(Number(value ?? 0) * 100)
-}
-
 function getOrderGrossCents(order: Order) {
   const gross = order.gross_total ?? order.total ?? order.total_amount ?? order.subtotal ?? 0
   return moneyToCents(Number(gross))
@@ -6770,10 +6378,6 @@ async function loadAdminDailyClosing() {
   }
 
   adminDailyClosingVat = (vatData ?? []) as DailyClosingVat[]
-}
-
-function centsToCsvMoney(value?: number | null) {
-  return (Number(value ?? 0) / 100).toFixed(2).replace('.', ',')
 }
 
 function escapeCsvValue(value: string | number) {
@@ -10291,10 +9895,6 @@ async function refundAdminPayment(paymentId: string) {
     return
   }
 
-  const order = adminTodayOrders.find(
-    (item) => String(item.id) === String(payment.order_id)
-  )
-
   const reasonInput = window.prompt(
     `Reden voor terugbetaling van ${formatPaymentAmount(payment.amount)}?`
   )
@@ -11472,7 +11072,6 @@ function getFilteredAdminProducts() {
 }
 
 function renderAdminProductsPage() {
-  const filteredProducts = getFilteredAdminProducts()
   return `
     <div class="page admin-page">
       ${renderNav()}
@@ -11760,10 +11359,6 @@ function renderAdminCategoryProductsModal() {
 }
 
 function renderAdminCategoriesPage() {
-  const editingCategory = adminEditingCategoryId
-    ? categories.find((category) => String(category.id) === String(adminEditingCategoryId))
-    : null
-
   return `
     <div class="page admin-page">
       ${renderNav()}
@@ -15344,11 +14939,6 @@ function renderPaymentTest() {
   const payment = paymentTestPayment
   const order = paymentTestOrder
   const status = payment?.status ?? 'pending'
-  const isFinished =
-    status === 'paid' ||
-    status === 'failed' ||
-    status === 'cancelled' ||
-    status === 'refunded'
 
   return `
     <div class="page payment-test-page">
@@ -15539,15 +15129,6 @@ function renderPaymentTest() {
   `
 }
 
-
-async function ensurePosProductStatusData() {
-  if (screen !== 'pos-product-status') return
-
-  await Promise.all([
-    loadPosAvailabilityProducts(false),
-    loadToppings(),
-  ])
-}
 
 
 // =============================
