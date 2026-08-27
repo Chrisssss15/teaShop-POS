@@ -5,6 +5,7 @@
 import './style.css'
 import { supabase } from './lib/supabase'
 import QRCode from 'qrcode'
+import { printEpsonReceipt } from './lib/epsonPrinter'
 
 // =============================
 // TYPES
@@ -3263,9 +3264,45 @@ async function submitOrder(paymentMethod: PaymentMethod) {
     return
   }
 
+  let receiptPrintError = ''
+
+  try {
+    await printEpsonReceipt({
+      orderNumber,
+      createdAt: now,
+      paymentMethod,
+      total: taxTotals.grossTotal,
+      netTotal: taxTotals.netTotal,
+      vatTotal: taxTotals.vatTotal,
+      items: (savedOrderItems as OrderItem[]).map((item) => ({
+        name:
+          item.product_name_snapshot ||
+          item.product_name ||
+          'Onbekend product',
+        quantity: Number(item.quantity ?? 1),
+        unitPrice: Number(item.unit_price ?? 0),
+        lineTotal: Number(
+          item.gross_amount ??
+          item.line_total ??
+          Number(item.unit_price ?? 0) * Number(item.quantity ?? 1)
+        ),
+        cupSize: item.cup_size,
+        iceLevel: item.ice_level,
+        sugarLevel: item.sugar_level,
+        toppings: item.toppings,
+      })),
+    })
+  } catch (error) {
+    receiptPrintError =
+      error instanceof Error ? error.message : 'Onbekende printerfout'
+    console.error('Epson bon printen mislukt:', error)
+  }
+
   cart = []
   isSubmitting = false
-  message = `Bestelling betaald met ${paymentMethod} en opgeslagen als ${orderNumber}`
+  message = receiptPrintError
+    ? `Bestelling ${orderNumber} is betaald en opgeslagen, maar de bon kon niet worden geprint.`
+    : `Bestelling betaald met ${paymentMethod}, opgeslagen als ${orderNumber} en bon geprint.`
   render()
 }
 
@@ -13797,7 +13834,7 @@ function buildStickerZpl(
     `^FO24,242^A0N,18,18^FD${safeChannel}^FS`,
     qrValue ? `^FO252,178^BQN,2,4^FDLA,${qrValue}^FS` : '',
     '^FO22,306^GB356,1,1^FS',
-    '^FO24,318^A0N,13,13^FDPowered by Blue Cup POS^FS',
+    '^FO24,326^A0N,13,13^FDPowered by Blue Cup POS^FS',
     '^XZ',
   ]
     .filter(Boolean)
@@ -13870,7 +13907,7 @@ function buildStickerZplFooterDesign(
     `^FO64,296^A0N,12,12^FB230,1,0,L,0^FD#${safeOrderNumber}^FS`,
     `^FO340,278^A0N,12,12^FD${index}/${totalLabels}^FS`,
     `^FO332,296^A0N,12,12^FD${sanitizeZplText(time)}^FS`,
-    '^FO24,320^A0N,13,13^FDPowered by Blue Cup POS^FS',
+    '^FO24,328^A0N,13,13^FDPowered by Blue Cup POS^FS',
     '^XZ',
   ]
     .filter(Boolean)
@@ -14909,7 +14946,7 @@ function renderStickerPreview(
                 </div>
               </div>
 
-              <div style="position:absolute;left:24px;top:320px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
+              <div style="position:absolute;left:24px;top:328px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
                 Powered by Blue Cup POS
               </div>
             `
@@ -14917,7 +14954,7 @@ function renderStickerPreview(
               <!-- Originele footer van design 1 -->
               <div style="position:absolute;left:22px;top:306px;width:356px;height:1px;background:#000;"></div>
 
-              <div style="position:absolute;left:24px;top:318px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
+              <div style="position:absolute;left:24px;top:326px;font-size:13px;line-height:13px;font-weight:400;white-space:nowrap;">
                 Powered by Blue Cup POS
               </div>
             `
