@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Epson Print Test</title>
+</head>
+<body>
+  <h1>Epson TM-m30III test</h1>
+
+  <button onclick="printBon()">
+    Print testbon
+  </button>
+
+  <pre id="status"></pre>
+
+  <script>
+    async function printBon() {
+      const status = document.getElementById("status");
+
+      status.textContent = "Bezig met printen...";
+
+      const xml = `
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+          <s:Body>
+            <epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+              <text>BLUE CUP POS TEST&#10;</text>
+              <text>--------------------------&#10;</text>
+              <text>Epson TM-m30III werkt!&#10;</text>
+              <feed line="3"/>
+              <cut type="feed"/>
+            </epos-print>
+          </s:Body>
+        </s:Envelope>
+      `;
+
+      try {
+        const response = await fetch(
+          "https://192.168.178.34/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "text/xml; charset=utf-8",
+            },
+            body: xml,
+          }
+        );
+
+        const text = await response.text();
+
+        status.textContent =
+          "HTTP status: " +
+          response.status +
+          "\n\n" +
+          text;
+      } catch (error) {
+        status.textContent = "Fout:\n" + error;
+      }
+    }
+  </script>
+</body>
+</html>
