@@ -48,6 +48,11 @@ import {
   fetchProductToppingLinks,
   fetchCategories,
 } from './services/products'
+// Pure order-domain Supabase reads moved to ./services/orders.
+import {
+  fetchTodayOrders,
+  fetchOrderItemsForOrders,
+} from './services/orders'
 // FASE 1 authentication — logic lives in services/auth + utils/permissions.
 import type { Screen } from './types/navigation'
 import type { User, UserProfile, UserRole, AdminUserRow } from './types/user'
@@ -1036,6 +1041,10 @@ let autoPrintReloadTimer: number | null = null
 let isAutoPrintProcessing = false
 let ignoredPendingLabelIds = new Set<string>()
 
+// Automatische retry van eerder mislukte ('failed') Zebra-labels.
+let failedRetryIntervalId: number | null = null
+let lastFailedRetryCheckAt = 0
+
 let pickupWaitVisible = true
 let pickupWaitMinutes = 10
 let cashRegistrationEnabled = true
@@ -1722,21 +1731,14 @@ async function loadOrderHistory() {
 
   const { startIso, endIso } = getTodayDateRange()
 
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .gte('created_at', startIso)
-    .lt('created_at', endIso)
-    .order('created_at', { ascending: false })
-
-  if (error) {
+  try {
+    orders = await fetchTodayOrders(startIso, endIso)
+  } catch (error) {
     isLoadingOrderHistory = false
-    message = `Bonnen van vandaag laden mislukt: ${error.message}`
+    message = `Bonnen van vandaag laden mislukt: ${(error as { message?: string })?.message}`
     render()
     return
   }
-
-  orders = (data ?? []) as Order[]
 
   await Promise.all([
     loadOrderItemsForOrders(orders),
@@ -1753,21 +1755,14 @@ async function loadOrders() {
 
   const { startIso, endIso } = getTodayDateRange()
 
-  const { data, error } = await supabase
-    .from('orders')
-    .select('*')
-    .gte('created_at', startIso)
-    .lt('created_at', endIso)
-    .order('created_at', { ascending: false })
-
-  if (error) {
+  try {
+    orders = await fetchTodayOrders(startIso, endIso)
+  } catch (error) {
     isLoadingOrders = false
-    message = `Fout bij laden orders: ${error.message}`
+    message = `Fout bij laden orders: ${(error as { message?: string })?.message}`
     render()
     return
   }
-
-  orders = (data ?? []) as Order[]
 
   await loadOrderItemsForOrders(orders)
 
@@ -1840,23 +1835,12 @@ async function loadCustomerOrderProgress(shouldRender = true) {
 async function loadOrderItemsForOrders(orderList: Order[]) {
   const orderIds = orderList.map((order) => order.id)
 
-  if (orderIds.length === 0) {
-    orderItems = []
-    return
-  }
-
-  const { data, error } = await supabase
-    .from('order_items')
-    .select('*')
-    .in('order_id', orderIds)
-
-  if (error) {
+  try {
+    orderItems = await fetchOrderItemsForOrders(orderIds)
+  } catch (error) {
     console.error('Order items laden mislukt:', error)
     orderItems = []
-    return
   }
-
-  orderItems = (data ?? []) as OrderItem[]
 }
 
 
@@ -6077,19 +6061,15 @@ async function loadAdminSalesData() {
     return
   }
 
-  const { data: itemData, error: itemError } = await supabase
-    .from('order_items')
-    .select('*')
-    .in('order_id', ids)
-
-  if (itemError) {
+  try {
+    adminSalesOrderItems = await fetchOrderItemsForOrders(ids)
+  } catch (itemError) {
     isLoadingAdminSales = false
-    adminError = `Orderregels laden mislukt: ${itemError.message}`
+    adminError = `Orderregels laden mislukt: ${(itemError as { message?: string })?.message}`
     render()
     return
   }
 
-  adminSalesOrderItems = (itemData ?? []) as OrderItem[]
   isLoadingAdminSales = false
   render()
 }
@@ -8159,18 +8139,14 @@ async function loadAllAdminData() {
     return
   }
 
-  const { data: todayItemsData, error: todayItemsError } = await supabase
-    .from('order_items')
-    .select('*')
-    .in('order_id', todayOrderIds)
-
-  if (todayItemsError) {
-    adminError = `Verkochte drankjes laden mislukt: ${todayItemsError.message}`
+  try {
+    adminTodayOrderItems = await fetchOrderItemsForOrders(todayOrderIds)
+  } catch (todayItemsError) {
+    adminError = `Verkochte drankjes laden mislukt: ${(todayItemsError as { message?: string })?.message}`
     render()
     return
   }
 
-  adminTodayOrderItems = (todayItemsData ?? []) as OrderItem[]
   await loadPaymentsForOrders(adminTodayOrders)
   render()
 }
@@ -14012,6 +13988,50 @@ function buildDynamicStickerQrPayload(label: KitchenLabel) {
 // daarom sturen we ZPL via een kleine lokale Node print-service.
 const ZEBRA_PRINT_BRIDGE_URL = 'http://127.0.0.1:3001/print'
 
+// Als de lokale print-bridge offline is mag een sticker-print niet eindeloos
+// blijven hangen. Bij een timeout gooit fetchWithTimeout een fout; de
+// bestaande foutafhandeling markeert het label dan als 'failed' (blijft dus
+// opnieuw te printen), niet als 'printed'.
+const ZEBRA_PRINT_TIMEOUT_MS = 3000
+
+// Automatische retry van 'failed' labels wanneer de bridge weer online komt.
+// GET /health print niets; het bevestigt alleen dat de bridge draait.
+const ZEBRA_HEALTH_URL = 'http://127.0.0.1:3001/health'
+const ZEBRA_HEALTHCHECK_TIMEOUT_MS = 2500
+// Maximaal aantal AUTOMATISCHE printpogingen per label (initieel + retries).
+// Handmatige retry telt hier niet tegen mee.
+const MAX_AUTO_PRINT_ATTEMPTS = 3
+// Per retry-run worden maximaal zoveel failed labels terug naar pending gezet.
+const FAILED_RETRY_BATCH_SIZE = 5
+// De retry-run draait periodiek, maar doet niets zolang de bridge offline is.
+const FAILED_RETRY_INTERVAL_MS = 60_000
+// Ondergrens tussen twee retry-runs (beschermt tegen extra triggers).
+const FAILED_RETRY_COOLDOWN_MS = 30_000
+// Failed labels ouder dan dit worden niet meer automatisch geprobeerd.
+const FAILED_RETRY_MAX_AGE_MS = 12 * 60 * 60 * 1000
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Geen antwoord van de printer binnen ${timeoutMs / 1000} seconden.`
+      )
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 // 50 mm x 43 mm op 203 dpi ≈ 400 x 344 dots.
 const ZEBRA_LABEL_WIDTH_DOTS = 400
 const ZEBRA_LABEL_HEIGHT_DOTS = 344
@@ -14289,20 +14309,24 @@ async function sendZplToPrintBridge(
   zpl: string,
   order?: Order | null
 ) {
-  const response = await fetch(ZEBRA_PRINT_BRIDGE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await fetchWithTimeout(
+    ZEBRA_PRINT_BRIDGE_URL,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        labelId: label.id,
+        orderNumber:
+          order?.order_number ||
+          label.order_number ||
+          label.order_id,
+        zpl,
+      }),
     },
-    body: JSON.stringify({
-      labelId: label.id,
-      orderNumber:
-        order?.order_number ||
-        label.order_number ||
-        label.order_id,
-      zpl,
-    }),
-  })
+    ZEBRA_PRINT_TIMEOUT_MS
+  )
 
   const result = await response.json().catch(() => ({})) as {
     ok?: boolean
@@ -14511,6 +14535,180 @@ function scheduleAutomaticPrintCheck() {
   }, 250)
 }
 
+// Lichte, niet-printende healthcheck: is de lokale Zebra print-bridge bereikbaar?
+async function isZebraBridgeReachable(): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(
+      ZEBRA_HEALTH_URL,
+      { method: 'GET' },
+      ZEBRA_HEALTHCHECK_TIMEOUT_MS
+    )
+
+    if (!response.ok) {
+      return false
+    }
+
+    const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
+    return body.ok === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Zet eerder mislukte ('failed') labels gecontroleerd terug naar 'pending'
+ * zodat de bestaande pending -> printing -> printed worker ze normaal oppakt.
+ *
+ * - Draait alleen als de bridge via healthcheck bereikbaar is (geen retry-storm).
+ * - Verwerkt maximaal FAILED_RETRY_BATCH_SIZE labels per run.
+ * - Respecteert MAX_AUTO_PRINT_ATTEMPTS (labels daarboven blijven failed).
+ * - Slaat labels van niet-relevante/oude orders over.
+ * - Conditionele update ('failed' -> 'pending') voorkomt dubbele reset/print.
+ */
+async function requeueFailedLabels() {
+  if (isAutoPrintProcessing) {
+    return
+  }
+
+  const nowMs = Date.now()
+
+  if (nowMs - lastFailedRetryCheckAt < FAILED_RETRY_COOLDOWN_MS) {
+    return
+  }
+
+  lastFailedRetryCheckAt = nowMs
+
+  const bridgeReachable = await isZebraBridgeReachable()
+
+  if (!bridgeReachable) {
+    console.warn(
+      'Zebra bridge niet bereikbaar - mislukte labels worden nu niet opnieuw geprobeerd.'
+    )
+    return
+  }
+
+  const { data: failedData, error: failedError } = await supabase
+    .from('kitchen_labels')
+    .select('*')
+    .eq('print_status', 'failed')
+    .lt('print_attempts', MAX_AUTO_PRINT_ATTEMPTS)
+    .order('created_at', { ascending: true })
+    .limit(FAILED_RETRY_BATCH_SIZE)
+
+  if (failedError) {
+    console.error('Failed labels ophalen voor retry mislukt:', failedError)
+    return
+  }
+
+  const failedLabels = (failedData ?? []) as KitchenLabel[]
+
+  if (failedLabels.length === 0) {
+    return
+  }
+
+  console.log(
+    `Zebra bridge weer bereikbaar. ${failedLabels.length} failed label(s) geselecteerd voor automatische retry.`
+  )
+
+  const orderIds = Array.from(
+    new Set(
+      failedLabels
+        .map((label) => String(label.order_id))
+        .filter(Boolean)
+    )
+  )
+
+  const orderMap = new Map<string, Order>()
+
+  if (orderIds.length > 0) {
+    const { data: orderData, error: orderError } = await supabase
+      .from('orders')
+      .select('*')
+      .in('id', orderIds)
+
+    if (orderError) {
+      console.error('Orders voor failed-label retry ophalen mislukt:', orderError)
+      return
+    }
+
+    for (const order of (orderData ?? []) as Order[]) {
+      orderMap.set(String(order.id), order)
+    }
+  }
+
+  let requeuedCount = 0
+
+  for (const label of failedLabels) {
+    if (Number(label.print_attempts ?? 0) >= MAX_AUTO_PRINT_ATTEMPTS) {
+      console.log(
+        `Retry-limiet bereikt voor label ${label.id} - blijft failed (handmatig herstelbaar).`
+      )
+      continue
+    }
+
+    const createdAtMs = label.created_at
+      ? new Date(label.created_at).getTime()
+      : 0
+
+    if (createdAtMs && nowMs - createdAtMs > FAILED_RETRY_MAX_AGE_MS) {
+      console.log(
+        `Label ${label.id} overgeslagen: te oud voor automatische retry.`
+      )
+      continue
+    }
+
+    const order = orderMap.get(String(label.order_id))
+
+    if (
+      !order ||
+      !isOrderReadyForAutomaticPrint(order) ||
+      order.status === 'completed'
+    ) {
+      console.log(
+        `Label ${label.id} overgeslagen: order niet meer relevant voor automatische print.`
+      )
+      continue
+    }
+
+    const { data: resetRows, error: resetError } = await supabase
+      .from('kitchen_labels')
+      .update({
+        print_status: 'pending',
+        printed_at: null,
+        print_error: null,
+      })
+      .eq('id', label.id)
+      .eq('print_status', 'failed')
+      .lt('print_attempts', MAX_AUTO_PRINT_ATTEMPTS)
+      .select('id')
+
+    if (resetError) {
+      console.error(
+        `Failed label ${label.id} terugzetten naar pending mislukt:`,
+        resetError
+      )
+      continue
+    }
+
+    if (!resetRows || resetRows.length === 0) {
+      // Al opgepakt door een andere tab/worker, of net op de limiet gekomen.
+      continue
+    }
+
+    // Zorg dat de worker dit teruggezette label niet als "oud pending" negeert.
+    ignoredPendingLabelIds.delete(String(label.id))
+    requeuedCount += 1
+
+    console.log(
+      `Failed label ${label.id} teruggezet naar pending voor automatische retry.`
+    )
+  }
+
+  if (requeuedCount > 0) {
+    scheduleAutomaticPrintCheck()
+  }
+}
+
 async function startAutomaticPrintWorker() {
   if (autoPrintRealtimeChannel) {
     return
@@ -14571,6 +14769,17 @@ async function startAutomaticPrintWorker() {
         console.error('Automatische Zebra printer realtime fout:', error)
       }
     })
+
+  // Periodiek (en 1x bij start) failed labels opnieuw aanbieden zodra de
+  // bridge weer bereikbaar is. requeueFailedLabels() doet zelf eerst een
+  // healthcheck + cooldown, dus dit is geen retry-storm.
+  if (failedRetryIntervalId === null) {
+    failedRetryIntervalId = window.setInterval(() => {
+      void requeueFailedLabels()
+    }, FAILED_RETRY_INTERVAL_MS)
+  }
+
+  void requeueFailedLabels()
 }
 
 async function printStickerOnZebra(labelId: string, design = 1) {
@@ -14611,20 +14820,24 @@ async function printStickerOnZebra(labelId: string, design = 1) {
       printPreviewOrder
     )
 
-    const response = await fetch(ZEBRA_PRINT_BRIDGE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const response = await fetchWithTimeout(
+      ZEBRA_PRINT_BRIDGE_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          labelId: label.id,
+          orderNumber:
+            printPreviewOrder?.order_number ||
+            label.order_number ||
+            label.order_id,
+          zpl,
+        }),
       },
-      body: JSON.stringify({
-        labelId: label.id,
-        orderNumber:
-          printPreviewOrder?.order_number ||
-          label.order_number ||
-          label.order_id,
-        zpl,
-      }),
-    })
+      ZEBRA_PRINT_TIMEOUT_MS
+    )
 
     const result = await response.json().catch(() => ({})) as {
       ok?: boolean
