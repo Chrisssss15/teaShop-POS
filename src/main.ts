@@ -48,12 +48,26 @@ import {
   fetchProductToppingLinks,
   fetchCategories,
 } from './services/products'
+// FASE 1 authentication — logic lives in services/auth + utils/permissions.
+import type { Screen } from './types/navigation'
+import type { User, UserProfile } from './types/user'
+import {
+  getCurrentSession,
+  fetchCurrentProfile,
+  signIn as authSignIn,
+  signOut as authSignOut,
+} from './services/auth'
+import {
+  canAccessScreen,
+  canAccessAnyAdminScreen,
+  defaultScreenForRole,
+  isPublicScreen,
+  roleLabel,
+} from './utils/permissions'
 
 // =============================
 // TYPES
 // =============================
-
-type Screen = 'pos' | 'pos-product-status' | 'pos-settings' | 'orders' | 'kitchen' | 'customer' | 'pickup' | 'order-history' | 'admin' | 'admin-products' | 'admin-sales' | 'admin-day-close' | 'admin-bookkeeper' | 'admin-add-product' | 'admin-add-topping' | 'admin-categories' | 'print-preview' | 'payment-test'
 
 type CustomerLanguage = 'nl' | 'en' | 'cn'
 
@@ -512,12 +526,190 @@ function updateModeInUrl(nextScreen: Screen) {
 }
 
 // =============================
+// AUTH WIRING (FASE 1)
+// Minimal glue only. Real logic: services/auth.ts + utils/permissions.ts
+// =============================
+
+async function initAuth() {
+  try {
+    const session = await getCurrentSession()
+    currentUser = session?.user ?? null
+
+    if (currentUser) {
+      try {
+        currentProfile = await fetchCurrentProfile(currentUser.id)
+      } catch (profileError) {
+        console.error('Profiel laden mislukt:', profileError)
+        currentProfile = null
+      }
+    } else {
+      currentProfile = null
+    }
+  } catch (sessionError) {
+    console.error('Sessie laden mislukt:', sessionError)
+    currentUser = null
+    currentProfile = null
+  } finally {
+    isAuthLoading = false
+  }
+
+  bindAuthListener()
+}
+
+function bindAuthListener() {
+  if (authListenerBound) return
+  authListenerBound = true
+
+  supabase.auth.onAuthStateChange((event, session) => {
+    const nextUser = session?.user ?? null
+
+    // The first event mirrors the session initAuth() already resolved — let
+    // startApp() do the initial render instead of doing it twice here.
+    if (event === 'INITIAL_SESSION') {
+      currentUser = nextUser
+      return
+    }
+
+    if (event === 'SIGNED_OUT' || !nextUser) {
+      currentUser = null
+      currentProfile = null
+      if (!isPublicScreen(screen)) {
+        screen = 'login'
+      }
+      render()
+      return
+    }
+
+    // A manual login is in progress — handleLoginSubmit() owns navigation.
+    if (isLoggingIn) {
+      currentUser = nextUser
+      return
+    }
+
+    // Same account (token refresh / user update): keep state, no navigation.
+    if (nextUser.id === currentUser?.id) {
+      currentUser = nextUser
+      return
+    }
+
+    // A different account became active (e.g. logged in from another tab).
+    currentUser = nextUser
+    void (async () => {
+      try {
+        currentProfile = await fetchCurrentProfile(nextUser.id)
+      } catch (profileError) {
+        console.error('Profiel laden mislukt:', profileError)
+        currentProfile = null
+      }
+      render()
+    })()
+  })
+}
+
+/**
+ * Which screen may we actually show for `requested`?
+ * Returns 'login' when the login / blocked view must be shown instead.
+ */
+function resolveGuardedScreen(requested: Screen): Screen {
+  if (isPublicScreen(requested)) return requested
+  if (requested === 'login') return 'login'
+  if (!currentUser) return 'login'
+  if (!currentProfile || !currentProfile.is_active) return 'login'
+  if (!canAccessScreen(currentProfile, requested)) {
+    return defaultScreenForRole(currentProfile.role)
+  }
+  return requested
+}
+
+/** Apply the guard to the current `screen`, fixing the URL when it redirects. */
+function enforceScreenAccess() {
+  const guarded = resolveGuardedScreen(screen)
+  if (guarded === screen) return
+  screen = guarded
+  if (guarded !== 'login') {
+    updateModeInUrl(guarded)
+  }
+}
+
+async function handleLoginSubmit() {
+  if (isLoggingIn) return
+
+  const emailInput = document.querySelector<HTMLInputElement>('#auth-email')
+  const passwordInput = document.querySelector<HTMLInputElement>('#auth-password')
+  const email = emailInput?.value.trim() ?? ''
+  const password = passwordInput?.value ?? ''
+
+  if (!email || !password) {
+    authError = 'Vul e-mail en wachtwoord in.'
+    render()
+    return
+  }
+
+  isLoggingIn = true
+  authError = ''
+  render()
+
+  try {
+    const session = await authSignIn(email, password)
+    currentUser = session.user
+    currentProfile = await fetchCurrentProfile(session.user.id)
+  } catch (loginError) {
+    console.error('Inloggen mislukt:', loginError)
+    authError = 'Inloggen mislukt. Controleer je e-mail en wachtwoord.'
+    isLoggingIn = false
+    render()
+    return
+  }
+
+  isLoggingIn = false
+
+  if (!currentProfile || !currentProfile.is_active) {
+    // render() shows the "no profile" / "deactivated" message + logout button.
+    screen = 'login'
+    render()
+    return
+  }
+
+  const target = defaultScreenForRole(currentProfile.role)
+  screen = target
+  updateModeInUrl(target)
+  await bootCurrentScreen()
+}
+
+async function handleLogout() {
+  try {
+    await authSignOut()
+  } catch (logoutError) {
+    console.error('Uitloggen mislukt:', logoutError)
+  }
+
+  currentUser = null
+  currentProfile = null
+  authError = ''
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+
+  if (!isPublicScreen(screen)) {
+    screen = 'login'
+  }
+  render()
+}
+
+// =============================
 // GLOBAL STATE
 // App, products, cart, orders, kitchen
 // =============================
 
 let screen: Screen = getScreenFromMode(mode)
 let orderFilter: OrderFilter = 'active'
+
+// --- FASE 1 auth state (minimal; real logic in services/auth + utils/permissions) ---
+let currentUser: User | null = null
+let currentProfile: UserProfile | null = null
+let isAuthLoading = true
+let authError = ''
+let isLoggingIn = false
+let authListenerBound = false
 
 let products: Product[] = []
 let toppings: Topping[] = []
@@ -7796,35 +7988,81 @@ async function loadAllAdminData() {
 // =============================
 
 function renderNav() {
+  const canPos = canAccessScreen(currentProfile, 'pos')
+  const canOrders = canAccessScreen(currentProfile, 'orders')
+  const canKitchen = canAccessScreen(currentProfile, 'kitchen')
+  const canAdmin = canAccessAnyAdminScreen(currentProfile)
+
+  const posBtn = canPos
+    ? `<button class="nav-btn ${screen === 'pos' || screen === 'pos-settings' ? 'active' : ''}" id="go-pos">POS</button>`
+    : ''
+
+  const ordersBtn = canOrders
+    ? `<button class="nav-btn ${screen === 'orders' ? 'active' : ''}" id="go-orders">Orders</button>`
+    : ''
+
+  const kitchenBtn = canKitchen
+    ? `<button class="nav-btn ${screen === 'kitchen' ? 'active' : ''}" id="go-kitchen">Kitchen</button>`
+    : ''
+
+  const adminActive =
+    screen === 'admin' ||
+    screen === 'admin-products' ||
+    screen === 'admin-sales' ||
+    screen === 'admin-day-close' ||
+    screen === 'admin-bookkeeper' ||
+    screen === 'admin-add-product' ||
+    screen === 'admin-add-topping' ||
+    screen === 'admin-categories'
+
+  const adminBtn = canAdmin
+    ? `<button class="nav-btn ${adminActive ? 'active' : ''}" id="go-admin">Admin</button>`
+    : ''
+
   return `
     <nav class="top-nav">
-      <button class="nav-btn ${screen === 'pos' || screen === 'pos-settings' ? 'active' : ''}" id="go-pos">
-        POS
-      </button>
-
-      <button class="nav-btn ${screen === 'orders' ? 'active' : ''}" id="go-orders">
-        Orders
-      </button>
-
-      <button class="nav-btn ${screen === 'kitchen' ? 'active' : ''}" id="go-kitchen">
-        Kitchen
-      </button>
-
-      <button class="nav-btn ${
-        screen === 'admin' ||
-        screen === 'admin-products' ||
-        screen === 'admin-sales' ||
-        screen === 'admin-day-close' ||
-        screen === 'admin-bookkeeper' ||
-        screen === 'admin-add-product' ||
-        screen === 'admin-add-topping' ||
-        screen === 'admin-categories'
-          ? 'active'
-          : ''
-      }" id="go-admin">
-        Admin
-      </button>
+      ${posBtn}
+      ${ordersBtn}
+      ${kitchenBtn}
+      ${adminBtn}
+      ${renderNavAccount()}
     </nav>
+  `
+}
+
+function renderNavAccount() {
+  if (!currentProfile) return ''
+
+  return `
+    <div class="nav-account">
+      <div class="nav-account-info">
+        <strong>${escapeHtml(currentProfile.full_name || 'Medewerker')}</strong>
+        <span>${escapeHtml(roleLabel(currentProfile.role))}</span>
+      </div>
+      <button type="button" class="nav-account-logout" id="auth-logout">Uitloggen</button>
+    </div>
+  `
+}
+
+// Admin dashboard shortcut card — hidden when the current role can't open its target.
+function renderAdminDashboardCard(
+  id: string,
+  targetScreen: Screen,
+  icon: string,
+  title: string,
+  subtitle: string
+) {
+  if (!canAccessScreen(currentProfile, targetScreen)) return ''
+
+  return `
+    <button class="admin-dashboard-card" id="${id}">
+      <span class="admin-dashboard-card-icon">${icon}</span>
+      <span class="admin-dashboard-card-content">
+        <strong>${title}</strong>
+        <small>${subtitle}</small>
+      </span>
+      <span class="admin-dashboard-card-arrow">›</span>
+    </button>
   `
 }
 
@@ -10253,41 +10491,10 @@ function renderAdmin() {
           </div>
 
           <div class="admin-luxury-action-grid admin-luxury-action-grid-four">
-            <button class="admin-dashboard-card" id="go-admin-products">
-              <span class="admin-dashboard-card-icon">◫</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Producten</strong>
-                <small>Drankjes, prijzen en beschikbaarheid</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-dashboard-categories">
-              <span class="admin-dashboard-card-icon">≡</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Categorieën</strong>
-                <small>Menu-indeling en kortingen beheren</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-dashboard-toppings">
-              <span class="admin-dashboard-card-icon">＋</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Toppings</strong>
-                <small>Toppings bekijken en aanpassen</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-order-history">
-              <span class="admin-dashboard-card-icon">⌕</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Orderhistorie</strong>
-                <small>Bestellingen van vandaag terugzoeken</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
+            ${renderAdminDashboardCard('go-admin-products', 'admin-products', '◫', 'Producten', 'Drankjes, prijzen en beschikbaarheid')}
+            ${renderAdminDashboardCard('go-admin-dashboard-categories', 'admin-categories', '≡', 'Categorieën', 'Menu-indeling en kortingen beheren')}
+            ${renderAdminDashboardCard('go-admin-dashboard-toppings', 'admin-products', '＋', 'Toppings', 'Toppings bekijken en aanpassen')}
+            ${renderAdminDashboardCard('go-admin-order-history', 'order-history', '⌕', 'Orderhistorie', 'Bestellingen van vandaag terugzoeken')}
           </div>
         </section>
 
@@ -10300,41 +10507,10 @@ function renderAdmin() {
           </div>
 
           <div class="admin-luxury-action-grid admin-luxury-action-grid-four">
-            <button class="admin-dashboard-card" id="go-admin-administration">
-              <span class="admin-dashboard-card-icon">↗</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Verkoopoverzicht</strong>
-                <small>Omzet, cups en historische verkoop</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-bookkeeper">
-              <span class="admin-dashboard-card-icon">⇩</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Boekhouder</strong>
-                <small>Periodeoverzicht, BTW en CSV-export</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-day-close">
-              <span class="admin-dashboard-card-icon">✓</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Dagafsluiting</strong>
-                <small>Controleer cijfers en maak het Z-rapport</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-cash">
-              <span class="admin-dashboard-card-icon">€</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Kas</strong>
-                <small>Openen, storten, opnemen en afsluiten</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
+            ${renderAdminDashboardCard('go-admin-administration', 'admin-sales', '↗', 'Verkoopoverzicht', 'Omzet, cups en historische verkoop')}
+            ${renderAdminDashboardCard('go-admin-bookkeeper', 'admin-bookkeeper', '⇩', 'Boekhouder', 'Periodeoverzicht, BTW en CSV-export')}
+            ${renderAdminDashboardCard('go-admin-day-close', 'admin-day-close', '✓', 'Dagafsluiting', 'Controleer cijfers en maak het Z-rapport')}
+            ${renderAdminDashboardCard('go-admin-cash', 'admin-day-close', '€', 'Kas', 'Openen, storten, opnemen en afsluiten')}
           </div>
         </section>
 
@@ -10347,23 +10523,8 @@ function renderAdmin() {
           </div>
 
           <div class="admin-luxury-action-grid admin-luxury-action-grid-two">
-            <button class="admin-dashboard-card" id="go-admin-print-preview">
-              <span class="admin-dashboard-card-icon">▣</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Print test</strong>
-                <small>Sticker-preview en Zebra-print testen</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
-
-            <button class="admin-dashboard-card" id="go-admin-settings">
-              <span class="admin-dashboard-card-icon">⚙</span>
-              <span class="admin-dashboard-card-content">
-                <strong>Instellingen</strong>
-                <small>Pickup-scherm en kassainstellingen beheren</small>
-              </span>
-              <span class="admin-dashboard-card-arrow">›</span>
-            </button>
+            ${renderAdminDashboardCard('go-admin-print-preview', 'print-preview', '▣', 'Print test', 'Sticker-preview en Zebra-print testen')}
+            ${renderAdminDashboardCard('go-admin-settings', 'pos-settings', '⚙', 'Instellingen', 'Pickup-scherm en kassainstellingen beheren')}
           </div>
         </section>
 
@@ -15132,11 +15293,118 @@ function renderPaymentTest() {
 
 
 // =============================
+// AUTH SCREENS (FASE 1)
+// =============================
+
+function renderAuthShell(inner: string) {
+  return `
+    <div class="auth-page">
+      <div class="auth-shell">
+        <div class="auth-brand">
+          <img class="auth-logo" src="/logo.jpg" alt="Blue Cup logo" />
+          <div>
+            <span>Blue Cup</span>
+            <strong>Medewerkers</strong>
+          </div>
+        </div>
+        <div class="auth-card">
+          ${inner}
+        </div>
+      </div>
+    </div>
+  `
+}
+
+function renderAuthLoading() {
+  return renderAuthShell(`<div class="auth-loading">Bezig met laden…</div>`)
+}
+
+function renderLoginScreen() {
+  return renderAuthShell(`
+    <h1 class="auth-title">Inloggen</h1>
+    <p class="auth-subtitle">Log in met je medewerkersaccount.</p>
+
+    ${authError ? `<div class="auth-error">${escapeHtml(authError)}</div>` : ''}
+
+    <form id="auth-form" class="auth-form" autocomplete="off">
+      <label class="auth-field">
+        <span>E-mail</span>
+        <input
+          id="auth-email"
+          type="email"
+          name="email"
+          autocomplete="username"
+          ${isLoggingIn ? 'disabled' : ''}
+          required
+        />
+      </label>
+
+      <label class="auth-field">
+        <span>Wachtwoord</span>
+        <input
+          id="auth-password"
+          type="password"
+          name="password"
+          autocomplete="current-password"
+          ${isLoggingIn ? 'disabled' : ''}
+          required
+        />
+      </label>
+
+      <button id="auth-submit" type="submit" class="auth-primary-btn" ${isLoggingIn ? 'disabled' : ''}>
+        ${isLoggingIn ? 'Bezig met inloggen…' : 'Inloggen'}
+      </button>
+    </form>
+  `)
+}
+
+function renderAuthBlockedScreen(reason: 'no-profile' | 'deactivated') {
+  const text =
+    reason === 'deactivated'
+      ? 'Dit account is gedeactiveerd.'
+      : 'Voor dit account is geen medewerkersprofiel ingesteld.'
+
+  return renderAuthShell(`
+    <h1 class="auth-title">Geen toegang</h1>
+    <p class="auth-blocked-text">${text}</p>
+    <button id="auth-logout" type="button" class="auth-secondary-btn">Uitloggen</button>
+  `)
+}
+
+function renderAuthGate() {
+  if (!currentUser) {
+    return renderLoginScreen()
+  }
+  if (!currentProfile) {
+    return renderAuthBlockedScreen('no-profile')
+  }
+  if (!currentProfile.is_active) {
+    return renderAuthBlockedScreen('deactivated')
+  }
+  // Signed in + active but somehow still on the gate — fall back to login view.
+  return renderLoginScreen()
+}
+
+// =============================
 // APP RENDER
 // =============================
 
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!
+
+  if (isAuthLoading) {
+    app.innerHTML = renderAuthLoading()
+    return
+  }
+
+  // Route guard: keep `screen` within what the current role may open.
+  enforceScreenAccess()
+
+  if (screen === 'login') {
+    app.innerHTML = renderAuthGate()
+    bindEvents()
+    return
+  }
 
   if (screen === 'pos') {
     app.innerHTML = renderPos()
@@ -15219,6 +15487,16 @@ function render() {
 // =============================
 
 function bindEvents() {
+  // --- FASE 1 auth controls ---
+  document.querySelector<HTMLFormElement>('#auth-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void handleLoginSubmit()
+  })
+
+  document.querySelector<HTMLButtonElement>('#auth-logout')?.addEventListener('click', () => {
+    void handleLogout()
+  })
+
   document.querySelector<HTMLButtonElement>('#payment-test-success')?.addEventListener('click', () => {
     void updatePaymentTestStatus('paid')
   })
@@ -16123,14 +16401,31 @@ function bindEvents() {
 
 window.addEventListener('popstate', async () => {
   const currentParams = new URLSearchParams(window.location.search)
-  const nextScreen = getScreenFromMode(currentParams.get('mode'))
+  const requestedScreen = getScreenFromMode(currentParams.get('mode'))
+  const guardedScreen = resolveGuardedScreen(requestedScreen)
 
   stopAutoRefresh()
   stopCustomerProgressRefresh()
   removeCustomerScrollListeners()
 
-  screen = nextScreen
   message = ''
+
+  if (guardedScreen === 'login') {
+    screen = 'login'
+    render()
+    return
+  }
+
+  if (guardedScreen !== requestedScreen) {
+    // Auth guard redirected this navigation — correct the URL and boot the
+    // allowed screen from scratch.
+    screen = guardedScreen
+    updateModeInUrl(guardedScreen)
+    await bootCurrentScreen()
+    return
+  }
+
+  screen = guardedScreen
 
   if (screen === 'print-preview') {
     await loadProducts()
@@ -16204,7 +16499,10 @@ window.addEventListener('popstate', async () => {
 
 getCustomerSessionId()
 
-async function startApp() {
+// Loads all data + realtime for the CURRENT `screen`. Behaviour is unchanged
+// from the original startApp body; it was only extracted so the login flow
+// can reuse it after a successful sign-in.
+async function bootCurrentScreen() {
   // Alleen op de shop-computer starten.
   // Customer/payment-test pagina's kunnen op telefoons draaien en mogen niet
   // proberen te verbinden met de lokale printer bridge van de winkel.
@@ -16274,6 +16572,22 @@ async function startApp() {
   }
 
   render()
+}
+
+async function startApp() {
+  // FASE 1: resolve the session first so route guards can run.
+  await initAuth()
+
+  // Public screens (customer QR, pickup display, fake-payment return) never
+  // need a login. Everything else is guarded here.
+  enforceScreenAccess()
+
+  if (screen === 'login') {
+    render()
+    return
+  }
+
+  await bootCurrentScreen()
 }
 
 startApp()

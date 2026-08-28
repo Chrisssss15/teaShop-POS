@@ -1,7 +1,19 @@
 // =============================
 // USER / AUTH TYPES
 // =============================
-// Placeholder for upcoming authentication & user roles work.
-// Intentionally empty for now — no auth is implemented yet.
+// FASE 1 authentication. Kept framework-free; only type declarations here.
 
-export {}
+import type { User, Session } from '@supabase/supabase-js'
+
+export type UserRole = 'admin' | 'manager' | 'staff' | 'kitchen'
+
+export type UserProfile = {
+  id: string
+  full_name: string
+  role: UserRole
+  is_active: boolean
+  created_at?: string | null
+}
+
+// Re-export the Supabase auth primitives so app code has a single import point.
+export type { User, Session }
