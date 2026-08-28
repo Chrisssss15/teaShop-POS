@@ -17329,3 +17329,116 @@ body:has(.orders-page) .status-done{
     display: none;
   }
 }
+
+/* =============================
+   FASE 2 — Medewerkers (admin-users) page
+   Reuses .admin-page / .admin-panel / .admin-input / .admin-small-btn etc.
+   ============================= */
+
+.admin-users-page .admin-panel{
+  margin-bottom: 16px;
+}
+
+.admin-users-form{
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 150px;
+  gap: 12px;
+  align-items: end;
+}
+
+.admin-users-form label{
+  display: grid;
+  gap: 7px;
+}
+
+.admin-users-form label > span{
+  color: #0844a3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.admin-users-form-actions{
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}
+
+.admin-users-list{
+  display: grid;
+  gap: 8px;
+}
+
+.admin-users-row{
+  grid-template-columns: minmax(0, 1fr) 150px 90px auto;
+}
+
+.admin-users-row.is-inactive{
+  opacity: 0.62;
+}
+
+.admin-users-row .admin-list-main strong{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-users-you{
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e7f0ff;
+  color: #0844a3;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.admin-users-role-select{
+  height: 38px;
+  font-size: 13px;
+}
+
+.admin-users-badge{
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-users-badge.is-active{
+  background: #e7f6ea;
+  color: #25703a;
+}
+
+.admin-users-badge.is-inactive{
+  background: #f0f0f0;
+  color: #6f7a8a;
+}
+
+.admin-users-hint{
+  color: #8995a6;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-users-empty{
+  color: #6f7a8a;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 0;
+}
+
+@media (max-width: 900px){
+  .admin-users-form{
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .admin-users-row{
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+  }
+
+  .admin-users-row .admin-users-role-cell,
+  .admin-users-row .admin-users-status-cell{
+    grid-column: span 1;
+  }
+}

@@ -8,6 +8,13 @@
 import type { Screen } from '../types/navigation'
 import type { UserProfile, UserRole } from '../types/user'
 
+/** Every assignable role, in display order. Single source of truth. */
+export const USER_ROLES: readonly UserRole[] = ['admin', 'manager', 'staff', 'kitchen']
+
+export function isUserRole(value: unknown): value is UserRole {
+  return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value)
+}
+
 /**
  * Screens that never require a staff login.
  * - customer : QR ordering flow for guests
@@ -43,6 +50,7 @@ const ROLE_SCREENS: Record<UserRole, readonly Screen[]> = {
     'admin-add-product',
     'admin-add-topping',
     'admin-categories',
+    'admin-users',
     'print-preview',
     'payment-test',
   ],

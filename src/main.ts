@@ -50,7 +50,7 @@ import {
 } from './services/products'
 // FASE 1 authentication — logic lives in services/auth + utils/permissions.
 import type { Screen } from './types/navigation'
-import type { User, UserProfile } from './types/user'
+import type { User, UserProfile, UserRole, AdminUserRow } from './types/user'
 import {
   getCurrentSession,
   fetchCurrentProfile,
@@ -63,7 +63,16 @@ import {
   defaultScreenForRole,
   isPublicScreen,
   roleLabel,
+  USER_ROLES,
+  isUserRole,
 } from './utils/permissions'
+// FASE 2 staff account management — logic lives in services/users.
+import {
+  fetchStaffUsers,
+  createStaffUser,
+  updateUserRole,
+  setUserActive,
+} from './services/users'
 
 // =============================
 // TYPES
@@ -513,6 +522,7 @@ function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'admin-add-product') return 'admin-add-product'
   if (modeValue === 'admin-add-topping') return 'admin-add-topping'
   if (modeValue === 'admin-categories') return 'admin-categories'
+  if (modeValue === 'admin-users') return 'admin-users'
   if (modeValue === 'print-preview') return 'print-preview'
   if (modeValue === 'payment-test') return 'payment-test'
 
@@ -696,6 +706,175 @@ async function handleLogout() {
 }
 
 // =============================
+// STAFF ACCOUNT MANAGEMENT WIRING (FASE 2)
+// Minimal glue only. Real logic: services/users.ts + Edge Function admin-users.
+// The route guard already blocks non-admins from the 'admin-users' screen.
+// =============================
+
+async function goToAdminUsers() {
+  stopAutoRefresh()
+  stopCustomerProgressRefresh()
+  removeCustomerScrollListeners()
+
+  screen = 'admin-users'
+  message = ''
+  adminUsersError = ''
+  adminUsersMessage = ''
+  updateModeInUrl('admin-users')
+
+  await loadAdminUsers()
+}
+
+async function loadAdminUsers() {
+  isLoadingAdminUsers = true
+  adminUsersError = ''
+  render()
+
+  try {
+    adminUsers = await fetchStaffUsers()
+  } catch (error) {
+    adminUsers = []
+    adminUsersError =
+      error instanceof Error ? error.message : 'Medewerkers ophalen mislukt.'
+  } finally {
+    isLoadingAdminUsers = false
+  }
+
+  render()
+}
+
+async function handleCreateStaffUser() {
+  if (isSubmittingAdminUser) return
+
+  const fullName =
+    document.querySelector<HTMLInputElement>('#admin-user-name')?.value.trim() ?? ''
+  const email =
+    document.querySelector<HTMLInputElement>('#admin-user-email')?.value.trim() ?? ''
+  const password =
+    document.querySelector<HTMLInputElement>('#admin-user-password')?.value ?? ''
+  const roleValue =
+    document.querySelector<HTMLSelectElement>('#admin-user-role')?.value ?? ''
+
+  // Keep name/email/role so a failed attempt doesn't wipe the form.
+  // The password is deliberately NOT stored.
+  adminUserDraft = {
+    fullName,
+    email,
+    role: isUserRole(roleValue) ? roleValue : 'staff',
+  }
+  adminUsersError = ''
+  adminUsersMessage = ''
+
+  if (!fullName || !email || !password) {
+    adminUsersError = 'Vul naam, e-mail en een tijdelijk wachtwoord in.'
+    render()
+    return
+  }
+  if (password.length < 8) {
+    adminUsersError = 'Het tijdelijke wachtwoord moet minimaal 8 tekens zijn.'
+    render()
+    return
+  }
+  if (!isUserRole(roleValue)) {
+    adminUsersError = 'Kies een geldige rol.'
+    render()
+    return
+  }
+
+  isSubmittingAdminUser = true
+  render()
+
+  try {
+    await createStaffUser({ email, password, fullName, role: roleValue })
+    adminUsersMessage = `Account voor ${fullName} aangemaakt.`
+    adminUserDraft = { fullName: '', email: '', role: 'staff' }
+  } catch (error) {
+    adminUsersError =
+      error instanceof Error ? error.message : 'Account aanmaken mislukt.'
+  } finally {
+    isSubmittingAdminUser = false
+  }
+
+  // Refresh the list (new row appears on success). Failure here is non-fatal.
+  try {
+    adminUsers = await fetchStaffUsers()
+  } catch {
+    // keep the existing message
+  }
+
+  render()
+}
+
+async function handleChangeStaffRole(userId: string, nextRoleValue: string) {
+  if (pendingAdminUserId) return
+  if (!isUserRole(nextRoleValue)) return
+
+  const row = adminUsers.find((user) => user.id === userId)
+  if (!row || row.role === nextRoleValue) return
+
+  // MVP self-protection: the logged-in admin cannot remove their own admin role.
+  if (userId === currentUser?.id && nextRoleValue !== 'admin') {
+    adminUsersError = 'Je kunt je eigen admin-rol niet wijzigen.'
+    adminUsersMessage = ''
+    render()
+    return
+  }
+
+  pendingAdminUserId = userId
+  adminUsersError = ''
+  adminUsersMessage = ''
+  render()
+
+  try {
+    await updateUserRole(userId, nextRoleValue)
+    adminUsersMessage = `Rol van ${row.full_name} gewijzigd naar ${roleLabel(nextRoleValue)}.`
+    adminUsers = await fetchStaffUsers()
+  } catch (error) {
+    adminUsersError =
+      error instanceof Error ? error.message : 'Rol wijzigen mislukt.'
+  } finally {
+    pendingAdminUserId = null
+  }
+
+  render()
+}
+
+async function handleToggleStaffActive(userId: string, nextActive: boolean) {
+  if (pendingAdminUserId) return
+
+  const row = adminUsers.find((user) => user.id === userId)
+  if (!row) return
+
+  // MVP self-protection: the logged-in admin cannot deactivate themselves.
+  if (userId === currentUser?.id && !nextActive) {
+    adminUsersError = 'Je kunt je eigen account niet deactiveren.'
+    adminUsersMessage = ''
+    render()
+    return
+  }
+
+  pendingAdminUserId = userId
+  adminUsersError = ''
+  adminUsersMessage = ''
+  render()
+
+  try {
+    await setUserActive(userId, nextActive)
+    adminUsersMessage = nextActive
+      ? `${row.full_name} geactiveerd.`
+      : `${row.full_name} gedeactiveerd.`
+    adminUsers = await fetchStaffUsers()
+  } catch (error) {
+    adminUsersError =
+      error instanceof Error ? error.message : 'Status wijzigen mislukt.'
+  } finally {
+    pendingAdminUserId = null
+  }
+
+  render()
+}
+
+// =============================
 // GLOBAL STATE
 // App, products, cart, orders, kitchen
 // =============================
@@ -710,6 +889,19 @@ let isAuthLoading = true
 let authError = ''
 let isLoggingIn = false
 let authListenerBound = false
+
+// --- FASE 2 staff account management state (admin-users screen) ---
+let adminUsers: AdminUserRow[] = []
+let isLoadingAdminUsers = false
+let adminUsersError = ''
+let adminUsersMessage = ''
+let isSubmittingAdminUser = false
+let pendingAdminUserId: string | null = null
+let adminUserDraft: { fullName: string; email: string; role: UserRole } = {
+  fullName: '',
+  email: '',
+  role: 'staff',
+}
 
 let products: Product[] = []
 let toppings: Topping[] = []
@@ -10522,7 +10714,8 @@ function renderAdmin() {
             </div>
           </div>
 
-          <div class="admin-luxury-action-grid admin-luxury-action-grid-two">
+          <div class="admin-luxury-action-grid admin-luxury-action-grid-three">
+            ${renderAdminDashboardCard('go-admin-users', 'admin-users', '👥', 'Medewerkers', 'Accounts, rollen en toegang beheren')}
             ${renderAdminDashboardCard('go-admin-print-preview', 'print-preview', '▣', 'Print test', 'Sticker-preview en Zebra-print testen')}
             ${renderAdminDashboardCard('go-admin-settings', 'pos-settings', '⚙', 'Instellingen', 'Pickup-scherm en kassainstellingen beheren')}
           </div>
@@ -11777,6 +11970,167 @@ function renderAdminCategoriesPage() {
 
       ${renderAdminCategoryEditModal()}
       ${renderAdminCategoryProductsModal()}
+    </div>
+  `
+}
+
+function renderStaffRoleOptions(selected: UserRole) {
+  return USER_ROLES.map(
+    (role) =>
+      `<option value="${role}" ${role === selected ? 'selected' : ''}>${roleLabel(role)}</option>`
+  ).join('')
+}
+
+function renderAdminUsersPage() {
+  const rows = adminUsers
+    .map((user) => {
+      const isSelf = user.id === currentUser?.id
+      const busy = pendingAdminUserId === user.id
+
+      return `
+        <div class="admin-list-item admin-users-row ${user.is_active ? '' : 'is-inactive'}">
+          <div class="admin-list-main">
+            <strong>
+              ${escapeHtml(user.full_name || '—')}
+              ${isSelf ? '<span class="admin-users-you">jij</span>' : ''}
+            </strong>
+            <span>${escapeHtml(user.email || '—')}</span>
+          </div>
+
+          <div class="admin-users-role-cell">
+            <select
+              class="admin-input admin-users-role-select"
+              data-admin-user-role="${user.id}"
+              ${busy || isSelf ? 'disabled' : ''}
+            >
+              ${renderStaffRoleOptions(user.role)}
+            </select>
+          </div>
+
+          <div class="admin-users-status-cell">
+            <span class="admin-users-badge ${user.is_active ? 'is-active' : 'is-inactive'}">
+              ${user.is_active ? 'Actief' : 'Inactief'}
+            </span>
+          </div>
+
+          <div class="admin-list-actions">
+            ${
+              isSelf
+                ? '<span class="admin-users-hint">Eigen account</span>'
+                : user.is_active
+                  ? `<button
+                      class="admin-small-btn danger"
+                      data-admin-user-active="${user.id}"
+                      data-admin-user-next="false"
+                      ${busy ? 'disabled' : ''}
+                    >Deactiveren</button>`
+                  : `<button
+                      class="admin-small-btn success"
+                      data-admin-user-active="${user.id}"
+                      data-admin-user-next="true"
+                      ${busy ? 'disabled' : ''}
+                    >Activeren</button>`
+            }
+          </div>
+        </div>
+      `
+    })
+    .join('')
+
+  return `
+    <div class="page admin-page admin-users-page">
+      ${renderNav()}
+
+      <header class="header admin-products-header">
+        <div class="staff-brand">
+          <img class="tea-shop-logo" src="/logo.jpg" alt="Blue Cup logo" />
+
+          <div>
+            <h1>Medewerkers</h1>
+            <p class="sub">Accounts, rollen en toegang beheren</p>
+          </div>
+        </div>
+
+        <button class="admin-secondary-btn" id="back-admin-from-users">
+          ← Admin dashboard
+        </button>
+      </header>
+
+      ${adminUsersMessage ? `<p class="success-message">${escapeHtml(adminUsersMessage)}</p>` : ''}
+      ${adminUsersError ? `<p class="error admin-error">${escapeHtml(adminUsersError)}</p>` : ''}
+
+      <section class="admin-panel admin-users-create">
+        <div class="admin-panel-header">
+          <h2>Medewerker toevoegen</h2>
+        </div>
+
+        <form id="admin-user-form" class="admin-users-form" autocomplete="off">
+          <label>
+            <span>Naam</span>
+            <input
+              class="admin-input"
+              id="admin-user-name"
+              type="text"
+              value="${escapeHtml(adminUserDraft.fullName)}"
+              ${isSubmittingAdminUser ? 'disabled' : ''}
+            />
+          </label>
+
+          <label>
+            <span>E-mail</span>
+            <input
+              class="admin-input"
+              id="admin-user-email"
+              type="email"
+              autocomplete="off"
+              value="${escapeHtml(adminUserDraft.email)}"
+              ${isSubmittingAdminUser ? 'disabled' : ''}
+            />
+          </label>
+
+          <label>
+            <span>Tijdelijk wachtwoord</span>
+            <input
+              class="admin-input"
+              id="admin-user-password"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              ${isSubmittingAdminUser ? 'disabled' : ''}
+            />
+          </label>
+
+          <label>
+            <span>Rol</span>
+            <select class="admin-input" id="admin-user-role" ${isSubmittingAdminUser ? 'disabled' : ''}>
+              ${renderStaffRoleOptions(adminUserDraft.role)}
+            </select>
+          </label>
+
+          <div class="admin-users-form-actions">
+            <button type="submit" class="admin-primary-btn" ${isSubmittingAdminUser ? 'disabled' : ''}>
+              ${isSubmittingAdminUser ? 'Bezig…' : 'Account aanmaken'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section class="admin-panel admin-users-list-panel">
+        <div class="admin-panel-header">
+          <h2>Alle medewerkers</h2>
+          <button class="admin-secondary-btn" id="refresh-admin-users" ${isLoadingAdminUsers ? 'disabled' : ''}>
+            ↻ Vernieuwen
+          </button>
+        </div>
+
+        ${
+          isLoadingAdminUsers
+            ? `<p class="admin-users-empty">Laden…</p>`
+            : adminUsers.length === 0
+              ? `<p class="admin-users-empty">Geen medewerkers gevonden.</p>`
+              : `<div class="admin-list admin-users-list">${rows}</div>`
+        }
+      </section>
     </div>
   `
 }
@@ -15470,6 +15824,10 @@ function render() {
     app.innerHTML = renderAdminCategoriesPage()
   }
 
+  if (screen === 'admin-users') {
+    app.innerHTML = renderAdminUsersPage()
+  }
+
   if (screen === 'print-preview') {
     app.innerHTML = renderPrintPreview()
   }
@@ -15797,6 +16155,37 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#go-admin-settings')?.addEventListener('click', () => {
     void goToPosSettings('admin')
+  })
+
+  // --- FASE 2 staff account management ---
+  document.querySelector<HTMLButtonElement>('#go-admin-users')?.addEventListener('click', () => {
+    void goToAdminUsers()
+  })
+
+  document.querySelector<HTMLButtonElement>('#back-admin-from-users')?.addEventListener('click', goToAdmin)
+
+  document.querySelector<HTMLButtonElement>('#refresh-admin-users')?.addEventListener('click', () => {
+    void loadAdminUsers()
+  })
+
+  document.querySelector<HTMLFormElement>('#admin-user-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void handleCreateStaffUser()
+  })
+
+  document.querySelectorAll<HTMLSelectElement>('[data-admin-user-role]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const userId = select.dataset.adminUserRole
+      if (userId) void handleChangeStaffRole(userId, select.value)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-admin-user-active]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const userId = button.dataset.adminUserActive
+      const nextActive = button.dataset.adminUserNext === 'true'
+      if (userId) void handleToggleStaffActive(userId, nextActive)
+    })
   })
 
   document.querySelector<HTMLButtonElement>('#print-preview-back')?.addEventListener('click', goBackFromPrintPreview)
@@ -16438,6 +16827,11 @@ window.addEventListener('popstate', async () => {
     return
   }
 
+  if (screen === 'admin-users') {
+    await loadAdminUsers()
+    return
+  }
+
   if (screen === 'pickup') {
     await Promise.all([
       loadOrders(),
@@ -16518,6 +16912,11 @@ async function bootCurrentScreen() {
 
   if (screen === 'payment-test') {
     await loadPaymentTestData()
+    return
+  }
+
+  if (screen === 'admin-users') {
+    await loadAdminUsers()
     return
   }
 
