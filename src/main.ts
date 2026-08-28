@@ -78,6 +78,9 @@ import {
   updateUserRole,
   setUserActive,
 } from './services/users'
+// Screen modules — pure rendering only, dependencies passed in by main.ts.
+import { renderPickupScreen } from './screens/customer/pickupScreen'
+import { renderPaymentTestScreen } from './screens/tools/paymentTestScreen'
 
 // =============================
 // TYPES
@@ -3590,21 +3593,8 @@ function formatPaymentAmount(amountInCents: number) {
   return `€ ${(Number(amountInCents || 0) / 100).toFixed(2)}`
 }
 
-function getPaymentTestStatusText(status?: PaymentRecordStatus | null) {
-  if (status === 'paid') return 'Betaling geslaagd'
-  if (status === 'failed') return 'Betaling mislukt'
-  if (status === 'cancelled') return 'Betaling geannuleerd'
-  if (status === 'refunded') return 'Terugbetaald'
-  return 'Wacht op betaling'
-}
-
-function getPaymentTestStatusClass(status?: PaymentRecordStatus | null) {
-  if (status === 'paid') return 'payment-test-status-paid'
-  if (status === 'failed') return 'payment-test-status-failed'
-  if (status === 'cancelled') return 'payment-test-status-cancelled'
-  if (status === 'refunded') return 'payment-test-status-refunded'
-  return 'payment-test-status-pending'
-}
+// getPaymentTestStatusText / getPaymentTestStatusClass moved to
+// ./screens/tools/paymentTestScreen (payment-test-screen only).
 
 type MultisafepayPaymentResult = {
   paymentUrl: string
@@ -13360,109 +13350,7 @@ function renderOrderHistory() {
 // =============================
 
 
-function renderPickupNumberList(status: 'preparing' | 'ready') {
-  const pickupOrders =
-    status === 'preparing'
-      ? orders.filter(
-          (order) =>
-            order.status === 'new' ||
-            order.status === 'preparing'
-        )
-      : orders.filter((order) => order.status === 'ready')
-
-  if (pickupOrders.length === 0) {
-    return `<div class="pickup-empty">Nog geen bestellingen</div>`
-  }
-
-  return pickupOrders
-    .map(
-      (order) => `
-        <div class="pickup-number-card">
-          ${escapeHtml(order.pickup_code || '----')}
-        </div>
-      `
-    )
-    .join('')
-}
-
-function renderPickup() {
-  return `
-    <div class="pickup-page">
-      <header class="pickup-header">
-        <div class="pickup-brand">
-          <img src="/logo.jpg" alt="Blue Cup" class="pickup-logo" />
-
-          <div>
-            <h1>Blue Cup</h1>
-            <p>Bestelstatus</p>
-          </div>
-        </div>
-
-        <div class="pickup-live">
-          <span></span>
-          Live
-        </div>
-      </header>
-
-      <main class="pickup-board ${pickupWaitVisible ? 'has-wait-time' : 'no-wait-time'}">
-        <section class="pickup-column pickup-preparing">
-          <div class="pickup-column-title">
-            <span class="pickup-step">1</span>
-            <div>
-              <h2>In voorbereiding</h2>
-              <p>Bestelling ontvangen of wordt bereid</p>
-            </div>
-          </div>
-
-          <div class="pickup-number-list">
-            ${renderPickupNumberList('preparing')}
-          </div>
-        </section>
-
-        <section class="pickup-column pickup-ready">
-          <div class="pickup-column-title">
-            <span class="pickup-step">2</span>
-            <div>
-              <h2>Klaar om op te halen</h2>
-              <p>Je bestelling staat klaar</p>
-            </div>
-          </div>
-
-          <div class="pickup-number-list">
-            ${renderPickupNumberList('ready')}
-          </div>
-        </section>
-
-        ${
-          pickupWaitVisible
-            ? `
-              <section class="pickup-column pickup-wait">
-                <div class="pickup-column-title">
-                  <span class="pickup-step">⏱</span>
-                  <div>
-                    <h2>Geschatte wachttijd</h2>
-                    <p>Voor nieuwe bestellingen</p>
-                  </div>
-                </div>
-
-                <div class="pickup-wait-content">
-                  <div class="pickup-wait-value">
-                    <strong>± ${pickupWaitMinutes}</strong>
-                    <span>minuten</span>
-                  </div>
-
-                  <p class="pickup-wait-note">
-                    Dit is een schatting. De werkelijke wachttijd kan iets afwijken.
-                  </p>
-                </div>
-              </section>
-            `
-            : ''
-        }
-      </main>
-    </div>
-  `
-}
+// renderPickup / renderPickupNumberList moved to ./screens/customer/pickupScreen.
 
 function renderOrders() {
   const filteredOrders = getFilteredOrders()
@@ -15663,199 +15551,8 @@ function renderPrintPreview() {
 }
 
 
-function renderPaymentTest() {
-  const payment = paymentTestPayment
-  const order = paymentTestOrder
-  const status = payment?.status ?? 'pending'
-
-  return `
-    <div class="page payment-test-page">
-      <main class="payment-test-shell">
-        <section class="payment-test-brand">
-          <img
-            class="payment-test-logo"
-            src="/logo.jpg"
-            alt="Blue Cup logo"
-          />
-
-          <div>
-            <span>Blue Cup</span>
-            <strong>Payment Simulator</strong>
-          </div>
-
-          <span class="payment-test-environment">TEST</span>
-        </section>
-
-        ${
-          isLoadingPaymentTest
-            ? `
-              <section class="payment-test-card payment-test-loading">
-                Betaling laden...
-              </section>
-            `
-            : paymentTestError
-              ? `
-                <section class="payment-test-card">
-                  <div class="payment-test-error">
-                    ${escapeHtml(paymentTestError)}
-                  </div>
-
-                  <button
-                    class="payment-test-secondary-btn"
-                    id="payment-test-back-customer"
-                    type="button"
-                  >
-                    Terug naar bestelling
-                  </button>
-                </section>
-              `
-              : payment
-                ? `
-                  <section class="payment-test-card">
-                    <div class="payment-test-heading">
-                      <div>
-                        <p>MultiSafepay voorbereiding</p>
-                        <h1>Online betaling</h1>
-                      </div>
-
-                      <span class="payment-test-status ${getPaymentTestStatusClass(status)}">
-                        ${escapeHtml(getPaymentTestStatusText(status))}
-                      </span>
-                    </div>
-
-                    <div class="payment-test-amount">
-                      <span>Te betalen</span>
-                      <strong>${escapeHtml(formatPaymentAmount(payment.amount))}</strong>
-                      <small>${escapeHtml(payment.currency || 'EUR')}</small>
-                    </div>
-
-                    <div class="payment-test-details">
-                      <div>
-                        <span>Order</span>
-                        <strong>
-                          ${escapeHtml(
-                            order?.order_number ||
-                            `Order ${payment.order_id}`
-                          )}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Provider</span>
-                        <strong>MultiSafepay</strong>
-                      </div>
-
-                      <div>
-                        <span>Provider order ID</span>
-                        <strong>
-                          ${escapeHtml(payment.provider_order_id || '-')}
-                        </strong>
-                      </div>
-
-                      <div>
-                        <span>Payment ID</span>
-                        <strong class="payment-test-id">
-                          ${escapeHtml(payment.id)}
-                        </strong>
-                      </div>
-                    </div>
-
-                    ${
-                      status === 'pending'
-                        ? `
-                          <div class="payment-test-info">
-                            Dit is nog geen echte MultiSafepay-betaling.
-                            Met deze knoppen testen we alvast wat er gebeurt
-                            bij een succesvolle, mislukte of geannuleerde betaling.
-                          </div>
-
-                          <div class="payment-test-actions">
-                            <button
-                              class="payment-test-primary-btn"
-                              id="payment-test-success"
-                              type="button"
-                              ${isUpdatingPaymentTest ? 'disabled' : ''}
-                            >
-                              ✓ Betaling succesvol
-                            </button>
-
-                            <button
-                              class="payment-test-danger-btn"
-                              id="payment-test-failed"
-                              type="button"
-                              ${isUpdatingPaymentTest ? 'disabled' : ''}
-                            >
-                              Betaling mislukt
-                            </button>
-
-                            <button
-                              class="payment-test-secondary-btn"
-                              id="payment-test-cancelled"
-                              type="button"
-                              ${isUpdatingPaymentTest ? 'disabled' : ''}
-                            >
-                              Annuleren
-                            </button>
-                          </div>
-                        `
-                        : `
-                          <div class="payment-test-result ${getPaymentTestStatusClass(status)}">
-                            <strong>${escapeHtml(getPaymentTestStatusText(status))}</strong>
-                            <span>
-                              ${
-                                status === 'paid'
-                                  ? 'De payment én de betaalstatus van de order staan nu op betaald.'
-                                  : status === 'failed'
-                                    ? 'De testbetaling is als mislukt opgeslagen.'
-                                    : status === 'cancelled'
-                                      ? 'De testbetaling is geannuleerd.'
-                                      : 'De betaling is bijgewerkt.'
-                              }
-                            </span>
-                          </div>
-
-                          <div class="payment-test-actions">
-                            ${
-                              status !== 'paid' && status !== 'refunded'
-                                ? `
-                                  <button
-                                    class="payment-test-secondary-btn"
-                                    id="payment-test-retry"
-                                    type="button"
-                                    ${isUpdatingPaymentTest ? 'disabled' : ''}
-                                  >
-                                    Opnieuw proberen
-                                  </button>
-                                `
-                                : ''
-                            }
-
-                            <button
-                              class="payment-test-primary-btn"
-                              id="payment-test-back-customer"
-                              type="button"
-                            >
-                              Terug naar bestelling
-                            </button>
-                          </div>
-                        `
-                    }
-                  </section>
-                `
-                : `
-                  <section class="payment-test-card">
-                    Geen payment gevonden.
-                  </section>
-                `
-        }
-
-        <p class="payment-test-footnote">
-          Testomgeving — er wordt geen echt geld afgeschreven.
-        </p>
-      </main>
-    </div>
-  `
-}
+// renderPaymentTest moved to ./screens/tools/paymentTestScreen
+// (rendered from main.ts render() with dependencies passed in).
 
 
 
@@ -15998,7 +15695,12 @@ function render() {
   }
 
   if (screen === 'pickup') {
-    app.innerHTML = renderPickup()
+    app.innerHTML = renderPickupScreen({
+      orders,
+      pickupWaitVisible,
+      pickupWaitMinutes,
+      escapeHtml,
+    })
   }
 
   if (screen === 'order-history') {
@@ -16046,7 +15748,15 @@ function render() {
   }
 
   if (screen === 'payment-test') {
-    app.innerHTML = renderPaymentTest()
+    app.innerHTML = renderPaymentTestScreen({
+      payment: paymentTestPayment,
+      order: paymentTestOrder,
+      isLoading: isLoadingPaymentTest,
+      error: paymentTestError,
+      isUpdating: isUpdatingPaymentTest,
+      escapeHtml,
+      formatPaymentAmount,
+    })
   }
 
   bindEvents()
