@@ -3203,6 +3203,7 @@ async function submitOrder(paymentMethod: PaymentMethod) {
   const taxTotals = getCartTaxTotals()
   const total = taxTotals.grossTotal
   const orderNumber = makeOrderNumber()
+  const pickupCode = makePickupCode()
   const now = new Date().toISOString()
 
   const { data: orderData, error: orderError } = await supabase
@@ -3220,6 +3221,7 @@ async function submitOrder(paymentMethod: PaymentMethod) {
       payment_status: 'paid',
       payment_method: paymentMethod,
       paid_at: now,
+      pickup_code: pickupCode,
     })
     .select()
     .single()
