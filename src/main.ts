@@ -1814,21 +1814,32 @@ async function loadKitchenLabels(showLoading = true) {
 async function loadCustomerOrderProgress(shouldRender = true) {
   if (!customerOrderId) return
 
-  // De customer-UI gebruikt van de eigen order alleen status + pickup_code.
-  // Bewust GEEN select('*') zodat dit forward-compatible is met een smallere
-  // (kolom-beperkte) RLS/grant op `orders` voor anonymous.
-  const { data: orderData, error: orderError } = await supabase
-    .from('orders')
-    .select('id, status, pickup_code')
-    .eq('id', customerOrderId)
-    .single()
+  // De customer-statuspagina leest de eigen order via een Supabase RPC, NIET
+  // meer direct uit public.orders. `p_order_id` is de onraadbare order-UUID die
+  // na het bestellen in sessionStorage staat. De customer-UI gebruikt hiervan
+  // alleen `status` en `pickup_code`.
+  const { data: rpcData, error: orderError } = await supabase.rpc(
+    'get_customer_order_status',
+    { p_order_id: customerOrderId }
+  )
 
   if (orderError) {
     console.error('Customer order status laden mislukt:', orderError)
     return
   }
 
-  const order = orderData as Order
+  // De RPC geeft maximaal één rij terug. Afhankelijk van de functiedefinitie
+  // kan dat een array (RETURNS TABLE / SETOF) of een enkel object zijn.
+  const order = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
+    | { id: string; status: OrderStatus; pickup_code: string | null; created_at: string | null }
+    | null
+    | undefined
+
+  if (!order) {
+    console.error('Customer order status laden mislukt: order niet gevonden.')
+    return
+  }
+
   customerOrderStatus = order.status
   customerPickupCode = order.pickup_code || customerPickupCode
 
@@ -3157,6 +3168,27 @@ function makePickupCode() {
   return `P${number}`
 }
 
+// Geldige UUID v4. `crypto.randomUUID()` bestaat alleen in een secure context
+// (https of localhost) — via bijv. http://192.168.2.20:5173 is die undefined.
+// Dan valt hij terug op crypto.getRandomValues(), dat óók in een niet-secure
+// context werkt.
+function makeUuid(): string {
+  if (typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+
+  // RFC 4122 v4: versie- (0100) en variant-bits (10) zetten.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 
 // =============================
 // STAFF POS: CHECKOUT
@@ -3441,6 +3473,11 @@ async function submitCustomerOrder() {
   const pickupCode = makePickupCode()
   const customerSessionId = getCustomerSessionId()
 
+  // Client-side de order-UUID genereren en expliciet meesturen als `id`.
+  // Zo hoeft de anonieme customer-browser GEEN RETURNING / SELECT op `orders`
+  // meer te doen om de nieuwe order-id te weten.
+  const orderId = makeUuid()
+
   const isOnlinePayment = customerPaymentMethod === 'online_fake'
 
   const paymentStatus: PaymentStatus =
@@ -3450,9 +3487,10 @@ async function submitCustomerOrder() {
   // 1. ORDER OPSLAAN
   // =============================
 
-  const { data: orderData, error: orderError } = await supabase
+  const { error: orderError } = await supabase
     .from('orders')
     .insert({
+      id: orderId,
       order_number: orderNumber,
       status: 'new',
       order_type: 'customer',
@@ -3470,10 +3508,6 @@ async function submitCustomerOrder() {
       customer_name: cleanCustomerName,
       customer_phone: cleanCustomerPhone,
     })
-    // Alleen `id` wordt hierna gebruikt (order_items koppelen, rollback,
-    // customerOrderId). Smalle RETURNING i.p.v. select('*').
-    .select('id')
-    .single()
 
   if (orderError) {
     isSubmitting = false
@@ -3491,7 +3525,7 @@ async function submitCustomerOrder() {
     const discount = getProductDiscount(item.product)
 
     return {
-      order_id: orderData.id,
+      order_id: orderId,
       product_id: item.product.id,
       product_name: item.product.name,
       product_name_snapshot: item.product.name,
@@ -3523,7 +3557,7 @@ async function submitCustomerOrder() {
     await supabase
       .from('orders')
       .delete()
-      .eq('id', orderData.id)
+      .eq('id', orderId)
 
     isSubmitting = false
     message = `Orderregels opslaan mislukt: ${itemsError.message}`
@@ -3543,13 +3577,13 @@ async function submitCustomerOrder() {
   if (isOnlinePayment) {
     try {
       const payment = await createMultisafepayPayment(
-        String(orderData.id),
+        orderId,
         orderNumber,
         total,
         cleanCustomerName
       )
 
-      customerOrderId = String(orderData.id)
+      customerOrderId = orderId
       customerPickupCode = pickupCode
       customerOrderStatus = 'new'
       customerOrderPlaced = true
@@ -3584,7 +3618,7 @@ async function submitCustomerOrder() {
   // payment_status niet op paid staat.
 
   cart = []
-  customerOrderId = String(orderData.id)
+  customerOrderId = orderId
   customerPickupCode = pickupCode
   customerOrderStatus = 'new'
   customerOrderPlaced = true
