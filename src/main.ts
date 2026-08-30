@@ -48,11 +48,24 @@ import {
   fetchProductToppingLinks,
   fetchCategories,
 } from './services/products'
-// Pure order-domain Supabase reads moved to ./services/orders.
+// Pure order-domain Supabase data-access moved to ./services/orders.
 import {
   fetchTodayOrders,
   fetchOrderItemsForOrders,
+  fetchCustomerOrderStatus,
+  updateOrderFields,
+  insertAuditLog,
 } from './services/orders'
+// Pure kitchen-label Supabase data-access moved to ./services/kitchen.
+import {
+  fetchOpenKitchenLabels,
+  fetchKitchenLabelsForOrder,
+  fetchKitchenLabelStatuses,
+  updateKitchenLabel,
+  cancelOpenKitchenLabelsForOrder,
+  revertDoneKitchenLabelsToPreparing,
+  updateOpenKitchenLabelsForOrder,
+} from './services/kitchen'
 // FASE 1 authentication — logic lives in services/auth + utils/permissions.
 import type { Screen } from './types/navigation'
 import type { User, UserProfile, UserRole, AdminUserRow } from './types/user'
@@ -1792,20 +1805,14 @@ async function loadKitchenLabels(showLoading = true) {
     render()
   }
 
-  const { data, error } = await supabase
-    .from('kitchen_labels')
-    .select('*')
-    .in('status', ['new', 'preparing'])
-    .order('created_at', { ascending: true })
-
-  if (error) {
+  try {
+    kitchenLabels = await fetchOpenKitchenLabels()
+  } catch (error) {
     isLoadingKitchen = false
-    message = `Fout bij laden kitchen labels: ${error.message}`
+    message = `Fout bij laden kitchen labels: ${(error as { message?: string })?.message}`
     render()
     return
   }
-
-  kitchenLabels = (data ?? []) as KitchenLabel[]
 
   isLoadingKitchen = false
   render()
@@ -1814,26 +1821,18 @@ async function loadKitchenLabels(showLoading = true) {
 async function loadCustomerOrderProgress(shouldRender = true) {
   if (!customerOrderId) return
 
-  // De customer-statuspagina leest de eigen order via een Supabase RPC, NIET
-  // meer direct uit public.orders. `p_order_id` is de onraadbare order-UUID die
-  // na het bestellen in sessionStorage staat. De customer-UI gebruikt hiervan
-  // alleen `status` en `pickup_code`.
-  const { data: rpcData, error: orderError } = await supabase.rpc(
-    'get_customer_order_status',
-    { p_order_id: customerOrderId }
-  )
+  // De customer-statuspagina leest de eigen order via de RPC
+  // get_customer_order_status (services/orders), NIET direct uit public.orders.
+  // `p_order_id` is de onraadbare order-UUID uit sessionStorage. De customer-UI
+  // gebruikt hiervan alleen `status` en `pickup_code`.
+  let order: Awaited<ReturnType<typeof fetchCustomerOrderStatus>>
 
-  if (orderError) {
+  try {
+    order = await fetchCustomerOrderStatus(customerOrderId)
+  } catch (orderError) {
     console.error('Customer order status laden mislukt:', orderError)
     return
   }
-
-  // De RPC geeft maximaal één rij terug. Afhankelijk van de functiedefinitie
-  // kan dat een array (RETURNS TABLE / SETOF) of een enkel object zijn.
-  const order = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as
-    | { id: string; status: OrderStatus; pickup_code: string | null; created_at: string | null }
-    | null
-    | undefined
 
   if (!order) {
     console.error('Customer order status laden mislukt: order niet gevonden.')
@@ -1843,18 +1842,13 @@ async function loadCustomerOrderProgress(shouldRender = true) {
   customerOrderStatus = order.status
   customerPickupCode = order.pickup_code || customerPickupCode
 
-  const { data: labelsData, error: labelsError } = await supabase
-    .from('kitchen_labels')
-    .select('*')
-    .eq('order_id', customerOrderId)
-    .order('created_at', { ascending: true })
-
-  if (labelsError) {
+  try {
+    customerOrderLabels = await fetchKitchenLabelsForOrder(customerOrderId)
+  } catch (labelsError) {
     console.error('Customer labels laden mislukt:', labelsError)
     return
   }
 
-  customerOrderLabels = (labelsData ?? []) as KitchenLabel[]
   saveCustomerState()
 
   if (shouldRender) {
@@ -4019,16 +4013,13 @@ async function cancelOrderWithAudit(orderId: string) {
   const actor = 'staff'
   const previousStatus = currentOrder.status
 
-  const { error: orderError } = await supabase
-    .from('orders')
-    .update({
-      status: 'cancelled',
-      cancelled_at: now,
-      cancel_reason: reason,
-      cancelled_by: actor,
-      updated_at: now,
-    })
-    .eq('id', orderId)
+  const { error: orderError } = await updateOrderFields(orderId, {
+    status: 'cancelled',
+    cancelled_at: now,
+    cancel_reason: reason,
+    cancelled_by: actor,
+    updated_at: now,
+  })
 
   if (orderError) {
     message = `Order annuleren mislukt: ${orderError.message}`
@@ -4037,37 +4028,28 @@ async function cancelOrderWithAudit(orderId: string) {
   }
 
   // Zorg dat kitchen labels niet later de orderstatus opnieuw veranderen.
-  const { error: labelError } = await supabase
-    .from('kitchen_labels')
-    .update({
-      status: 'cancelled',
-      cancelled_at: now,
-    })
-    .eq('order_id', orderId)
-    .neq('status', 'cancelled')
+  const { error: labelError } = await cancelOpenKitchenLabelsForOrder(orderId, now)
 
   if (labelError) {
     console.error('Kitchen labels annuleren mislukt:', labelError)
   }
 
-  const { error: auditError } = await supabase
-    .from('audit_logs')
-    .insert({
-      event_type: 'ORDER_CANCELLED',
-      entity_type: 'order',
-      entity_id: orderId,
-      old_data: {
-        status: previousStatus,
-      },
-      new_data: {
-        status: 'cancelled',
-        cancelled_at: now,
-        cancel_reason: reason,
-        cancelled_by: actor,
-      },
-      reason,
-      actor,
-    })
+  const { error: auditError } = await insertAuditLog({
+    event_type: 'ORDER_CANCELLED',
+    entity_type: 'order',
+    entity_id: orderId,
+    old_data: {
+      status: previousStatus,
+    },
+    new_data: {
+      status: 'cancelled',
+      cancelled_at: now,
+      cancel_reason: reason,
+      cancelled_by: actor,
+    },
+    reason,
+    actor,
+  })
 
   if (auditError) {
     console.error('Auditlog opslaan mislukt:', auditError)
@@ -4101,15 +4083,10 @@ async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
   if (currentOrder?.status === 'ready' && nextStatus === 'preparing') {
     const now = new Date().toISOString()
 
-    const { error: labelError } = await supabase
-      .from('kitchen_labels')
-      .update({
-        status: 'preparing',
-        started_at: now,
-        done_at: null,
-      })
-      .eq('order_id', orderId)
-      .eq('status', 'done')
+    const { error: labelError } = await revertDoneKitchenLabelsToPreparing(
+      orderId,
+      now
+    )
 
     if (labelError) {
       message = `Terugzetten naar voorbereiding mislukt: ${labelError.message}`
@@ -4131,10 +4108,7 @@ async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
 
   updateData.cancelled_at = null
 
-  const { error } = await supabase
-    .from('orders')
-    .update(updateData)
-    .eq('id', orderId)
+  const { error } = await updateOrderFields(orderId, updateData)
 
   if (error) {
     message = `Status aanpassen mislukt: ${error.message}`
@@ -4160,17 +4134,14 @@ async function updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
 // =============================
 
 async function syncOrderStatusFromLabels(orderId: string) {
-  const { data, error } = await supabase
-    .from('kitchen_labels')
-    .select('status')
-    .eq('order_id', orderId)
+  let labels: { status: LabelStatus }[]
 
-  if (error) {
+  try {
+    labels = await fetchKitchenLabelStatuses(orderId)
+  } catch (error) {
     console.error('Labels ophalen voor order sync mislukt:', error)
     return
   }
-
-  const labels = data ?? []
 
   if (labels.length === 0) {
     return
@@ -4200,10 +4171,7 @@ async function syncOrderStatusFromLabels(orderId: string) {
     updateData.cancelled_at = new Date().toISOString()
   }
 
-  const { error: orderError } = await supabase
-    .from('orders')
-    .update(updateData)
-    .eq('id', orderId)
+  const { error: orderError } = await updateOrderFields(orderId, updateData)
 
   if (orderError) {
     console.error('Order sync status mislukt:', orderError)
@@ -4230,10 +4198,7 @@ async function updateKitchenLabelStatus(labelId: string, nextStatus: LabelStatus
     updateData.cancelled_at = now
   }
 
-  const { error } = await supabase
-    .from('kitchen_labels')
-    .update(updateData)
-    .eq('id', labelId)
+  const { error } = await updateKitchenLabel(labelId, updateData)
 
   if (error) {
     message = `Label status aanpassen mislukt: ${error.message}`
@@ -4271,11 +4236,10 @@ async function updateWholeKitchenOrder(orderId: string, nextLabelStatus: LabelSt
     nextOrderStatus = 'ready'
   }
 
-  const { error: labelError } = await supabase
-    .from('kitchen_labels')
-    .update(labelUpdateData)
-    .eq('order_id', orderId)
-    .in('status', ['new', 'preparing'])
+  const { error: labelError } = await updateOpenKitchenLabelsForOrder(
+    orderId,
+    labelUpdateData
+  )
 
   if (labelError) {
     message = `Labels aanpassen mislukt: ${labelError.message}`
@@ -4288,10 +4252,7 @@ async function updateWholeKitchenOrder(orderId: string, nextLabelStatus: LabelSt
     updated_at: now,
   }
 
-  const { error: orderError } = await supabase
-    .from('orders')
-    .update(orderUpdateData)
-    .eq('id', orderId)
+  const { error: orderError } = await updateOrderFields(orderId, orderUpdateData)
 
   if (orderError) {
     message = `Order status aanpassen mislukt: ${orderError.message}`

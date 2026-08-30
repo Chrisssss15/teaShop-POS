@@ -16,7 +16,7 @@
 // behaviour.
 
 import { supabase } from '../lib/supabase'
-import type { Order, OrderItem } from '../types/order'
+import type { Order, OrderItem, OrderStatus } from '../types/order'
 
 /**
  * All orders created within a given ISO datetime window, newest first.
@@ -55,4 +55,54 @@ export async function fetchOrderItemsForOrders(
 
   if (error) throw error
   return (data ?? []) as OrderItem[]
+}
+
+// --- status transitions -----------------------------------------------------
+// These return the Supabase query builder so callers in main.ts keep their
+// exact { error } handling, message text and screen-dependent reloads.
+
+/** Update fields on a single order row. */
+export function updateOrderFields(
+  orderId: string,
+  fields: Record<string, string | null>
+) {
+  return supabase
+    .from('orders')
+    .update(fields)
+    .eq('id', orderId)
+}
+
+/** Insert one audit-log row (used by the order-cancel flow). */
+export function insertAuditLog(entry: Record<string, unknown>) {
+  return supabase
+    .from('audit_logs')
+    .insert(entry)
+}
+
+// --- customer / QR status read -------------------------------------------
+
+export type CustomerOrderStatusRow = {
+  id: string
+  status: OrderStatus
+  pickup_code: string | null
+  created_at: string | null
+}
+
+/**
+ * Status of one customer order via the `get_customer_order_status` RPC.
+ * The anonymous customer/QR flow uses this instead of a direct `orders`
+ * SELECT. The RPC returns at most one row (array or single object). Throws
+ * the Supabase error; returns null when no row is found.
+ */
+export async function fetchCustomerOrderStatus(
+  orderId: string
+): Promise<CustomerOrderStatusRow | null> {
+  const { data, error } = await supabase.rpc('get_customer_order_status', {
+    p_order_id: orderId,
+  })
+
+  if (error) throw error
+
+  const row = Array.isArray(data) ? data[0] : data
+  return (row ?? null) as CustomerOrderStatusRow | null
 }
