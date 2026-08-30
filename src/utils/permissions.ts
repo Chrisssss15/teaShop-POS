@@ -9,7 +9,7 @@ import type { Screen } from '../types/navigation'
 import type { UserProfile, UserRole } from '../types/user'
 
 /** Every assignable role, in display order. Single source of truth. */
-export const USER_ROLES: readonly UserRole[] = ['admin', 'manager', 'staff', 'kitchen']
+export const USER_ROLES: readonly UserRole[] = ['admin', 'manager', 'staff', 'kitchen', 'display']
 
 export function isUserRole(value: unknown): value is UserRole {
   return typeof value === 'string' && (USER_ROLES as readonly string[]).includes(value)
@@ -18,7 +18,9 @@ export function isUserRole(value: unknown): value is UserRole {
 /**
  * Screens that never require a staff login.
  * - customer : QR ordering flow for guests
- * - pickup   : public in-store pickup status display (order-number board)
+ *
+ * `pickup` is NO LONGER public: the in-store TV display must sign in with a
+ * `display` account (Supabase Auth + role). See ROLE_SCREENS below.
  *
  * `payment-test` is intentionally NOT public: the live customer payment flow
  * uses MultiSafepay (external redirect, returns to ?mode=customer). The
@@ -26,7 +28,6 @@ export function isUserRole(value: unknown): value is UserRole {
  */
 export const PUBLIC_SCREENS: readonly Screen[] = [
   'customer',
-  'pickup',
 ]
 
 export function isPublicScreen(screen: Screen): boolean {
@@ -42,6 +43,7 @@ const ROLE_SCREENS: Record<UserRole, readonly Screen[]> = {
     'orders',
     'kitchen',
     'order-history',
+    'pickup',
     'admin',
     'admin-products',
     'admin-sales',
@@ -61,6 +63,7 @@ const ROLE_SCREENS: Record<UserRole, readonly Screen[]> = {
     'orders',
     'kitchen',
     'order-history',
+    'pickup',
     // `admin` = the dashboard shell only. Every management shortcut on it is
     // filtered by canAccessScreen(), so a manager sees just sales / day-close /
     // print / order-history. They cannot open product / category / topping /
@@ -78,6 +81,10 @@ const ROLE_SCREENS: Record<UserRole, readonly Screen[]> = {
   ],
   kitchen: [
     'kitchen',
+  ],
+  // In-store TV display. May ONLY view the pickup board — nothing else.
+  display: [
+    'pickup',
   ],
 }
 
@@ -97,7 +104,9 @@ export function canAccessScreen(profile: UserProfile | null, screen: Screen): bo
 
 /** Landing screen right after a successful login, per role. */
 export function defaultScreenForRole(role: UserRole): Screen {
-  return role === 'kitchen' ? 'kitchen' : 'pos'
+  if (role === 'display') return 'pickup'
+  if (role === 'kitchen') return 'kitchen'
+  return 'pos'
 }
 
 /** Does this profile have access to at least one admin* screen? (nav visibility) */
@@ -112,5 +121,6 @@ export function roleLabel(role: UserRole): string {
   if (role === 'admin') return 'Admin'
   if (role === 'manager') return 'Manager'
   if (role === 'kitchen') return 'Kitchen'
+  if (role === 'display') return 'Display'
   return 'Staff'
 }

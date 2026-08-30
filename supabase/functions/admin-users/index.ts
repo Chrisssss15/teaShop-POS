@@ -30,7 +30,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'kitchen']
+const ALLOWED_ROLES = ['admin', 'manager', 'staff', 'kitchen', 'display']
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 function json(body: unknown, status = 200): Response {

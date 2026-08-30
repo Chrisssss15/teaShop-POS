@@ -1814,9 +1814,12 @@ async function loadKitchenLabels(showLoading = true) {
 async function loadCustomerOrderProgress(shouldRender = true) {
   if (!customerOrderId) return
 
+  // De customer-UI gebruikt van de eigen order alleen status + pickup_code.
+  // Bewust GEEN select('*') zodat dit forward-compatible is met een smallere
+  // (kolom-beperkte) RLS/grant op `orders` voor anonymous.
   const { data: orderData, error: orderError } = await supabase
     .from('orders')
-    .select('*')
+    .select('id, status, pickup_code')
     .eq('id', customerOrderId)
     .single()
 
@@ -3467,7 +3470,9 @@ async function submitCustomerOrder() {
       customer_name: cleanCustomerName,
       customer_phone: cleanCustomerPhone,
     })
-    .select()
+    // Alleen `id` wordt hierna gebruikt (order_items koppelen, rollback,
+    // customerOrderId). Smalle RETURNING i.p.v. select('*').
+    .select('id')
     .single()
 
   if (orderError) {
@@ -3702,14 +3707,10 @@ async function createMultisafepayPayment(
       })
       .eq('id', paymentRecord.id)
 
-    await supabase
-      .from('orders')
-      .update({
-        payment_status: 'failed',
-        paid_at: null,
-      })
-      .eq('id', orderId)
-
+    // De anonieme customer-browser doet GEEN UPDATE meer op `orders`.
+    // De uiteindelijke payment_status van de order wordt server-side beheerd
+    // (MultiSafepay webhook / Edge Function). De order blijft hier op
+    // payment_status 'pending' staan; er zijn geen kitchen labels aangemaakt.
     throw new Error(
       `MultiSafepay starten mislukt: ${functionError.message}`
     )
@@ -3728,14 +3729,8 @@ async function createMultisafepayPayment(
       })
       .eq('id', paymentRecord.id)
 
-    await supabase
-      .from('orders')
-      .update({
-        payment_status: 'failed',
-        paid_at: null,
-      })
-      .eq('id', orderId)
-
+    // Geen client-side UPDATE op `orders` (anonieme customer-browser).
+    // Server-side (webhook / Edge Function) beheert de payment_status.
     throw new Error(
       data?.error ||
       'MultiSafepay gaf geen betaalpagina terug.'
@@ -15900,14 +15895,24 @@ async function bootCurrentScreen() {
     return
   }
 
-  await Promise.all([
+  // De anonieme customer/QR-flow heeft bestseller-verkoopdata NIET nodig
+  // (het klantmenu gebruikt alleen de product-vlag `is_bestseller`). Alleen die
+  // query leest ongefilterd de volledige `orders`-tabel, dus die slaan we voor
+  // `?mode=customer` over. Staff/admin gedrag blijft ongewijzigd — daar draait
+  // loadBestSellerSales() hier én via loadAllAdminData().
+  const sharedLoads = [
     loadProducts(),
     loadToppings(),
     loadProductToppingLinks(),
     loadCategories(),
-    loadBestSellerSales(),
     loadPickupWaitSettings(),
-  ])
+  ]
+
+  if (screen !== 'customer') {
+    sharedLoads.push(loadBestSellerSales())
+  }
+
+  await Promise.all(sharedLoads)
 
   if (screen === 'pickup') {
     await Promise.all([

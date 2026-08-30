@@ -10,7 +10,7 @@
 import { supabase } from '../lib/supabase'
 import type { Session, UserProfile, UserRole } from '../types/user'
 
-const VALID_ROLES: UserRole[] = ['admin', 'manager', 'staff', 'kitchen']
+const VALID_ROLES: UserRole[] = ['admin', 'manager', 'staff', 'kitchen', 'display']
 
 /** Current Supabase session (or null when nobody is logged in). */
 export async function getCurrentSession(): Promise<Session | null> {

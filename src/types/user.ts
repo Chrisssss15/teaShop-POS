@@ -5,7 +5,7 @@
 
 import type { User, Session } from '@supabase/supabase-js'
 
-export type UserRole = 'admin' | 'manager' | 'staff' | 'kitchen'
+export type UserRole = 'admin' | 'manager' | 'staff' | 'kitchen' | 'display'
 
 export type UserProfile = {
   id: string
