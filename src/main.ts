@@ -107,7 +107,6 @@ import {
   buildPreviewStickerZpl,
 } from './printing/zplBuilder'
 import { sendZplToPrintBridge } from './printing/zebraPrinter'
-import { createKitchenLabelsForOrder } from './printing/printQueue'
 import {
   startKitchenPrintService,
   scheduleKitchenPrintCheck,
@@ -3188,221 +3187,173 @@ function makeUuid(): string {
 // STAFF POS: CHECKOUT
 // =============================
 
+// Eén UUID per afrekenpoging. Wordt hergebruikt zolang de cart ongewijzigd is,
+// zodat create_pos_order idempotent is: dubbelklik / retry na een timeout maken
+// nooit een tweede order + betaling + kasboeking aan. Zodra de cart verandert
+// (of na een succesvolle order) wordt er een nieuwe UUID gegenereerd.
+let pendingPosOrderRequestId: string | null = null
+let pendingPosOrderCartSignature = ''
+
+function posOrderCartSignature(): string {
+  return JSON.stringify(
+    cart.map((item) => [
+      item.product.id,
+      item.quantity,
+      item.cupSize,
+      item.iceLevel,
+      item.sugarLevel,
+      item.toppings.map((topping) => topping.id).sort(),
+    ])
+  )
+}
+
+type CreatePosOrderResultItem = {
+  product_name?: string | null
+  product_name_snapshot?: string | null
+  quantity?: number | null
+  unit_price?: number | null
+  gross_amount?: number | null
+  line_total?: number | null
+  cup_size?: string | null
+  ice_level?: string | null
+  sugar_level?: string | null
+  toppings?: Array<{ name: string; price?: number }> | null
+}
+
+type CreatePosOrderResult = {
+  reused: boolean
+  order_id: string
+  order_number: string
+  pickup_code: string
+  status: string
+  payment_status: string
+  payment_method: string
+  paid_at: string | null
+  created_at: string | null
+  subtotal: number
+  total: number
+  net_total: number
+  vat_total: number
+  gross_total: number
+  amount_cents: number
+  payment_id: string | null
+  cash_movement_id: string | null
+  kitchen_label_count: number
+  items: CreatePosOrderResultItem[]
+}
+
+// create_pos_order raise't een kale token als message (bv. 'PRODUCT_SOLD_OUT').
+const POS_ORDER_ERROR_MESSAGES: Record<string, string> = {
+  UNAUTHORIZED: 'Je hebt geen rechten om af te rekenen.',
+  INVALID_REQUEST: 'Interne fout bij het afrekenen. Probeer het opnieuw.',
+  INVALID_PAYMENT_METHOD: 'Ongeldige betaalmethode.',
+  EMPTY_ORDER: 'De winkelmand is leeg.',
+  INVALID_QUANTITY: 'Ongeldig aantal voor een product.',
+  PRODUCT_NOT_FOUND: 'Een product in de mand bestaat niet meer. Ververs de mand.',
+  PRODUCT_INACTIVE: 'Een product in de mand is niet meer beschikbaar. Ververs de mand.',
+  PRODUCT_SOLD_OUT: 'Een product in de mand is uitverkocht. Ververs de mand.',
+  INVALID_SIZE: 'Ongeldige maat voor een product.',
+  INVALID_ICE_LEVEL: 'Ongeldige ijskeuze voor een product.',
+  INVALID_SUGAR_LEVEL: 'Ongeldige suikerkeuze voor een product.',
+  TOPPING_NOT_ALLOWED: 'Een gekozen topping hoort niet bij dat product.',
+  TOPPING_INACTIVE: 'Een gekozen topping is niet meer beschikbaar.',
+  TOPPING_SOLD_OUT: 'Een gekozen topping is uitverkocht.',
+  MODIFIERS_NOT_SUPPORTED: 'Deze bestelling bevat opties die nog niet ondersteund worden.',
+  TOTAL_MISMATCH: 'De prijs is gewijzigd. Ververs de mand en probeer opnieuw.',
+  CASH_SESSION_REQUIRED:
+    'Open eerst de kas in Admin voordat je contant afrekent, of zet kasregistratie uit bij Dagafsluiting.',
+  ORDER_NUMBER_UNAVAILABLE: 'Kon geen ordernummer toewijzen. Probeer het opnieuw.',
+  PICKUP_CODE_UNAVAILABLE: 'Kon geen afhaalnummer toewijzen. Probeer het opnieuw.',
+}
+
+function posOrderErrorCode(rawMessage?: string | null): string {
+  const token = String(rawMessage ?? '').trim().split(/[\s:]/)[0]
+  return token in POS_ORDER_ERROR_MESSAGES ? token : ''
+}
+
+function posOrderErrorMessage(rawMessage?: string | null): string {
+  const code = posOrderErrorCode(rawMessage)
+  if (code) return POS_ORDER_ERROR_MESSAGES[code]
+  return 'Opslaan van de bestelling is mislukt. Probeer het opnieuw.'
+}
+
 async function submitOrder(paymentMethod: PaymentMethod) {
   if (cart.length === 0 || isSubmitting) return
 
-  // Als kasregistratie aan staat, is voor cash een open kassasessie verplicht.
-  // Als kasregistratie uit staat, mag cash zonder kassasessie en wordt er
-  // geen cash_movement aan een kassasessie gekoppeld.
-  let cashSessionForSale: CashSession | null = null
-
-  if (paymentMethod === 'cash') {
-    const { data: settingsData, error: settingsError } = await supabase
-      .from('shop_settings')
-      .select('cash_registration_enabled')
-      .eq('id', 1)
-      .maybeSingle()
-
-    if (settingsError) {
-      message = `Kasregistratie-instelling controleren mislukt: ${settingsError.message}`
-      render()
-      return
-    }
-
-    cashRegistrationEnabled =
-      settingsData?.cash_registration_enabled ?? true
-
-    if (cashRegistrationEnabled) {
-      const { data: cashSessionData, error: cashSessionError } = await supabase
-        .from('cash_sessions')
-        .select('*')
-        .eq('status', 'open')
-        .order('opened_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (cashSessionError) {
-        message = `Open kas controleren mislukt: ${cashSessionError.message}`
-        render()
-        return
-      }
-
-      if (!cashSessionData) {
-        window.alert('Open eerst de kas in Admin voordat je contant afrekent, of zet kasregistratie uit bij Dagafsluiting.')
-        return
-      }
-
-      cashSessionForSale = cashSessionData as CashSession
-    }
+  // Idempotency-sleutel: nieuw bij een gewijzigde cart, hergebruikt bij een retry.
+  const cartSignature = posOrderCartSignature()
+  if (!pendingPosOrderRequestId || pendingPosOrderCartSignature !== cartSignature) {
+    pendingPosOrderRequestId = makeUuid()
+    pendingPosOrderCartSignature = cartSignature
   }
+  const clientRequestId = pendingPosOrderRequestId
 
   isSubmitting = true
   message = ''
   render()
 
+  // Alleen als cross-check meesturen; de server herberekent alles zelf.
   const taxTotals = getCartTaxTotals()
-  const total = taxTotals.grossTotal
-  const orderNumber = makeOrderNumber()
-  const pickupCode = makePickupCode()
-  const now = new Date().toISOString()
+  const printedAt = new Date().toISOString()
 
-  const { data: orderData, error: orderError } = await supabase
-    .from('orders')
-    .insert({
-      order_number: orderNumber,
-      status: 'new',
-      order_type: 'staff',
-      channel: 'pos',
-      subtotal: total,
-      total: total,
-      net_total: taxTotals.netTotal,
-      vat_total: taxTotals.vatTotal,
-      gross_total: taxTotals.grossTotal,
-      payment_status: 'paid',
-      payment_method: paymentMethod,
-      paid_at: now,
-      pickup_code: pickupCode,
-    })
-    .select()
-    .single()
+  const rpcItems = cart.map((item) => ({
+    product_id: item.product.id,
+    quantity: item.quantity,
+    cup_size: item.cupSize,
+    ice_level: item.iceLevel,
+    sugar_level: item.sugarLevel,
+    topping_ids: item.toppings.map((topping) => topping.id),
+    modifier_option_ids: [] as string[],
+  }))
 
-  if (orderError) {
-    isSubmitting = false
-    message = `Fout bij opslaan order: ${orderError.message}`
-    render()
-    return
-  }
-
-  const orderItemsPayload = cart.map((item) => {
-    const tax = getCartItemTaxAmounts(item)
-    const discount = getProductDiscount(item.product)
-
-    return {
-      order_id: orderData.id,
-      product_id: item.product.id,
-      product_name: item.product.name,
-      product_name_snapshot: item.product.name,
-      original_unit_price: getCartItemOriginalUnitPrice(item),
-      unit_price: roundMoney(getCartItemUnitPrice(item)),
-      discount_type_snapshot: discount.type,
-      discount_value_snapshot: roundMoney(discount.value),
-      discount_amount: roundMoney(
-        getCartItemDiscountAmount(item) * item.quantity
-      ),
-      quantity: item.quantity,
-      line_total: tax.grossAmount,
-      vat_rate: tax.vatRate,
-      net_amount: tax.netAmount,
-      vat_amount: tax.vatAmount,
-      gross_amount: tax.grossAmount,
-      cup_size: item.cupSize,
-      ice_level: item.iceLevel,
-      sugar_level: item.sugarLevel,
-      toppings: item.toppings,
-    }
+  const { data, error } = await supabase.rpc('create_pos_order', {
+    p_client_request_id: clientRequestId,
+    p_payment_method: paymentMethod,
+    p_expected_total: taxTotals.grossTotal,
+    p_items: rpcItems,
   })
 
-  const { data: savedOrderItems, error: itemsError } = await supabase
-    .from('order_items')
-    .insert(orderItemsPayload)
-    .select()
+  const result = (data ?? null) as CreatePosOrderResult | null
 
-  if (itemsError) {
+  if (error || !result) {
     isSubmitting = false
-    message = `Fout bij opslaan orderregels: ${itemsError.message}`
-    render()
-    return
-  }
+    console.error('create_pos_order fout:', error)
 
-  const paymentAmountCents = Math.max(0, Math.round(total * 100))
+    const code = posOrderErrorCode(error?.message)
 
-  const { data: paymentRecord, error: paymentRecordError } = await supabase
-    .from('payments')
-    .insert({
-      order_id: orderData.id,
-      provider: 'pos',
-      provider_order_id: `POS-${orderNumber}`,
-      amount: paymentAmountCents,
-      currency: 'EUR',
-      status: 'paid',
-      payment_method: paymentMethod,
-      payment_url: null,
-      failure_reason: null,
-      paid_at: now,
-    })
-    .select('*')
-    .single()
-
-  if (paymentRecordError || !paymentRecord) {
-    console.error('POS payment-record opslaan mislukt:', paymentRecordError)
-
-    // Compensating rollback: voorkom een betaalde order zonder payment-record.
-    await supabase.from('order_items').delete().eq('order_id', orderData.id)
-    await supabase.from('orders').delete().eq('id', orderData.id)
-
-    isSubmitting = false
-    message = `Betaling opslaan mislukt. De verkoop is teruggedraaid: ${paymentRecordError?.message ?? 'onbekende fout'}`
-    render()
-    return
-  }
-
-  // Bij een cashbetaling registreren we de geldbeweging in de open kas.
-  if (paymentMethod === 'cash' && cashSessionForSale) {
-    const { error: cashMovementError } = await supabase
-      .from('cash_movements')
-      .insert({
-        cash_session_id: cashSessionForSale.id,
-        movement_type: 'sale',
-        amount: paymentAmountCents,
-        order_id: orderData.id,
-        payment_id: paymentRecord.id,
-        reason: `Contante verkoop ${orderNumber}`,
-        actor: 'staff',
-      })
-
-    if (cashMovementError) {
-      console.error('Cash movement opslaan mislukt:', cashMovementError)
-
-      // Ook hier terugrollen: order, payment en kas moeten financieel gelijk blijven.
-      await supabase.from('payments').delete().eq('id', paymentRecord.id)
-      await supabase.from('order_items').delete().eq('order_id', orderData.id)
-      await supabase.from('orders').delete().eq('id', orderData.id)
-
-      isSubmitting = false
-      message = `Kasboeking mislukt. De verkoop is teruggedraaid: ${cashMovementError.message}`
+    if (code === 'CASH_SESSION_REQUIRED') {
+      // Zelfde melding als voorheen; de request-id blijft staan zodat een retry
+      // ná het openen van de kas dezelfde (ongewijzigde) order hergebruikt.
+      window.alert(POS_ORDER_ERROR_MESSAGES.CASH_SESSION_REQUIRED)
       render()
       return
     }
-  }
 
-  const labelError = await createKitchenLabelsForOrder(
-    orderData.id,
-    orderNumber,
-    savedOrderItems as OrderItem[],
-    (productId) =>
-      products.find(
-        (product) => String(product.id) === String(productId)
-      )
-  )
-
-  if (labelError) {
-    isSubmitting = false
-    message = `Order betaald, maar labels maken mislukt: ${labelError}`
+    message = posOrderErrorMessage(error?.message)
     render()
     return
   }
 
+  // Order + orderregels + betaling + (kasboeking) + kitchen labels zijn in één
+  // atomaire transactie opgeslagen. Geen handmatige rollback meer nodig.
+  const orderNumber = String(result.order_number ?? '')
+  pendingPosOrderRequestId = null
+  pendingPosOrderCartSignature = ''
+
+  // Epson-bon blijft client-side en buiten de transactie. Gevoed uit de door de
+  // RPC teruggegeven orderregels/bedragen (zelfde mapping als voorheen op de
+  // opgeslagen order_items), zodat het ook klopt bij een idempotent replay.
   let receiptPrintError = ''
 
   try {
     await printEpsonReceipt({
       orderNumber,
-      createdAt: now,
-      paymentMethod,
-      total: taxTotals.grossTotal,
-      netTotal: taxTotals.netTotal,
-      vatTotal: taxTotals.vatTotal,
-      items: (savedOrderItems as OrderItem[]).map((item) => ({
+      createdAt: result.paid_at ?? printedAt,
+      paymentMethod: result.payment_method ?? paymentMethod,
+      total: Number(result.gross_total ?? taxTotals.grossTotal),
+      netTotal: Number(result.net_total ?? taxTotals.netTotal),
+      vatTotal: Number(result.vat_total ?? taxTotals.vatTotal),
+      items: (result.items ?? []).map((item) => ({
         name:
           item.product_name_snapshot ||
           item.product_name ||
