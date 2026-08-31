@@ -20,8 +20,8 @@ import { sendZplToPrintBridge, isZebraBridgeReachable } from '../printing/zebraP
 import {
   MAX_AUTO_PRINT_ATTEMPTS,
   FAILED_RETRY_MAX_AGE_MS,
-  fetchExistingPendingLabelIds,
   fetchPendingLabels,
+  fetchPrintingLabels,
   fetchLabelsForOrder,
   fetchOrdersByIds,
   claimPendingLabel,
@@ -29,12 +29,23 @@ import {
   markLabelFailed,
   fetchFailedLabelsForRetry,
   requeueFailedLabelToPending,
+  resetStalePrintingLabelToPending,
 } from '../printing/printQueue'
 
 // De retry-run draait periodiek, maar doet niets zolang de bridge offline is.
 const FAILED_RETRY_INTERVAL_MS = 60_000
 // Ondergrens tussen twee retry-runs (beschermt tegen extra triggers).
 const FAILED_RETRY_COOLDOWN_MS = 30_000
+
+// Een label dat sinds de start van deze worker langer dan dit op 'printing'
+// blijft staan, is vrijwel zeker blijven hangen door een crash/afsluiting
+// tussen claim en printed/failed -> terug naar 'pending'.
+const STALE_PRINTING_MAX_AGE_MS = 2 * 60 * 1000
+// Ondergrens tussen twee stale-recovery runs.
+const STALE_PRINTING_RECOVERY_COOLDOWN_MS = 60_000
+// Alleen bestaande pending labels jonger dan dit worden na een (re)start
+// automatisch meegenomen; ouder telt als backlog en blijft genegeerd.
+const FRESH_PENDING_MAX_AGE_MS = 5 * 60 * 1000
 
 export type KitchenPrintServiceDeps = {
   // Resolves the product's qr_product_code from the (main.ts) product catalog.
@@ -51,6 +62,11 @@ let isAutoPrintProcessing = false
 let ignoredPendingLabelIds = new Set<string>()
 let failedRetryIntervalId: number | null = null
 let lastFailedRetryCheckAt = 0
+
+// Stale-'printing' recovery state.
+let serviceStartedAtMs = 0
+let stalePrintingCandidateIds = new Set<string>()
+let lastStalePrintingRecoveryAt = 0
 
 let getQrProductCode: KitchenPrintServiceDeps['getQrProductCode'] = () => ''
 let onAfterAutoPrintCycle: KitchenPrintServiceDeps['onAfterAutoPrintCycle'] = () => {}
@@ -136,6 +152,134 @@ async function claimAndAutoPrintLabel(
   }
 }
 
+/**
+ * Zet labels die sinds de start van deze worker op 'printing' zijn blijven
+ * hangen (browser/tab/app-crash tussen claim en printed/failed) terug naar
+ * 'pending', zodat de normale worker ze opnieuw oppakt.
+ *
+ * Veiligheid:
+ * - Alleen labels die AL 'printing' waren toen deze worker startte
+ *   (`stalePrintingCandidateIds`). Een claim van een andere tab die daarna
+ *   gebeurt, kan hier dus nooit per ongeluk door geraakt worden.
+ * - Pas na STALE_PRINTING_MAX_AGE_MS, zodat een print die op het startmoment
+ *   echt nog bezig was (andere tab) alle tijd krijgt om af te ronden — de
+ *   bridge-timeouts zorgen dat dat binnen ~8s gebeurt.
+ * - `resetStalePrintingLabelToPending` is conditioneel ('printing' -> 'pending')
+ *   en raakt dus nooit een label dat intussen printed/failed is geworden.
+ * - `print_attempts` blijft ongewijzigd; de bestaande retry-limiet blijft gelden.
+ * - Alleen voor orders die volgens de bestaande orderlogica nog relevant zijn.
+ */
+async function recoverStalePrintingLabels() {
+  if (stalePrintingCandidateIds.size === 0) {
+    return
+  }
+
+  const nowMs = Date.now()
+
+  if (nowMs - serviceStartedAtMs < STALE_PRINTING_MAX_AGE_MS) {
+    return
+  }
+
+  if (nowMs - lastStalePrintingRecoveryAt < STALE_PRINTING_RECOVERY_COOLDOWN_MS) {
+    return
+  }
+
+  lastStalePrintingRecoveryAt = nowMs
+
+  const { data, error } = await fetchPrintingLabels()
+
+  if (error) {
+    console.error('Vastgelopen printing labels ophalen mislukt:', error)
+    return
+  }
+
+  const stillPrinting = ((data ?? []) as KitchenLabel[]).filter((label) =>
+    stalePrintingCandidateIds.has(String(label.id))
+  )
+
+  // Kandidaten die niet meer 'printing' zijn, zijn afgerond -> uit de set.
+  const stillPrintingIds = new Set(stillPrinting.map((label) => String(label.id)))
+  for (const id of Array.from(stalePrintingCandidateIds)) {
+    if (!stillPrintingIds.has(id)) {
+      stalePrintingCandidateIds.delete(id)
+    }
+  }
+
+  if (stillPrinting.length === 0) {
+    return
+  }
+
+  const orderIds = Array.from(
+    new Set(
+      stillPrinting.map((label) => String(label.order_id)).filter(Boolean)
+    )
+  )
+
+  const orderMap = new Map<string, Order>()
+
+  if (orderIds.length > 0) {
+    const { data: orderData, error: orderError } = await fetchOrdersByIds(orderIds)
+
+    if (orderError) {
+      console.error(
+        'Orders voor stale-printing recovery ophalen mislukt:',
+        orderError
+      )
+      return
+    }
+
+    for (const order of (orderData ?? []) as Order[]) {
+      orderMap.set(String(order.id), order)
+    }
+  }
+
+  let recoveredCount = 0
+
+  for (const label of stillPrinting) {
+    const order = orderMap.get(String(label.order_id))
+
+    if (
+      !order ||
+      !isOrderReadyForAutomaticPrint(order) ||
+      order.status === 'completed'
+    ) {
+      // Niet meer relevant om te printen -> niet terugzetten, wel uit de set.
+      stalePrintingCandidateIds.delete(String(label.id))
+      continue
+    }
+
+    const { data: resetRows, error: resetError } =
+      await resetStalePrintingLabelToPending(label.id)
+
+    if (resetError) {
+      console.error(
+        `Vastgelopen label ${label.id} terugzetten naar pending mislukt:`,
+        resetError
+      )
+      continue
+    }
+
+    stalePrintingCandidateIds.delete(String(label.id))
+
+    if (!resetRows || resetRows.length === 0) {
+      // Een andere tab/worker heeft dit label net afgerond (printed/failed).
+      continue
+    }
+
+    // Zorg dat de worker dit teruggezette label niet als "oud pending" negeert.
+    ignoredPendingLabelIds.delete(String(label.id))
+    recoveredCount += 1
+
+    console.log(
+      `Vastgelopen printing label ${label.id} teruggezet naar pending voor herprint.`
+    )
+  }
+
+  if (recoveredCount > 0) {
+    scheduleAutomaticPrintCheck()
+  }
+}
+
 async function processPendingPrintJobs() {
   if (isAutoPrintProcessing) {
     return
@@ -144,6 +288,9 @@ async function processPendingPrintJobs() {
   isAutoPrintProcessing = true
 
   try {
+    // Eerst vastgelopen 'printing' labels herstellen, dan pas pending verwerken.
+    await recoverStalePrintingLabels()
+
     const { data: pendingData, error: pendingError } = await fetchPendingLabels()
 
     if (pendingError) {
@@ -252,6 +399,9 @@ async function requeueFailedLabels() {
   if (isAutoPrintProcessing) {
     return
   }
+
+  // Ook op de periodieke run: eerst vastgelopen 'printing' labels herstellen.
+  await recoverStalePrintingLabels()
 
   const nowMs = Date.now()
 
@@ -384,21 +534,92 @@ export async function startKitchenPrintService(deps: KitchenPrintServiceDeps) {
 
   getQrProductCode = deps.getQrProductCode
   onAfterAutoPrintCycle = deps.onAfterAutoPrintCycle
+  serviceStartedAtMs = Date.now()
 
-  // Onthoud alleen de labels die AL pending waren vóórdat de worker startte.
-  // Nieuwe labels krijgen nieuwe IDs en worden dus wel automatisch geprint.
-  const { data: oldPendingData, error: oldPendingError } = await fetchExistingPendingLabelIds()
+  // Bepaal welke bestaande pending labels na een (re)start automatisch mogen
+  // printen. NIET meer klakkeloos ALLES negeren: verse (< FRESH_PENDING_MAX_AGE_MS)
+  // labels van nog-relevante orders willen we WEL printen, zodat een order die
+  // net vóór een browser-restart is aangemaakt alsnog naar de keuken gaat.
+  // Oudere labels en labels van cancelled/completed orders blijven genegeerd
+  // (geen backlog-dump).
+  const { data: pendingData, error: pendingError } = await fetchPendingLabels()
 
-  if (oldPendingError) {
-    console.error('Oude pending labels bepalen mislukt:', oldPendingError)
+  if (pendingError) {
+    console.error('Bestaande pending labels bepalen mislukt:', pendingError)
+    ignoredPendingLabelIds = new Set()
   } else {
+    const pendingLabels = (pendingData ?? []) as KitchenLabel[]
+    const relevantFreshIds = new Set<string>()
+
+    const freshLabels = pendingLabels.filter((label) => {
+      const createdMs = label.created_at
+        ? new Date(label.created_at).getTime()
+        : 0
+      return (
+        createdMs > 0 &&
+        serviceStartedAtMs - createdMs <= FRESH_PENDING_MAX_AGE_MS
+      )
+    })
+
+    const freshOrderIds = Array.from(
+      new Set(
+        freshLabels.map((label) => String(label.order_id)).filter(Boolean)
+      )
+    )
+
+    if (freshOrderIds.length > 0) {
+      const { data: orderData, error: orderError } = await fetchOrdersByIds(freshOrderIds)
+
+      if (orderError) {
+        console.error(
+          'Orders voor pending-label filter ophalen mislukt:',
+          orderError
+        )
+      } else {
+        const orderMap = new Map(
+          ((orderData ?? []) as Order[]).map((order) => [
+            String(order.id),
+            order,
+          ])
+        )
+
+        for (const label of freshLabels) {
+          const order = orderMap.get(String(label.order_id))
+          if (
+            order &&
+            isOrderReadyForAutomaticPrint(order) &&
+            order.status !== 'completed'
+          ) {
+            relevantFreshIds.add(String(label.id))
+          }
+        }
+      }
+    }
+
     ignoredPendingLabelIds = new Set(
-      (oldPendingData ?? []).map((label: { id: string }) => String(label.id))
+      pendingLabels
+        .map((label) => String(label.id))
+        .filter((id) => !relevantFreshIds.has(id))
+    )
+  }
+
+  // Labels die NU al 'printing' zijn, zijn kandidaten voor stale-recovery: als
+  // ze over STALE_PRINTING_MAX_AGE_MS nog steeds 'printing' zijn, is de vorige
+  // print blijven hangen (crash tussen claim en printed/failed).
+  const { data: printingData, error: printingError } = await fetchPrintingLabels()
+
+  if (printingError) {
+    console.error('Bestaande printing labels bepalen mislukt:', printingError)
+    stalePrintingCandidateIds = new Set()
+  } else {
+    stalePrintingCandidateIds = new Set(
+      ((printingData ?? []) as KitchenLabel[]).map((label) => String(label.id))
     )
   }
 
   console.log(
-    `Automatische Zebra printer gestart. ${ignoredPendingLabelIds.size} oude pending label(s) worden genegeerd.`
+    `Automatische Zebra printer gestart. ${ignoredPendingLabelIds.size} oude pending label(s) genegeerd, ` +
+    `${stalePrintingCandidateIds.size} 'printing' label(s) bewaakt op vastlopen.`
   )
 
   autoPrintRealtimeChannel = supabase

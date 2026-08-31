@@ -55,6 +55,29 @@ function sendJson(res, statusCode, body) {
 }
 
 // =============================
+// IDEMPOTENCY CACHE
+// =============================
+// De Zebra kan een label fysiek ontvangen terwijl de HTTP-response verloren
+// gaat (netwerk-hik / client-timeout). De POS biedt het label dan opnieuw aan.
+// Deze in-memory cache onthoudt recent succesvol geprinte labelId's en
+// beantwoordt een herhaling met { ok: true, duplicate: true } ZONDER opnieuw
+// naar de printer te schrijven. De cache verdwijnt bij herstart van de bridge
+// (voldoende voor MVP) en wordt periodiek + per request opgeschoond.
+
+const PRINT_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000
+const recentlyPrintedLabels = new Map() // labelId -> timestamp in ms
+
+function prunePrintCache(nowMs) {
+  for (const [labelId, ts] of recentlyPrintedLabels) {
+    if (nowMs - ts > PRINT_IDEMPOTENCY_TTL_MS) {
+      recentlyPrintedLabels.delete(labelId)
+    }
+  }
+}
+
+setInterval(() => prunePrintCache(Date.now()), 60_000)
+
+// =============================
 // ZEBRA PRINT
 // =============================
 
@@ -164,7 +187,31 @@ const server = http.createServer((req, res) => {
         return
       }
 
+      const labelId = payload.labelId ? String(payload.labelId) : ''
+      const nowMs = Date.now()
+      prunePrintCache(nowMs)
+
+      // Idempotency: zelfde labelId binnen de TTL -> niet opnieuw printen.
+      if (labelId && recentlyPrintedLabels.has(labelId)) {
+        console.log(
+          `[PRINT DUP] ${new Date().toISOString()} | ${
+            payload.orderNumber || '-'
+          } | ${labelId} (binnen ${
+            PRINT_IDEMPOTENCY_TTL_MS / 1000
+          }s opnieuw ontvangen, niet opnieuw geprint)`
+        )
+        sendJson(res, 200, {
+          ok: true,
+          duplicate: true,
+        })
+        return
+      }
+
       await sendZplToPrinter(zpl)
+
+      if (labelId) {
+        recentlyPrintedLabels.set(labelId, nowMs)
+      }
 
       console.log(
         `[PRINT OK] ${new Date().toISOString()} | ${

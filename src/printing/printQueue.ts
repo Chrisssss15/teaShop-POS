@@ -7,8 +7,6 @@
 // (kitchenPrintService) keeps its existing error handling unchanged.
 
 import { supabase } from '../lib/supabase'
-import type { OrderItem } from '../types/order'
-import type { Product } from '../types/product'
 
 // --- retry policy (unchanged values) ---------------------------------------
 // Maximaal aantal AUTOMATISCHE printpogingen per label (initieel + retries).
@@ -20,18 +18,21 @@ export const FAILED_RETRY_BATCH_SIZE = 5
 export const FAILED_RETRY_MAX_AGE_MS = 12 * 60 * 60 * 1000
 
 // --- worker queue reads ---------------------------------------------------
-export function fetchExistingPendingLabelIds() {
-  return supabase
-    .from('kitchen_labels')
-    .select('id')
-    .eq('print_status', 'pending')
-}
-
 export function fetchPendingLabels() {
   return supabase
     .from('kitchen_labels')
     .select('*')
     .eq('print_status', 'pending')
+    .order('created_at', { ascending: true })
+}
+
+// Labels die momenteel op 'printing' staan. Gebruikt voor stale-recovery:
+// een label dat na een crash tussen claim en printed/failed is blijven hangen.
+export function fetchPrintingLabels() {
+  return supabase
+    .from('kitchen_labels')
+    .select('*')
+    .eq('print_status', 'printing')
     .order('created_at', { ascending: true })
 }
 
@@ -115,69 +116,19 @@ export function requeueFailedLabelToPending(labelId: string) {
     .select('id')
 }
 
-// --- label creation ----------------------------------------------------
-/**
- * Split each order item's quantity into one kitchen_labels record per drink.
- * Products met `product_type === 'item'` krijgen bewust GEEN label. Een product
- * dat niet in de catalogus zit krijgt (net als voorheen) wél een label.
- *
- * `getProduct` is meegegeven i.p.v. de globale `products`-array; de logica is
- * verder ongewijzigd. Retourneert `null` bij succes, anders de foutmelding.
- */
-export async function createKitchenLabelsForOrder(
-  orderId: string,
-  orderNumber: string,
-  savedItems: OrderItem[],
-  getProduct: (productId: string | null | undefined) => Product | undefined
-) {
-  const labels = []
-
-  for (const item of savedItems) {
-    const sourceProduct = getProduct(item.product_id)
-
-    if (sourceProduct?.product_type === 'item') {
-      continue
-    }
-
-    const quantity = Number(item.quantity ?? 1)
-    const productName =
-      item.product_name_snapshot ||
-      item.product_name ||
-      'Onbekend product'
-
-    for (let i = 1; i <= quantity; i++) {
-      labels.push({
-        order_id: String(orderId),
-        order_item_id: item.id ? String(item.id) : null,
-        product_id: item.product_id ? String(item.product_id) : null,
-        order_number: orderNumber,
-        product_name: productName,
-        status: 'new',
-        label_index: i,
-        cup_size: item.cup_size || null,
-        ice_level: item.ice_level || null,
-        sugar_level: item.sugar_level || null,
-        toppings: item.toppings || [],
-        print_status: 'pending',
-        print_attempts: 0,
-        printed_at: null,
-        print_error: null,
-      })
-    }
-  }
-
-  if (labels.length === 0) {
-    return null
-  }
-
-  const { error } = await supabase
+// --- stale 'printing' recovery ----------------------------------------------
+export function resetStalePrintingLabelToPending(labelId: string) {
+  // Conditioneel ('printing' -> 'pending'): raakt NOOIT een label dat een andere
+  // tab/worker intussen heeft afgerond (printed/failed). print_attempts blijft
+  // ONGEWIJZIGD, zodat de bestaande retry-limiet gerespecteerd blijft.
+  return supabase
     .from('kitchen_labels')
-    .insert(labels)
-
-  if (error) {
-    console.error('Kitchen labels maken mislukt:', error)
-    return error.message
-  }
-
-  return null
+    .update({
+      print_status: 'pending',
+      printed_at: null,
+      print_error: null,
+    })
+    .eq('id', labelId)
+    .eq('print_status', 'printing')
+    .select('id')
 }
