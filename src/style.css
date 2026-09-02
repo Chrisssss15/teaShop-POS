@@ -17507,3 +17507,38 @@ body.customer-menu-lock .customer-page .customer-category-sidebar{
   min-height: 0;
   overflow: hidden;
 }
+
+/* ========================================================= */
+/* iOS SAFE-AREA — CUSTOMER TOP                               */
+/* --------------------------------------------------------- */
+/* Alleen de customer-flow: de header (menu én status-/       */
+/* annuleerpagina, allebei .customer-page .customer-header)   */
+/* niet tegen de iPhone-statusbalk/notch. Werkt samen met     */
+/* viewport-fit=cover in index.html.                          */
+/* env(safe-area-inset-top) = 0 op toestellen zonder notch,   */
+/* dus desktop/browser verschuift niet. De px-waarden zijn    */
+/* exact de bestaande header-padding-top per breakpoint, dus  */
+/* zonder notch verandert er niets. Enige plek met safe-area  */
+/* top -> geen dubbele padding.                               */
+/* ========================================================= */
+
+.customer-page .customer-header{
+  padding-top: calc(env(safe-area-inset-top, 0px) + 24px);
+}
+
+@media (max-width: 600px){
+  .customer-page .customer-header{
+    padding-top: calc(env(safe-area-inset-top, 0px) + 18px);
+  }
+}
+
+/* Het "Bestelling geplaatst" / pickup-status / "Betaling geannuleerd" scherm
+   (.customer-success-page) heeft een eigen header-regel met
+   `padding: 18px 16px 16px !important` (en op ≤600px `... 14px !important`),
+   die de generieke safe-area-regel hierboven overschreef. Zelfde !important +
+   dezelfde 18px top -> zonder notch identiek, met notch de inset erbovenop.
+   `min-height` is hier `118px` (desktop) / `0` (≤600px) en met box-sizing
+   border-box mag de header groeien, dus die werkt de padding niet tegen. */
+.customer-success-page .customer-header{
+  padding-top: calc(env(safe-area-inset-top, 0px) + 18px) !important;
+}
