@@ -319,6 +319,7 @@ const translations = {
     edit: 'Bewerken',
     saveChanges: 'Wijzigingen opslaan',
     yourOrder: 'Jouw bestelling',
+    viewCart: 'Bekijk winkelwagen',
     drink: 'drankje',
     drinks: 'drankjes',
     emptyCart: 'Je winkelmand is nog leeg.',
@@ -386,6 +387,7 @@ const translations = {
     edit: 'Edit',
     saveChanges: 'Save changes',
     yourOrder: 'Your order',
+    viewCart: 'View cart',
     drink: 'drink',
     drinks: 'drinks',
     emptyCart: 'Your cart is empty.',
@@ -453,6 +455,7 @@ const translations = {
     edit: '编辑',
     saveChanges: '保存修改',
     yourOrder: '你的订单',
+    viewCart: '查看购物车',
     drink: '杯饮品',
     drinks: '杯饮品',
     emptyCart: '购物车还是空的。',
@@ -8944,6 +8947,40 @@ function renderCustomerCartButton() {
   `
 }
 
+// Sticky bottom cart-balk voor de customer menu-weergave. Alleen zichtbaar met
+// minimaal 1 item in de winkelwagen en niet terwijl de cart-drawer / checkout /
+// customizer al open is.
+function shouldShowCustomerCartBar() {
+  return (
+    cart.length > 0 &&
+    !isCustomerCartOpen &&
+    !isCustomerCheckoutOpen &&
+    !isCustomerCustomizerOpen
+  )
+}
+
+function renderCustomerCartBar() {
+  if (!shouldShowCustomerCartBar()) return ''
+
+  const itemCount = getCartItemCount()
+
+  // Klik = exact dezelfde actie als de bestaande winkelwagen-knop
+  // (#customer-cart-button -> openCustomerCart). Zie bindEvents().
+  return `
+    <button class="customer-cart-bar" id="customer-cart-bar" type="button">
+      <span class="customer-cart-bar-left">
+        <span class="customer-cart-bar-icon" aria-hidden="true">🛒</span>
+        <span class="customer-cart-bar-count">${itemCount}</span>
+        <span class="customer-cart-bar-label">${escapeHtml(t('viewCart'))}</span>
+      </span>
+      <span class="customer-cart-bar-right">
+        <span class="customer-cart-bar-total">€ ${getTotal().toFixed(2)}</span>
+        <span class="customer-cart-bar-chevron" aria-hidden="true">›</span>
+      </span>
+    </button>
+  `
+}
+
 function renderCustomerCartDrawer() {
   const itemCount = getCartItemCount()
   const drinkWord = itemCount === 1 ? t('drink') : t('drinks')
@@ -9234,7 +9271,7 @@ function renderCustomer() {
   }
 
   return `
-    <div class="page customer-page">
+    <div class="page customer-page${shouldShowCustomerCartBar() ? ' customer-has-cart-bar' : ''}">
       <header class="header customer-header">
         <div class="customer-brand">
           <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
@@ -9263,6 +9300,8 @@ function renderCustomer() {
           ${renderProductGroups(grouped)}
         </section>
       </main>
+
+      ${renderCustomerCartBar()}
     </div>
   `
 }
@@ -15894,6 +15933,8 @@ function bindEvents() {
   })
 
   document.querySelector<HTMLButtonElement>('#customer-cart-button')?.addEventListener('click', openCustomerCart)
+  // Sticky bottom cart-balk: exact dezelfde open-cart-actie als de headerknop.
+  document.querySelector<HTMLButtonElement>('#customer-cart-bar')?.addEventListener('click', openCustomerCart)
   document.querySelector<HTMLButtonElement>('#customer-cart-close')?.addEventListener('click', closeCustomerCart)
   document.querySelector<HTMLDivElement>('#customer-cart-overlay')?.addEventListener('click', closeCustomerCart)
 
