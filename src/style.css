@@ -17442,3 +17442,68 @@ body:has(.orders-page) .status-done{
     grid-column: span 1;
   }
 }
+
+/* ========================================================= */
+/* CUSTOMER / PWA SCROLL LOCK                                 */
+/* --------------------------------------------------------- */
+/* Actief via .customer-menu-lock op <html> en <body>, alleen */
+/* gezet in render() voor de customer MENU-weergave (niet de  */
+/* status-/annuleerpagina, die mag gewoon scrollen).          */
+/* Doel op iPhone/PWA: de viewport zelf scrollt/bouncet niet  */
+/* meer; uitsluitend de productlijst rechts scrollt. Raakt    */
+/* POS/admin/kitchen/orders nooit (class staat er dan af).    */
+/* ========================================================= */
+
+html.customer-menu-lock,
+body.customer-menu-lock{
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.customer-menu-lock #app{
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Customer root wordt een flex-kolom: de contenthoogte volgt de echte
+   header-hoogte i.p.v. een vaste calc(100dvh - Npx), wat op iOS/PWA de
+   page-scroll en de witruimte onderaan veroorzaakte. */
+body.customer-menu-lock .customer-page{
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.customer-menu-lock .customer-page > .customer-header{
+  flex: 0 0 auto;
+}
+
+/* Contentgebied vult de resthoogte; de interne grid-indeling
+   (sidebar + producten, kolombreedtes per breakpoint) blijft ongewijzigd. */
+body.customer-menu-lock .customer-page > .customer-menu-layout{
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* De enige verticale scroller. */
+body.customer-menu-lock .customer-page .customer-product-list{
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* geen grote lege ruimte meer onderaan: alleen safe-area + kleine marge */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+
+/* Categorie-kolom blijft staan en scrollt niet zelf. */
+body.customer-menu-lock .customer-page .customer-category-sidebar{
+  min-height: 0;
+  overflow: hidden;
+}

@@ -14873,6 +14873,15 @@ function renderAuthGate() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!
 
+  // Alleen de customer menu-weergave (niet de status-/annuleerpagina's) krijgt
+  // de viewport-scrolllock: op iPhone/PWA mag dan uitsluitend de productlijst
+  // scrollen, niet de hele pagina. Andere modes (POS/admin/kitchen) raken dit
+  // nooit omdat de class er dan af gaat.
+  const lockCustomerMenuScroll =
+    screen === 'customer' && !customerOrderPlaced && !customerPaymentCancelled
+  document.documentElement.classList.toggle('customer-menu-lock', lockCustomerMenuScroll)
+  document.body.classList.toggle('customer-menu-lock', lockCustomerMenuScroll)
+
   if (isAuthLoading) {
     app.innerHTML = renderAuthLoading()
     return
