@@ -15,7 +15,7 @@
 // Epson / cash-movement / audit logic and cannot be moved without changing
 // behaviour.
 
-import { supabase } from '../lib/supabase'
+import { supabase, customerSupabase } from '../lib/supabase'
 import type { Order, OrderItem, OrderStatus } from '../types/order'
 
 /**
@@ -36,6 +36,28 @@ export async function fetchTodayOrders(
 
   if (error) throw error
   return (data ?? []) as Order[]
+}
+
+export type PickupBoardRow = {
+  id: string
+  order_number: string | null
+  pickup_code: string | null
+  status: OrderStatus
+  created_at: string | null
+}
+
+/**
+ * Today's active pickup orders via the `get_pickup_board` RPC.
+ * The `display` role can no longer SELECT public.orders directly (Stap 5
+ * security), so the in-store pickup board reads through this RPC instead of
+ * fetchTodayOrders(). Returns only id / order_number / pickup_code / status /
+ * created_at. Throws the Supabase error on failure.
+ */
+export async function fetchPickupBoard(): Promise<PickupBoardRow[]> {
+  const { data, error } = await supabase.rpc('get_pickup_board')
+
+  if (error) throw error
+  return (data ?? []) as PickupBoardRow[]
 }
 
 /**
@@ -91,13 +113,15 @@ export type CustomerOrderStatusRow = {
 /**
  * Status of one customer order via the `get_customer_order_status` RPC.
  * The anonymous customer/QR flow uses this instead of a direct `orders`
- * SELECT. The RPC returns at most one row (array or single object). Throws
- * the Supabase error; returns null when no row is found.
+ * SELECT, via the session-less `customerSupabase` client so een ingelogde
+ * staff-sessie de call niet als `authenticated` uitvoert. The RPC returns at
+ * most one row (array or single object). Throws the Supabase error; returns
+ * null when no row is found.
  */
 export async function fetchCustomerOrderStatus(
   orderId: string
 ): Promise<CustomerOrderStatusRow | null> {
-  const { data, error } = await supabase.rpc('get_customer_order_status', {
+  const { data, error } = await customerSupabase.rpc('get_customer_order_status', {
     p_order_id: orderId,
   })
 

@@ -10,7 +10,7 @@
 // This module has NO global state, no render(), no realtime side effects.
 // The automatic Zebra print worker stays in ./kitchenPrintService.ts.
 
-import { supabase } from '../lib/supabase'
+import { supabase, customerSupabase } from '../lib/supabase'
 import type { KitchenLabel, LabelStatus } from '../types/kitchen'
 
 /** Open kitchen labels for the Kitchen screen (status new / preparing). */
@@ -25,11 +25,16 @@ export async function fetchOpenKitchenLabels(): Promise<KitchenLabel[]> {
   return (data ?? []) as KitchenLabel[]
 }
 
-/** All kitchen labels of one order (used by the customer progress screen). */
+/**
+ * All kitchen labels of one order (used ONLY by the customer/QR progress
+ * screen). Runs via the session-less `customerSupabase` client zodat een
+ * ingelogde staff-sessie in dezelfde browser deze call niet als
+ * `authenticated` uitvoert.
+ */
 export async function fetchKitchenLabelsForOrder(
   orderId: string
 ): Promise<KitchenLabel[]> {
-  const { data, error } = await supabase
+  const { data, error } = await customerSupabase
     .from('kitchen_labels')
     .select('*')
     .eq('order_id', orderId)

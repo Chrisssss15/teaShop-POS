@@ -3,7 +3,7 @@
 // =============================
 
 import './style.css'
-import { supabase } from './lib/supabase'
+import { supabase, customerSupabase } from './lib/supabase'
 import QRCode from 'qrcode'
 import { printEpsonReceipt } from './lib/epsonPrinter'
 
@@ -51,6 +51,7 @@ import {
 // Pure order-domain Supabase data-access moved to ./services/orders.
 import {
   fetchTodayOrders,
+  fetchPickupBoard,
   fetchOrderItemsForOrders,
   fetchCustomerOrderStatus,
   updateOrderFields,
@@ -136,6 +137,7 @@ const CUSTOMER_ORDER_PLACED_KEY = 'customer_order_placed'
 const CUSTOMER_ORDER_ID_KEY = 'customer_order_id'
 const CUSTOMER_PICKUP_CODE_KEY = 'customer_pickup_code'
 const CUSTOMER_ORDER_STATUS_KEY = 'customer_order_status'
+const CUSTOMER_ORDER_NUMBER_KEY = 'customer_order_number'
 const CUSTOMER_LANGUAGE_KEY = 'customer_language'
 
 const ICE_LEVELS: IceLevel[] = [
@@ -997,11 +999,21 @@ let customerPaymentMethod: PaymentMethod = 'online_fake'
 let customerPickupCode = ''
 let customerOrderPlaced = false
 let customerOrderId = ''
+// Leesbaar ordernummer (ORD-YYYYMMDD-HHMMSS-XXXX). Wordt in de zichtbare
+// customer-URL gebruikt na terugkeer van MultiSafepay; de echte order-herstel
+// blijft via customerOrderId + sessionStorage lopen.
+let customerOrderNumber = ''
 let customerOrderStatus: OrderStatus | null = null
 let customerOrderLabels: KitchenLabel[] = []
 let isCustomerCartOpen = false
 let isCustomerCheckoutOpen = false
 let customerLanguage: CustomerLanguage = 'nl'
+
+// Klant komt terug van MultiSafepay via de cancelUrl
+// (?mode=customer&order=<id>&payment_cancelled=1). In dat geval NIET de normale
+// order-progress-flow starten, maar een "betaling geannuleerd"-scherm tonen.
+let customerPaymentCancelled =
+  new URLSearchParams(window.location.search).get('payment_cancelled') === '1'
 
 // =============================
 // ADMIN STATE
@@ -1064,11 +1076,14 @@ let customerProgressTimer: number | null = null
 
 let ordersRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
 let kitchenRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
-let pickupRealtimeChannel: ReturnType<typeof supabase.channel> | null = null
 
 let ordersRealtimeReloadTimer: number | null = null
 let kitchenRealtimeReloadTimer: number | null = null
-let pickupRealtimeReloadTimer: number | null = null
+
+// Het in-store pickup-scherm gebruikt sinds de Stap 5 security-migratie geen
+// directe orders-SELECT / postgres_changes meer (de `display`-rol mag dat niet).
+// In plaats daarvan pollt het via de get_pickup_board() RPC.
+let pickupBoardPollTimer: number | null = null
 
 // Auto-print worker state (channel, timers, ignore-set, retry timer/cooldown)
 // verhuisd naar ./services/kitchenPrintService.
@@ -1111,6 +1126,7 @@ function clearCustomerSessionStorage() {
   sessionStorage.removeItem(CUSTOMER_CHECKOUT_OPEN_KEY)
   sessionStorage.removeItem(CUSTOMER_ORDER_PLACED_KEY)
   sessionStorage.removeItem(CUSTOMER_ORDER_ID_KEY)
+  sessionStorage.removeItem(CUSTOMER_ORDER_NUMBER_KEY)
   sessionStorage.removeItem(CUSTOMER_PICKUP_CODE_KEY)
   sessionStorage.removeItem(CUSTOMER_ORDER_STATUS_KEY)
 }
@@ -1123,6 +1139,7 @@ function resetCustomerStateVariables() {
   customerPickupCode = ''
   customerOrderPlaced = false
   customerOrderId = ''
+  customerOrderNumber = ''
   customerOrderStatus = null
   customerOrderLabels = []
   isCustomerCartOpen = false
@@ -1179,6 +1196,7 @@ function saveCustomerState() {
   sessionStorage.setItem(CUSTOMER_CHECKOUT_OPEN_KEY, String(isCustomerCheckoutOpen))
   sessionStorage.setItem(CUSTOMER_ORDER_PLACED_KEY, String(customerOrderPlaced))
   sessionStorage.setItem(CUSTOMER_ORDER_ID_KEY, customerOrderId)
+  sessionStorage.setItem(CUSTOMER_ORDER_NUMBER_KEY, customerOrderNumber)
   sessionStorage.setItem(CUSTOMER_PICKUP_CODE_KEY, customerPickupCode)
   sessionStorage.setItem(CUSTOMER_ORDER_STATUS_KEY, customerOrderStatus || '')
 }
@@ -1211,13 +1229,19 @@ function loadCustomerStateAfterProducts() {
 
   const savedPaymentMethod = sessionStorage.getItem(CUSTOMER_PAYMENT_METHOD_KEY) as PaymentMethod | null
 
-  if (savedPaymentMethod) {
+  // Customer/QR mag voorlopig alleen online betalen (MultiSafepay). Herstel de
+  // opgeslagen keuze alleen als die exact 'online_fake' is; een oude
+  // 'pay_at_counter'-waarde uit sessionStorage wordt genegeerd.
+  if (savedPaymentMethod === 'online_fake') {
     customerPaymentMethod = savedPaymentMethod
+  } else {
+    customerPaymentMethod = 'online_fake'
   }
 
   isCustomerCheckoutOpen = sessionStorage.getItem(CUSTOMER_CHECKOUT_OPEN_KEY) === 'true'
   customerOrderPlaced = sessionStorage.getItem(CUSTOMER_ORDER_PLACED_KEY) === 'true'
   customerOrderId = sessionStorage.getItem(CUSTOMER_ORDER_ID_KEY) || ''
+  customerOrderNumber = sessionStorage.getItem(CUSTOMER_ORDER_NUMBER_KEY) || ''
   customerPickupCode = sessionStorage.getItem(CUSTOMER_PICKUP_CODE_KEY) || ''
 
   const savedStatus = sessionStorage.getItem(CUSTOMER_ORDER_STATUS_KEY) as OrderStatus | null
@@ -1281,7 +1305,7 @@ async function loadProducts() {
   if (screen === 'customer') {
     loadCustomerStateAfterProducts()
 
-    if (customerOrderPlaced && customerOrderId) {
+    if (customerOrderPlaced && customerOrderId && !customerPaymentCancelled) {
       await loadCustomerOrderProgress(false)
       startCustomerProgressRefresh()
     }
@@ -1368,10 +1392,11 @@ function closePosAvailability() {
 }
 
 async function setPosProductSoldOut(productId: string, isSoldOut: boolean) {
-  const { error } = await supabase
-    .from('products')
-    .update({ is_sold_out: isSoldOut })
-    .eq('id', productId)
+  const { error } = await supabase.rpc('set_product_availability', {
+    p_product_id: productId,
+    p_is_sold_out: isSoldOut,
+    p_is_active: null,
+  })
 
   if (error) {
     posAvailabilityError = `Productstatus aanpassen mislukt: ${error.message}`
@@ -1399,10 +1424,11 @@ async function setPosProductSoldOut(productId: string, isSoldOut: boolean) {
 }
 
 async function setPosProductVisible(productId: string, isVisible: boolean) {
-  const { error } = await supabase
-    .from('products')
-    .update({ is_active: isVisible })
-    .eq('id', productId)
+  const { error } = await supabase.rpc('set_product_availability', {
+    p_product_id: productId,
+    p_is_sold_out: null,
+    p_is_active: isVisible,
+  })
 
   if (error) {
     posAvailabilityError = `Zichtbaarheid aanpassen mislukt: ${error.message}`
@@ -1503,11 +1529,10 @@ async function setPosTeaTypeSoldOut(
 
   posAvailabilityError = ''
 
-  const { error } = await supabase
-    .from('products')
-    .update({ is_sold_out: isSoldOut })
-    .eq('tea_type', cleanTeaType)
-    .eq('product_type', 'drink')
+  const { error } = await supabase.rpc('set_tea_type_availability', {
+    p_tea_type: cleanTeaType,
+    p_is_sold_out: isSoldOut,
+  })
 
   if (error) {
     posAvailabilityError = `Productstatus aanpassen mislukt: ${error.message}`
@@ -1550,10 +1575,10 @@ async function setPosToppingSoldOut(
     return
   }
 
-  const { error } = await supabase
-    .from('toppings')
-    .update({ is_sold_out: isSoldOut })
-    .eq('id', toppingId)
+  const { error } = await supabase.rpc('set_topping_availability', {
+    p_topping_id: toppingId,
+    p_is_sold_out: isSoldOut,
+  })
 
   if (error) {
     posAvailabilityError = `Toppingstatus aanpassen mislukt: ${error.message}`
@@ -3153,7 +3178,16 @@ function makeOrderNumber() {
   const mi = String(now.getMinutes()).padStart(2, '0')
   const ss = String(now.getSeconds()).padStart(2, '0')
 
-  return `ORD-${yyyy}${mm}${dd}-${hh}${mi}${ss}`
+  // Korte random suffix zodat twee customer/QR-orders in dezelfde seconde
+  // niet hetzelfde order_number krijgen (unieke constraint orders_order_number_key).
+  // crypto.getRandomValues werkt zonder library, ook buiten een secure context.
+  const bytes = new Uint8Array(2)
+  crypto.getRandomValues(bytes)
+  const suffix = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+
+  return `ORD-${yyyy}${mm}${dd}-${hh}${mi}${ss}-${suffix}`
 }
 
 function makePickupCode() {
@@ -3393,6 +3427,11 @@ async function submitOrder(paymentMethod: PaymentMethod) {
 async function submitCustomerOrder() {
   if (cart.length === 0 || isSubmitting) return
 
+  // Customer/QR mag voorlopig alleen online betalen (MultiSafepay).
+  if (customerPaymentMethod !== 'online_fake') {
+    customerPaymentMethod = 'online_fake'
+  }
+
   const cleanCustomerName = customerName.trim()
   const cleanCustomerPhone = customerPhone.trim()
 
@@ -3432,7 +3471,7 @@ async function submitCustomerOrder() {
   // 1. ORDER OPSLAAN
   // =============================
 
-  const { error: orderError } = await supabase
+  const { error: orderError } = await customerSupabase
     .from('orders')
     .insert({
       id: orderId,
@@ -3482,6 +3521,7 @@ async function submitCustomerOrder() {
         getCartItemDiscountAmount(item) * item.quantity
       ),
       quantity: item.quantity,
+      qty: item.quantity,
       line_total: tax.grossAmount,
       vat_rate: tax.vatRate,
       net_amount: tax.netAmount,
@@ -3494,12 +3534,12 @@ async function submitCustomerOrder() {
     }
   })
 
-  const { error: itemsError } = await supabase
+  const { error: itemsError } = await customerSupabase
     .from('order_items')
     .insert(orderItemsPayload)
 
   if (itemsError) {
-    await supabase
+    await customerSupabase
       .from('orders')
       .delete()
       .eq('id', orderId)
@@ -3529,6 +3569,7 @@ async function submitCustomerOrder() {
       )
 
       customerOrderId = orderId
+      customerOrderNumber = orderNumber
       customerPickupCode = pickupCode
       customerOrderStatus = 'new'
       customerOrderPlaced = true
@@ -3564,6 +3605,7 @@ async function submitCustomerOrder() {
 
   cart = []
   customerOrderId = orderId
+  customerOrderNumber = orderNumber
   customerPickupCode = pickupCode
   customerOrderStatus = 'new'
   customerOrderPlaced = true
@@ -3617,7 +3659,7 @@ async function createMultisafepayPayment(
   const {
     data: paymentRecord,
     error: paymentInsertError,
-  } = await supabase
+  } = await customerSupabase
     .from('payments')
     .insert({
       order_id: orderId,
@@ -3643,11 +3685,15 @@ async function createMultisafepayPayment(
   // 2. RETURN URLS
   // =============================
 
+  // In de zichtbare customer-URL staat alleen het leesbare ordernummer, nooit
+  // de interne order-UUID. `transactionid` wordt door MultiSafepay zelf
+  // toegevoegd aan de redirect en later client-side weer opgeschoond.
   const returnUrl = new URL(window.location.href)
   returnUrl.searchParams.set('mode', 'customer')
-  returnUrl.searchParams.set('order', orderId)
+  returnUrl.searchParams.set('order', orderNumber)
   returnUrl.searchParams.delete('payment')
   returnUrl.searchParams.delete('payment_cancelled')
+  returnUrl.searchParams.delete('transactionid')
 
   const cancelUrl = new URL(returnUrl.toString())
   cancelUrl.searchParams.set('payment_cancelled', '1')
@@ -3659,7 +3705,7 @@ async function createMultisafepayPayment(
   const {
     data,
     error: functionError,
-  } = await supabase.functions.invoke(
+  } = await customerSupabase.functions.invoke(
     'create-multisafepay-payment',
     {
       body: {
@@ -3676,7 +3722,7 @@ async function createMultisafepayPayment(
   if (functionError) {
     const now = new Date().toISOString()
 
-    await supabase
+    await customerSupabase
       .from('payments')
       .update({
         status: 'failed',
@@ -3698,7 +3744,7 @@ async function createMultisafepayPayment(
   if (!data?.success || !data?.paymentUrl) {
     const now = new Date().toISOString()
 
-    await supabase
+    await customerSupabase
       .from('payments')
       .update({
         status: 'failed',
@@ -3720,7 +3766,7 @@ async function createMultisafepayPayment(
   // 4. PAYMENT URL OPSLAAN
   // =============================
 
-  const { error: paymentUpdateError } = await supabase
+  const { error: paymentUpdateError } = await customerSupabase
     .from('payments')
     .update({
       payment_url: data.paymentUrl,
@@ -4237,7 +4283,7 @@ function stopAutoRefresh() {
 
   stopOrdersRealtime()
   stopKitchenRealtime()
-  stopPickupRealtime()
+  stopPickupPolling()
 }
 
 function scheduleOrdersRealtimeReload() {
@@ -4438,72 +4484,54 @@ function goBackFromSettings() {
   goToPos()
 }
 
-function schedulePickupRealtimeReload() {
-  if (pickupRealtimeReloadTimer !== null) {
-    window.clearTimeout(pickupRealtimeReloadTimer)
+// Laadt het in-store pickup-bord via de get_pickup_board() RPC (Stap 5
+// security: de `display`-rol mag public.orders niet meer rechtstreeks lezen).
+// Vult de bestaande `orders`-state met alleen de velden die het pickup-scherm
+// gebruikt (status + pickup_code).
+async function loadPickupBoard() {
+  let rows: Awaited<ReturnType<typeof fetchPickupBoard>>
+
+  try {
+    rows = await fetchPickupBoard()
+  } catch (error) {
+    console.error('Pickup-bord laden mislukt:', (error as { message?: string })?.message)
+    return
   }
 
-  pickupRealtimeReloadTimer = window.setTimeout(async () => {
-    pickupRealtimeReloadTimer = null
+  orders = rows.map((row) => ({
+    id: String(row.id),
+    order_number: row.order_number ?? null,
+    pickup_code: row.pickup_code ?? null,
+    status: row.status,
+    created_at: row.created_at ?? null,
+  }))
 
-    if (screen === 'pickup') {
-      await loadOrders()
+  if (screen === 'pickup') {
+    render()
+  }
+}
+
+// Alleen voor het pickup-scherm: eenvoudige polling (~5s) i.p.v. realtime.
+// De eerste (onmiddellijke) load doet de bootCurrentScreen pickup-branch al
+// (awaited), zodat de eerste render meteen data heeft; deze functie zet alleen
+// de herhaal-interval op. stopPickupPolling() vooraf voorkomt dubbele intervals.
+function startPickupPolling() {
+  stopPickupPolling()
+
+  pickupBoardPollTimer = window.setInterval(() => {
+    if (screen !== 'pickup') {
+      return
     }
-  }, 150)
+
+    void loadPickupBoard()
+    void loadPickupWaitSettings()
+  }, 5000)
 }
 
-function startPickupRealtime() {
-  stopPickupRealtime()
-
-  pickupRealtimeChannel = supabase
-    .channel('blue-cup-pickup')
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'orders',
-      },
-      () => {
-        schedulePickupRealtimeReload()
-      }
-    )
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'shop_settings',
-        filter: 'id=eq.1',
-      },
-      async () => {
-        await loadPickupWaitSettings()
-
-        if (screen === 'pickup') {
-          render()
-        }
-      }
-    )
-    .subscribe((status, error) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('Pickup realtime verbonden')
-      }
-
-      if (error) {
-        console.error('Pickup realtime fout:', error)
-      }
-    })
-}
-
-function stopPickupRealtime() {
-  if (pickupRealtimeReloadTimer !== null) {
-    window.clearTimeout(pickupRealtimeReloadTimer)
-    pickupRealtimeReloadTimer = null
-  }
-
-  if (pickupRealtimeChannel) {
-    void supabase.removeChannel(pickupRealtimeChannel)
-    pickupRealtimeChannel = null
+function stopPickupPolling() {
+  if (pickupBoardPollTimer !== null) {
+    window.clearInterval(pickupBoardPollTimer)
+    pickupBoardPollTimer = null
   }
 }
 
@@ -4576,7 +4604,7 @@ function startCustomerProgressRefresh() {
       return
     }
 
-    if (screen === 'customer' && customerOrderPlaced && customerOrderId) {
+    if (screen === 'customer' && customerOrderPlaced && customerOrderId && !customerPaymentCancelled) {
       await loadCustomerOrderProgress()
     }
   }, 5000)
@@ -4873,6 +4901,15 @@ function startNewCustomerOrder() {
   clearCustomerSessionStorage()
   resetCustomerStateVariables()
   message = ''
+
+  // Adresbalk terug naar een schone customer-URL: geen oud ordernummer, geen
+  // payment-return params. replaceState -> geen extra history-entry.
+  if (screen === 'customer') {
+    const url = new URL(window.location.href)
+    url.search = ''
+    url.searchParams.set('mode', 'customer')
+    window.history.replaceState({}, '', url.toString())
+  }
 
   stopCustomerProgressRefresh()
   getCustomerSessionId()
@@ -8810,14 +8847,6 @@ function renderCustomerCheckoutScreen() {
               <strong>${escapeHtml(t('onlinePayment'))}</strong>
               <span>${escapeHtml(t('onlinePaymentHint'))}</span>
             </button>
-
-            <button
-              class="customer-payment-option ${customerPaymentMethod === 'pay_at_counter' ? 'active' : ''}"
-              data-payment-method="pay_at_counter"
-            >
-              <strong>${escapeHtml(t('payAtCounter'))}</strong>
-              <span>${escapeHtml(t('payAtCounterHint'))}</span>
-            </button>
           </div>
         </section>
 
@@ -8871,6 +8900,33 @@ function renderCustomer() {
     clearCustomerSessionStorage()
     resetCustomerStateVariables()
     getCustomerSessionId()
+  }
+
+  if (customerPaymentCancelled) {
+    return `
+      <div class="page customer-page customer-success-page">
+        <header class="header customer-header">
+          <div class="customer-brand">
+            <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
+
+            <div>
+              <h1>Betaling geannuleerd</h1>
+              <p class="sub">Je bestelling is nog niet betaald</p>
+            </div>
+          </div>
+
+          ${renderCustomerLanguageSwitcher()}
+        </header>
+
+        <section class="customer-success-card">
+          <p>Je bestelling is nog niet betaald. Er is niets afgeschreven.</p>
+
+          <button class="checkout-btn" id="customer-payment-cancelled-retry">
+            Opnieuw bestellen
+          </button>
+        </section>
+      </div>
+    `
   }
 
   if (customerOrderPlaced) {
@@ -15546,6 +15602,12 @@ function bindEvents() {
 
   document.querySelector<HTMLButtonElement>('#new-customer-order-btn')?.addEventListener('click', startNewCustomerOrder)
 
+  document.querySelector<HTMLButtonElement>('#customer-payment-cancelled-retry')?.addEventListener('click', () => {
+    customerPaymentCancelled = false
+    // startNewCustomerOrder() schoont de URL nu zelf op naar ?mode=customer.
+    startNewCustomerOrder()
+  })
+
 
   document.querySelector<HTMLButtonElement>('#customer-customizer-close')?.addEventListener('click', closeCustomerCustomizer)
   document.querySelector<HTMLDivElement>('#customer-customizer-overlay')?.addEventListener('click', closeCustomerCustomizer)
@@ -15755,10 +15817,10 @@ window.addEventListener('popstate', async () => {
 
   if (screen === 'pickup') {
     await Promise.all([
-      loadOrders(),
+      loadPickupBoard(),
       loadPickupWaitSettings(),
     ])
-    startPickupRealtime()
+    startPickupPolling()
     return
   }
 
@@ -15800,7 +15862,7 @@ window.addEventListener('popstate', async () => {
     return
   }
 
-  if (screen === 'customer' && customerOrderPlaced && customerOrderId) {
+  if (screen === 'customer' && customerOrderPlaced && customerOrderId && !customerPaymentCancelled) {
     await loadCustomerOrderProgress(false)
     startCustomerProgressRefresh()
   }
@@ -15862,10 +15924,10 @@ async function bootCurrentScreen() {
 
   if (screen === 'pickup') {
     await Promise.all([
-      loadOrders(),
+      loadPickupBoard(),
       loadPickupWaitSettings(),
     ])
-    startPickupRealtime()
+    startPickupPolling()
     return
   }
 
@@ -15904,6 +15966,44 @@ async function bootCurrentScreen() {
   render()
 }
 
+// Na terugkeer van MultiSafepay bevat de URL rommel: MultiSafepay hangt zelf
+// `transactionid` aan de redirect, en oudere betaallinks kunnen nog de interne
+// order-UUID in `order` hebben staan. In de zichtbare customer-URL willen we
+// uitsluitend `?mode=customer&order=<order_number>` (plus `payment_cancelled=1`
+// tijdens de cancel-flow). Dit leest niets essentieels uit de URL — de order
+// wordt hersteld via sessionStorage (customerOrderId) — het houdt alleen de
+// adresbalk schoon.
+function normalizeCustomerUrl() {
+  if (screen !== 'customer') return
+
+  const current = new URL(window.location.href)
+  const clean = new URL(window.location.href)
+  clean.search = ''
+  clean.searchParams.set('mode', 'customer')
+
+  const uuidPattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const rawOrderParam = current.searchParams.get('order') || ''
+
+  // Voorkeur: het leesbare order_number uit sessionStorage. Anders het
+  // bestaande `order`-param, maar nooit een interne UUID.
+  const orderParam =
+    customerOrderNumber ||
+    (rawOrderParam && !uuidPattern.test(rawOrderParam) ? rawOrderParam : '')
+
+  if (orderParam) {
+    clean.searchParams.set('order', orderParam)
+  }
+
+  if (current.searchParams.get('payment_cancelled') === '1') {
+    clean.searchParams.set('payment_cancelled', '1')
+  }
+
+  if (clean.search !== current.search) {
+    window.history.replaceState({}, '', clean.toString())
+  }
+}
+
 async function startApp() {
   // FASE 1: resolve the session first so route guards can run.
   await initAuth()
@@ -15918,6 +16018,7 @@ async function startApp() {
   }
 
   await bootCurrentScreen()
+  normalizeCustomerUrl()
 }
 
 startApp()
