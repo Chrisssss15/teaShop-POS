@@ -130,3 +130,39 @@ export async function fetchCustomerOrderStatus(
   const row = Array.isArray(data) ? data[0] : data
   return (row ?? null) as CustomerOrderStatusRow | null
 }
+
+export type CustomerOrderByReferenceRow = {
+  id: string
+  order_number: string
+  pickup_code: string | null
+  status: OrderStatus
+  payment_status: string | null
+}
+
+/**
+ * Recovery-lookup van één customer/QR-order na een volledige tab-close, waarbij
+ * de browser alleen nog order_number + pickup_code (uit localStorage) heeft en
+ * niet meer de order-UUID. Draait via de SECURITY DEFINER RPC
+ * `get_customer_order_by_reference` — de anon-rol heeft (terecht) GEEN directe
+ * SELECT op public.orders. De RPC matcht order_number én pickup_code exact en
+ * geeft alleen niet-gevoelige statusdata terug. Geeft null wanneer er geen
+ * match is; gooit de Supabase error zodat de caller de loading-state kan
+ * stoppen en de normale startflow kan tonen.
+ */
+export async function fetchCustomerOrderByReference(
+  orderNumber: string,
+  pickupCode: string
+): Promise<CustomerOrderByReferenceRow | null> {
+  const { data, error } = await customerSupabase.rpc(
+    'get_customer_order_by_reference',
+    {
+      p_order_number: orderNumber,
+      p_pickup_code: pickupCode,
+    }
+  )
+
+  if (error) throw error
+
+  const row = Array.isArray(data) ? data[0] : data
+  return (row ?? null) as CustomerOrderByReferenceRow | null
+}

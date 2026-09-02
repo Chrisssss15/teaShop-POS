@@ -54,6 +54,7 @@ import {
   fetchPickupBoard,
   fetchOrderItemsForOrders,
   fetchCustomerOrderStatus,
+  fetchCustomerOrderByReference,
   updateOrderFields,
   insertAuditLog,
 } from './services/orders'
@@ -139,6 +140,15 @@ const CUSTOMER_PICKUP_CODE_KEY = 'customer_pickup_code'
 const CUSTOMER_ORDER_STATUS_KEY = 'customer_order_status'
 const CUSTOMER_ORDER_NUMBER_KEY = 'customer_order_number'
 const CUSTOMER_LANGUAGE_KEY = 'customer_language'
+
+// localStorage (niet sessionStorage): onthoudt op dit apparaat de laatste
+// actieve customer-order zodat de klant na het sluiten van het tabblad zijn
+// bestelling/ophaalcode terugvindt. Bevat NOOIT status, naam, telefoon,
+// betaal-/auth-gegevens of de interne order-UUID — alleen het leesbare
+// ordernummer, de ophaalcode en wanneer de order geplaatst is. Max 24 uur
+// geldig; de backend blijft de bron van waarheid voor de actuele status.
+const ACTIVE_CUSTOMER_ORDER_KEY = 'teashop_active_customer_order'
+const ACTIVE_CUSTOMER_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 const ICE_LEVELS: IceLevel[] = [
   'no_ice',
@@ -1153,6 +1163,152 @@ function resetCustomerStateVariables() {
   editingCartItemId = null
 }
 
+// --- localStorage: laatste actieve customer-order op dit apparaat -----------
+// Alleen een "hint" om de klant zijn bestelling te laten terugvinden; NOOIT de
+// bron van waarheid voor betaald/ready/etc. Alle lees-/schrijfacties zijn
+// try/catch-veilig (private mode / quota / corrupte data mogen niet crashen).
+
+type ActiveCustomerOrderHint = {
+  orderNumber: string
+  pickupCode: string
+  createdAt: string
+}
+
+function saveActiveCustomerOrderHint() {
+  if (!customerOrderNumber || !customerPickupCode) return
+
+  try {
+    // Bestaande createdAt behouden zolang het om dezelfde order gaat, zodat de
+    // 24u-expiry vanaf het plaatsen van de order telt.
+    let createdAt = new Date().toISOString()
+    const raw = localStorage.getItem(ACTIVE_CUSTOMER_ORDER_KEY)
+
+    if (raw) {
+      try {
+        const prev = JSON.parse(raw) as Partial<ActiveCustomerOrderHint>
+        if (
+          prev &&
+          prev.orderNumber === customerOrderNumber &&
+          typeof prev.createdAt === 'string'
+        ) {
+          createdAt = prev.createdAt
+        }
+      } catch {
+        // corrupte vorige waarde -> gewoon overschrijven
+      }
+    }
+
+    const hint: ActiveCustomerOrderHint = {
+      orderNumber: customerOrderNumber,
+      pickupCode: customerPickupCode,
+      createdAt,
+    }
+
+    localStorage.setItem(ACTIVE_CUSTOMER_ORDER_KEY, JSON.stringify(hint))
+  } catch {
+    // localStorage niet beschikbaar -> stil negeren.
+  }
+}
+
+function clearActiveCustomerOrderHint() {
+  try {
+    localStorage.removeItem(ACTIVE_CUSTOMER_ORDER_KEY)
+  } catch {
+    // niets
+  }
+}
+
+function readActiveCustomerOrderHint(): ActiveCustomerOrderHint | null {
+  let raw: string | null = null
+
+  try {
+    raw = localStorage.getItem(ACTIVE_CUSTOMER_ORDER_KEY)
+  } catch {
+    return null
+  }
+
+  if (!raw) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    clearActiveCustomerOrderHint()
+    return null
+  }
+
+  const hint = (parsed ?? {}) as Partial<ActiveCustomerOrderHint>
+  if (
+    typeof hint.orderNumber !== 'string' ||
+    typeof hint.pickupCode !== 'string' ||
+    typeof hint.createdAt !== 'string'
+  ) {
+    clearActiveCustomerOrderHint()
+    return null
+  }
+
+  const createdMs = Date.parse(hint.createdAt)
+  if (
+    Number.isNaN(createdMs) ||
+    Date.now() - createdMs > ACTIVE_CUSTOMER_ORDER_MAX_AGE_MS
+  ) {
+    clearActiveCustomerOrderHint()
+    return null
+  }
+
+  return {
+    orderNumber: hint.orderNumber,
+    pickupCode: hint.pickupCode,
+    createdAt: hint.createdAt,
+  }
+}
+
+// Herstelt na een tab-close (sessionStorage weg) de actieve customer-order uit
+// de localStorage-hint. De hint levert alleen ordernummer + ophaalcode; die
+// worden via de SECURITY DEFINER RPC get_customer_order_by_reference exact
+// gematcht tegen de order. Pas bij een match wordt de bestaande status-flow
+// (get_customer_order_status op de echte order-UUID) gestart. Bij geen match of
+// een RPC-fout stopt deze functie zonder de "bestelling geplaatst"-pagina te
+// tonen -> geen infinite loading.
+async function restoreActiveCustomerOrderFromLocalStorage() {
+  const hint = readActiveCustomerOrderHint()
+  if (!hint) return
+
+  let order: Awaited<ReturnType<typeof fetchCustomerOrderByReference>>
+  try {
+    order = await fetchCustomerOrderByReference(hint.orderNumber, hint.pickupCode)
+  } catch (error) {
+    // RPC-fout: hint bewaren (kan tijdelijk zijn), maar NIET de statuspagina
+    // tonen. De normale startflow (menu) rendert gewoon.
+    console.error(
+      'Actieve customer-order herstellen mislukt:',
+      (error as { message?: string })?.message
+    )
+    return
+  }
+
+  if (!order) {
+    // order_number + pickup_code matchen geen customer/QR-order (verkeerde of
+    // verlopen data) -> hint opruimen en normale startflow tonen.
+    clearActiveCustomerOrderHint()
+    return
+  }
+
+  // Match: schakel over naar de bestaande, UUID-gebaseerde status-flow.
+  customerOrderId = order.id
+  customerOrderNumber = order.order_number
+  customerPickupCode = order.pickup_code || hint.pickupCode
+  customerOrderStatus = order.status
+  customerOrderLabels = []
+  customerOrderPlaced = true
+
+  saveCustomerState()
+  saveActiveCustomerOrderHint()
+
+  await loadCustomerOrderProgress(false)
+  startCustomerProgressRefresh()
+}
+
 function getCustomerSessionId() {
   if (isCustomerSessionExpired()) {
     clearCustomerSessionStorage()
@@ -1308,6 +1464,10 @@ async function loadProducts() {
     if (customerOrderPlaced && customerOrderId && !customerPaymentCancelled) {
       await loadCustomerOrderProgress(false)
       startCustomerProgressRefresh()
+    } else if (!customerOrderPlaced && !customerPaymentCancelled) {
+      // Geen actieve order in sessionStorage/URL: probeer de laatste actieve
+      // order op dit apparaat te herstellen uit de localStorage-hint.
+      await restoreActiveCustomerOrderFromLocalStorage()
     }
   }
 
@@ -3577,6 +3737,7 @@ async function submitCustomerOrder() {
       isCustomerCheckoutOpen = false
 
       saveCustomerState()
+      saveActiveCustomerOrderHint()
 
       cart = []
       isSubmitting = false
@@ -3614,6 +3775,7 @@ async function submitCustomerOrder() {
   isSubmitting = false
 
   saveCustomerState()
+  saveActiveCustomerOrderHint()
 
   await loadCustomerOrderProgress(false)
   startCustomerProgressRefresh()
@@ -4899,6 +5061,7 @@ function goBackFromPrintPreview() {
 
 function startNewCustomerOrder() {
   clearCustomerSessionStorage()
+  clearActiveCustomerOrderHint()
   resetCustomerStateVariables()
   message = ''
 
