@@ -3,6 +3,8 @@
 // =============================
 
 import './style.css'
+import { Capacitor } from '@capacitor/core'
+import { App as CapacitorApp } from '@capacitor/app'
 import { supabase, customerSupabase } from './lib/supabase'
 import QRCode from 'qrcode'
 import { printEpsonReceipt } from './lib/epsonPrinter'
@@ -555,7 +557,62 @@ const SUGAR_LEVEL_LABELS: Record<CustomerLanguage, Record<SugarLevel, string>> =
 // =============================
 
 const params = new URLSearchParams(window.location.search)
-const mode = params.get('mode')
+let mode = params.get('mode')
+
+// De native (Capacitor) build is uitsluitend de klant-app.
+function isNativeCustomerApp(): boolean {
+  return Capacitor.isNativePlatform()
+}
+
+// Native app-start zonder expliciete mode -> altijd customer-mode, nooit de
+// staff-login. De gewone webapp (browser) en elke expliciete ?mode=... blijven
+// ongewijzigd; ?mode=customer werkt overal hetzelfde.
+if (!mode && isNativeCustomerApp()) {
+  mode = 'customer'
+  const nativeStartUrl = new URL(window.location.href)
+  nativeStartUrl.searchParams.set('mode', 'customer')
+  window.history.replaceState(window.history.state, '', nativeStartUrl)
+}
+
+// --- Native MultiSafepay-return via custom URL scheme ----------------------
+// De native iOS-app kan geen http(s) return-URL terugkrijgen (Safari kan die
+// niet in de app openen). MultiSafepay stuurt daarom in de native app terug
+// naar een deep link:
+//   bluecup://payment-return?order=<order_number>
+//   bluecup://payment-return?order=<order_number>&payment_cancelled=1
+// De deep link bevat NOOIT de interne order-UUID en NOOIT payment-status; de
+// echte status/betaling blijft uit Supabase komen. Browser/PWA gebruiken
+// ongewijzigd de bestaande http(s) return-URL.
+type CustomerPaymentReturn = { order: string | null; paymentCancelled: boolean }
+
+function buildNativePaymentReturnUrls(orderNumber: string): {
+  redirectUrl: string
+  cancelUrl: string
+} {
+  const base = `bluecup://payment-return?order=${encodeURIComponent(orderNumber)}`
+  return { redirectUrl: base, cancelUrl: `${base}&payment_cancelled=1` }
+}
+
+function parseCustomerPaymentReturnDeepLink(
+  rawUrl: string
+): CustomerPaymentReturn | null {
+  if (!rawUrl || !rawUrl.toLowerCase().startsWith('bluecup://')) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return null
+  }
+
+  const target = (parsed.host || parsed.pathname.replace(/^\/+/, '')).toLowerCase()
+  if (target !== 'payment-return') return null
+
+  return {
+    order: parsed.searchParams.get('order'),
+    paymentCancelled: parsed.searchParams.get('payment_cancelled') === '1',
+  }
+}
 
 function getScreenFromMode(modeValue: string | null): Screen {
   if (modeValue === 'pos-product-status') return 'pos-product-status'
@@ -3847,18 +3904,33 @@ async function createMultisafepayPayment(
   // 2. RETURN URLS
   // =============================
 
-  // In de zichtbare customer-URL staat alleen het leesbare ordernummer, nooit
-  // de interne order-UUID. `transactionid` wordt door MultiSafepay zelf
-  // toegevoegd aan de redirect en later client-side weer opgeschoond.
-  const returnUrl = new URL(window.location.href)
-  returnUrl.searchParams.set('mode', 'customer')
-  returnUrl.searchParams.set('order', orderNumber)
-  returnUrl.searchParams.delete('payment')
-  returnUrl.searchParams.delete('payment_cancelled')
-  returnUrl.searchParams.delete('transactionid')
+  let redirectReturnUrl: string
+  let cancelReturnUrl: string
 
-  const cancelUrl = new URL(returnUrl.toString())
-  cancelUrl.searchParams.set('payment_cancelled', '1')
+  if (isNativeCustomerApp()) {
+    // Native iOS: custom scheme deep link. Alleen het leesbare order_number,
+    // geen interne UUID.
+    const nativeUrls = buildNativePaymentReturnUrls(orderNumber)
+    redirectReturnUrl = nativeUrls.redirectUrl
+    cancelReturnUrl = nativeUrls.cancelUrl
+  } else {
+    // Browser / PWA: ongewijzigde http(s) return-URL. In de zichtbare
+    // customer-URL staat alleen het leesbare ordernummer, nooit de interne
+    // order-UUID. `transactionid` wordt door MultiSafepay zelf toegevoegd en
+    // later client-side weer opgeschoond.
+    const returnUrl = new URL(window.location.href)
+    returnUrl.searchParams.set('mode', 'customer')
+    returnUrl.searchParams.set('order', orderNumber)
+    returnUrl.searchParams.delete('payment')
+    returnUrl.searchParams.delete('payment_cancelled')
+    returnUrl.searchParams.delete('transactionid')
+
+    const cancelUrl = new URL(returnUrl.toString())
+    cancelUrl.searchParams.set('payment_cancelled', '1')
+
+    redirectReturnUrl = returnUrl.toString()
+    cancelReturnUrl = cancelUrl.toString()
+  }
 
   // =============================
   // 3. EDGE FUNCTION AANROEPEN
@@ -3875,8 +3947,8 @@ async function createMultisafepayPayment(
         amount: amountInCents,
         description: `Blue Cup bestelling ${orderNumber}`,
         customerName,
-        redirectUrl: returnUrl.toString(),
-        cancelUrl: cancelUrl.toString(),
+        redirectUrl: redirectReturnUrl,
+        cancelUrl: cancelReturnUrl,
       },
     }
   )
@@ -14890,6 +14962,11 @@ function render() {
   // Route guard: keep `screen` within what the current role may open.
   enforceScreenAccess()
 
+  // De native klant-app toont nooit de staff-login.
+  if (screen === 'login' && isNativeCustomerApp()) {
+    screen = 'customer'
+  }
+
   if (screen === 'login') {
     app.innerHTML = renderAuthGate()
     bindEvents()
@@ -16176,6 +16253,79 @@ function normalizeCustomerUrl() {
   }
 }
 
+// Verwerkt een native payment-return deep link terwijl de app AL draait (warme
+// start: webview + JS-state nog intact). Zet de bestaande customer-flow in
+// dezelfde toestand als na een browser-return. De deep link is nooit de bron
+// van "betaald" — de status komt uit loadCustomerOrderProgress() / Supabase.
+async function applyNativeCustomerPaymentReturn(deepLink: CustomerPaymentReturn) {
+  screen = 'customer'
+
+  if (deepLink.paymentCancelled) {
+    // Bestaande "Betaling geannuleerd"-flow; pending order + localStorage-hint
+    // blijven ongemoeid (geen delete, geen nieuwe order).
+    customerPaymentCancelled = true
+    stopCustomerProgressRefresh()
+    render()
+    normalizeCustomerUrl()
+    return
+  }
+
+  customerPaymentCancelled = false
+
+  // State staat normaal nog in geheugen/sessionStorage (webview bleef leven).
+  if (!customerOrderPlaced || !customerOrderId) {
+    loadCustomerStateAfterProducts()
+  }
+
+  if (customerOrderPlaced && customerOrderId) {
+    saveActiveCustomerOrderHint()
+    await loadCustomerOrderProgress(false)
+    startCustomerProgressRefresh()
+    render()
+    normalizeCustomerUrl()
+    return
+  }
+
+  // Zeldzaam bij een warme start: val terug op de localStorage-hint +
+  // get_customer_order_by_reference RPC (dezelfde recovery als cold start).
+  await restoreActiveCustomerOrderFromLocalStorage()
+  render()
+  normalizeCustomerUrl()
+}
+
+let nativePaymentReturnListenerBound = false
+
+function initNativePaymentReturnListener() {
+  if (!isNativeCustomerApp() || nativePaymentReturnListenerBound) return
+  nativePaymentReturnListenerBound = true
+
+  void CapacitorApp.addListener('appUrlOpen', (event: { url: string }) => {
+    const deepLink = parseCustomerPaymentReturnDeepLink(event.url)
+    if (deepLink) {
+      void applyNativeCustomerPaymentReturn(deepLink)
+    }
+  })
+}
+
+// Cold start: de app is dood gestart via de deep link. Retourneert de geparste
+// payment-return zodat startApp() de customer-weergave meteen goed zet en de
+// bestaande boot-recovery (sessionStorage -> localStorage-hint) het overneemt.
+async function consumeNativePaymentReturnLaunchUrl(): Promise<CustomerPaymentReturn | null> {
+  if (!isNativeCustomerApp()) return null
+
+  try {
+    const launch = await CapacitorApp.getLaunchUrl()
+    if (!launch?.url) return null
+    return parseCustomerPaymentReturnDeepLink(launch.url)
+  } catch (error) {
+    console.error(
+      'Native launch URL ophalen mislukt:',
+      (error as { message?: string })?.message
+    )
+    return null
+  }
+}
+
 async function startApp() {
   // FASE 1: resolve the session first so route guards can run.
   await initAuth()
@@ -16184,13 +16334,34 @@ async function startApp() {
   // need a login. Everything else is guarded here.
   enforceScreenAccess()
 
+  // Native cold start via bluecup://payment-return?... : forceer de customer-
+  // weergave en zet de cancel-flag vóór de boot; de rest (order herstellen,
+  // status ophalen) doet de bestaande customer boot-recovery.
+  const coldStartPaymentReturn = await consumeNativePaymentReturnLaunchUrl()
+  if (coldStartPaymentReturn) {
+    screen = 'customer'
+    customerPaymentCancelled = coldStartPaymentReturn.paymentCancelled
+  }
+
   if (screen === 'login') {
-    render()
-    return
+    // Extra vangnet: de native klant-app komt nooit op de staff-login uit,
+    // ook niet bij een handmatige/deeplink staff-mode. Val terug op customer.
+    if (isNativeCustomerApp()) {
+      screen = 'customer'
+      const url = new URL(window.location.href)
+      url.searchParams.set('mode', 'customer')
+      window.history.replaceState(window.history.state, '', url)
+    } else {
+      render()
+      return
+    }
   }
 
   await bootCurrentScreen()
   normalizeCustomerUrl()
+
+  // Warme deep links (app al open) via de App-plugin listener.
+  initNativePaymentReturnListener()
 }
 
 startApp()
