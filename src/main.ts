@@ -881,8 +881,15 @@ async function handleCreateStaffUser() {
     render()
     return
   }
-  if (password.length < 8) {
-    adminUsersError = 'Het tijdelijke wachtwoord moet minimaal 8 tekens zijn.'
+  if (
+    password.length < 12 ||
+    !/[a-z]/.test(password) ||
+    !/[A-Z]/.test(password) ||
+    !/\d/.test(password) ||
+    !/[^A-Za-z0-9]/.test(password)
+  ) {
+    adminUsersError =
+      'Gebruik minimaal 12 tekens met een hoofdletter, kleine letter, cijfer en symbool.'
     render()
     return
   }
