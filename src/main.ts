@@ -76,6 +76,9 @@ import type { User, UserProfile, UserRole, AdminUserRow } from './types/user'
 import {
   getCurrentSession,
   fetchCurrentProfile,
+  getMfaStatus,
+  startTotpEnrollment,
+  verifyTotpCode,
   signIn as authSignIn,
   signOut as authSignOut,
 } from './services/auth'
@@ -651,6 +654,53 @@ function updateModeInUrl(nextScreen: Screen) {
 // Minimal glue only. Real logic: services/auth.ts + utils/permissions.ts
 // =============================
 
+function profileRequiresMfa(profile: UserProfile | null): boolean {
+  // MFA is available in Supabase, but optional for every role.
+  void profile
+  return false
+}
+
+function resetMfaState() {
+  authMfaStep = 'not-required'
+  authMfaFactorId = ''
+  authMfaQrCode = ''
+  authMfaSecret = ''
+  authMfaError = ''
+  isMfaBusy = false
+}
+
+async function refreshRequiredMfaState() {
+  if (!currentUser || !profileRequiresMfa(currentProfile)) {
+    resetMfaState()
+    return
+  }
+
+  authMfaStep = 'checking'
+  authMfaError = ''
+
+  try {
+    const status = await getMfaStatus()
+    authMfaFactorId = status.verifiedTotpFactorId ?? ''
+
+    if (status.currentLevel === 'aal2') {
+      authMfaStep = 'verified'
+      authMfaQrCode = ''
+      authMfaSecret = ''
+      return
+    }
+
+    authMfaStep = authMfaFactorId ? 'challenge-required' : 'setup-required'
+  } catch (error) {
+    console.error('MFA-status controleren mislukt:', error)
+    authMfaStep = 'error'
+    authMfaError = 'De extra beveiliging kon niet worden gecontroleerd.'
+  }
+}
+
+function hasSatisfiedRequiredMfa(): boolean {
+  return !profileRequiresMfa(currentProfile) || authMfaStep === 'verified'
+}
+
 async function initAuth() {
   try {
     const session = await getCurrentSession()
@@ -663,13 +713,16 @@ async function initAuth() {
         console.error('Profiel laden mislukt:', profileError)
         currentProfile = null
       }
+      await refreshRequiredMfaState()
     } else {
       currentProfile = null
+      resetMfaState()
     }
   } catch (sessionError) {
     console.error('Sessie laden mislukt:', sessionError)
     currentUser = null
     currentProfile = null
+    resetMfaState()
   } finally {
     isAuthLoading = false
   }
@@ -694,6 +747,7 @@ function bindAuthListener() {
     if (event === 'SIGNED_OUT' || !nextUser) {
       currentUser = null
       currentProfile = null
+      resetMfaState()
       if (!isPublicScreen(screen)) {
         screen = 'login'
       }
@@ -707,9 +761,13 @@ function bindAuthListener() {
       return
     }
 
-    // Same account (token refresh / user update): keep state, no navigation.
+    // A verified challenge changes the JWT from AAL1 to AAL2. Refresh the
+    // local MFA gate even when Supabase reports the same account.
     if (nextUser.id === currentUser?.id) {
       currentUser = nextUser
+      if (event === 'MFA_CHALLENGE_VERIFIED') {
+        void refreshRequiredMfaState().then(() => render())
+      }
       return
     }
 
@@ -722,6 +780,7 @@ function bindAuthListener() {
         console.error('Profiel laden mislukt:', profileError)
         currentProfile = null
       }
+      await refreshRequiredMfaState()
       render()
     })()
   })
@@ -736,6 +795,7 @@ function resolveGuardedScreen(requested: Screen): Screen {
   if (requested === 'login') return 'login'
   if (!currentUser) return 'login'
   if (!currentProfile || !currentProfile.is_active) return 'login'
+  if (!hasSatisfiedRequiredMfa()) return 'login'
   if (!canAccessScreen(currentProfile, requested)) {
     return defaultScreenForRole(currentProfile.role)
   }
@@ -791,6 +851,13 @@ async function handleLoginSubmit() {
     return
   }
 
+  await refreshRequiredMfaState()
+  if (!hasSatisfiedRequiredMfa()) {
+    screen = 'login'
+    render()
+    return
+  }
+
   const target = defaultScreenForRole(currentProfile.role)
   screen = target
   updateModeInUrl(target)
@@ -806,6 +873,7 @@ async function handleLogout() {
 
   currentUser = null
   currentProfile = null
+  resetMfaState()
   authError = ''
   stopAutoRefresh()
   stopCustomerProgressRefresh()
@@ -813,6 +881,74 @@ async function handleLogout() {
   if (!isPublicScreen(screen)) {
     screen = 'login'
   }
+  render()
+}
+
+async function handleStartMfaEnrollment() {
+  if (isMfaBusy || !profileRequiresMfa(currentProfile)) return
+
+  isMfaBusy = true
+  authMfaError = ''
+  render()
+
+  try {
+    const enrollment = await startTotpEnrollment()
+    authMfaFactorId = enrollment.factorId
+    authMfaQrCode = enrollment.qrCode.startsWith('data:image/')
+      ? enrollment.qrCode
+      : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(enrollment.qrCode)}`
+    authMfaSecret = enrollment.secret
+    authMfaStep = 'enrollment-code'
+  } catch (error) {
+    console.error('Authenticator instellen mislukt:', error)
+    authMfaStep = 'error'
+    authMfaError =
+      error instanceof Error ? error.message : 'Authenticator instellen mislukt.'
+  } finally {
+    isMfaBusy = false
+  }
+
+  render()
+}
+
+async function handleMfaCodeSubmit() {
+  if (isMfaBusy) return
+
+  const code = document
+    .querySelector<HTMLInputElement>('#auth-mfa-code')
+    ?.value.replace(/\s+/g, '') ?? ''
+
+  if (!/^\d{6}$/.test(code)) {
+    authMfaError = 'Vul de code van 6 cijfers in.'
+    render()
+    return
+  }
+
+  isMfaBusy = true
+  authMfaError = ''
+  render()
+
+  try {
+    await verifyTotpCode(authMfaFactorId, code)
+    await refreshRequiredMfaState()
+
+    if (authMfaStep !== 'verified' || !currentProfile) {
+      throw new Error('De extra beveiliging is nog niet bevestigd.')
+    }
+
+    const target = defaultScreenForRole(currentProfile.role)
+    screen = target
+    updateModeInUrl(target)
+    isMfaBusy = false
+    await bootCurrentScreen()
+    return
+  } catch (error) {
+    console.error('Authenticatorcode controleren mislukt:', error)
+    authMfaError = 'De code is ongeldig of verlopen. Probeer een nieuwe code.'
+  } finally {
+    isMfaBusy = false
+  }
+
   render()
 }
 
@@ -1007,6 +1143,20 @@ let isAuthLoading = true
 let authError = ''
 let isLoggingIn = false
 let authListenerBound = false
+type AuthMfaStep =
+  | 'not-required'
+  | 'checking'
+  | 'setup-required'
+  | 'enrollment-code'
+  | 'challenge-required'
+  | 'verified'
+  | 'error'
+let authMfaStep: AuthMfaStep = 'not-required'
+let authMfaFactorId = ''
+let authMfaQrCode = ''
+let authMfaSecret = ''
+let authMfaError = ''
+let isMfaBusy = false
 
 // --- FASE 2 staff account management state (admin-users screen) ---
 let adminUsers: AdminUserRow[] = []
@@ -14970,6 +15120,100 @@ function renderAuthBlockedScreen(reason: 'no-profile' | 'deactivated') {
   `)
 }
 
+function renderMfaSetupScreen() {
+  return renderAuthShell(`
+    <h1 class="auth-title">Authenticator instellen</h1>
+    <p class="auth-subtitle">
+      Voor ${currentProfile?.role === 'admin' ? 'admins' : 'managers'} is een extra beveiligingscode verplicht.
+    </p>
+
+    ${authMfaError ? `<div class="auth-error">${escapeHtml(authMfaError)}</div>` : ''}
+
+    <div class="auth-form">
+      <p class="auth-blocked-text">
+        Gebruik bijvoorbeeld Google Authenticator, Microsoft Authenticator of 1Password.
+      </p>
+      <button id="auth-mfa-start" type="button" class="auth-primary-btn" ${isMfaBusy ? 'disabled' : ''}>
+        ${isMfaBusy ? 'Bezig met instellen…' : 'Authenticator koppelen'}
+      </button>
+      <button id="auth-logout" type="button" class="auth-secondary-btn">Uitloggen</button>
+    </div>
+  `)
+}
+
+function renderMfaCodeScreen(isEnrollment: boolean) {
+  return renderAuthShell(`
+    <h1 class="auth-title">${isEnrollment ? 'Scan de QR-code' : 'Extra beveiliging'}</h1>
+    <p class="auth-subtitle">
+      ${
+        isEnrollment
+          ? 'Scan deze code met je authenticator-app en vul daarna de code van 6 cijfers in.'
+          : 'Vul de actuele code van 6 cijfers uit je authenticator-app in.'
+      }
+    </p>
+
+    ${
+      isEnrollment && authMfaQrCode
+        ? `
+          <div style="display:flex;justify-content:center;margin:1rem 0;">
+            <img
+              src="${escapeHtml(authMfaQrCode)}"
+              alt="QR-code voor authenticator"
+              width="220"
+              height="220"
+              style="max-width:100%;height:auto;border-radius:12px;background:#fff;padding:10px;"
+            />
+          </div>
+          <p class="auth-blocked-text" style="overflow-wrap:anywhere;">
+            Handmatige sleutel: <strong>${escapeHtml(authMfaSecret)}</strong>
+          </p>
+        `
+        : ''
+    }
+
+    ${authMfaError ? `<div class="auth-error">${escapeHtml(authMfaError)}</div>` : ''}
+
+    <form id="auth-mfa-form" class="auth-form" autocomplete="off">
+      <label class="auth-field">
+        <span>Authenticatorcode</span>
+        <input
+          id="auth-mfa-code"
+          type="text"
+          name="code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          pattern="[0-9]{6}"
+          minlength="6"
+          maxlength="6"
+          ${isMfaBusy ? 'disabled' : ''}
+          required
+          autofocus
+        />
+      </label>
+
+      <button type="submit" class="auth-primary-btn" ${isMfaBusy ? 'disabled' : ''}>
+        ${isMfaBusy ? 'Code controleren…' : isEnrollment ? 'Koppelen en doorgaan' : 'Controleren en doorgaan'}
+      </button>
+      <button id="auth-logout" type="button" class="auth-secondary-btn">Uitloggen</button>
+    </form>
+  `)
+}
+
+function renderMfaErrorScreen() {
+  return renderAuthShell(`
+    <h1 class="auth-title">Controle mislukt</h1>
+    <p class="auth-blocked-text">
+      ${escapeHtml(authMfaError || 'De extra beveiliging kon niet worden geladen.')}
+    </p>
+    <div class="auth-form">
+      <button id="auth-mfa-retry" type="button" class="auth-primary-btn" ${isMfaBusy ? 'disabled' : ''}>
+        Opnieuw proberen
+      </button>
+      <button id="auth-logout" type="button" class="auth-secondary-btn">Uitloggen</button>
+    </div>
+  `)
+}
+
 function renderAuthGate() {
   if (!currentUser) {
     return renderLoginScreen()
@@ -14979,6 +15223,13 @@ function renderAuthGate() {
   }
   if (!currentProfile.is_active) {
     return renderAuthBlockedScreen('deactivated')
+  }
+  if (profileRequiresMfa(currentProfile)) {
+    if (authMfaStep === 'checking') return renderAuthLoading()
+    if (authMfaStep === 'setup-required') return renderMfaSetupScreen()
+    if (authMfaStep === 'enrollment-code') return renderMfaCodeScreen(true)
+    if (authMfaStep === 'challenge-required') return renderMfaCodeScreen(false)
+    if (authMfaStep === 'error') return renderMfaErrorScreen()
   }
   // Signed in + active but somehow still on the gate — fall back to login view.
   return renderLoginScreen()
@@ -15121,6 +15372,25 @@ function bindEvents() {
   document.querySelector<HTMLFormElement>('#auth-form')?.addEventListener('submit', (event) => {
     event.preventDefault()
     void handleLoginSubmit()
+  })
+
+  document.querySelector<HTMLButtonElement>('#auth-mfa-start')?.addEventListener('click', () => {
+    void handleStartMfaEnrollment()
+  })
+
+  document.querySelector<HTMLFormElement>('#auth-mfa-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void handleMfaCodeSubmit()
+  })
+
+  document.querySelector<HTMLButtonElement>('#auth-mfa-retry')?.addEventListener('click', () => {
+    if (isMfaBusy) return
+    isMfaBusy = true
+    render()
+    void refreshRequiredMfaState().finally(() => {
+      isMfaBusy = false
+      render()
+    })
   })
 
   document.querySelector<HTMLButtonElement>('#auth-logout')?.addEventListener('click', () => {
