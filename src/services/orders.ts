@@ -17,6 +17,7 @@
 
 import { supabase, customerSupabase } from '../lib/supabase'
 import type { Order, OrderItem, OrderStatus } from '../types/order'
+import type { LabelStatus } from '../types/kitchen'
 
 /**
  * All orders created within a given ISO datetime window, newest first.
@@ -105,30 +106,48 @@ export function insertAuditLog(entry: Record<string, unknown>) {
 
 export type CustomerOrderStatusRow = {
   id: string
+  order_number: string
   status: OrderStatus
+  payment_status: string | null
   pickup_code: string | null
   created_at: string | null
+  labels: Array<{
+    id: string
+    product_name: string
+    status: LabelStatus
+    label_index: number
+  }>
 }
 
 /**
- * Status of one customer order via the `get_customer_order_status` RPC.
- * The anonymous customer/QR flow uses this instead of a direct `orders`
- * SELECT, via the session-less `customerSupabase` client so een ingelogde
- * staff-sessie de call niet als `authenticated` uitvoert. The RPC returns at
- * most one row (array or single object). Throws the Supabase error; returns
- * null when no row is found.
+ * Status + minimale kitchen-labelstatus van precies één customer-order via de
+ * token-beveiligde `get_customer_order_status_v2` RPC. De ruwe token staat
+ * alleen op het klantapparaat; de database bewaart uitsluitend de SHA-256-hash.
+ * Er is dus geen directe anonieme SELECT op orders of kitchen_labels nodig.
  */
 export async function fetchCustomerOrderStatus(
-  orderId: string
+  orderId: string,
+  customerToken: string
 ): Promise<CustomerOrderStatusRow | null> {
-  const { data, error } = await customerSupabase.rpc('get_customer_order_status', {
-    p_order_id: orderId,
-  })
+  const { data, error } = await customerSupabase.rpc(
+    'get_customer_order_status_v2',
+    {
+      p_order_id: orderId,
+      p_customer_token: customerToken,
+    }
+  )
 
   if (error) throw error
 
   const row = Array.isArray(data) ? data[0] : data
-  return (row ?? null) as CustomerOrderStatusRow | null
+  if (!row) return null
+
+  return {
+    ...(row as CustomerOrderStatusRow),
+    labels: Array.isArray((row as CustomerOrderStatusRow).labels)
+      ? (row as CustomerOrderStatusRow).labels
+      : [],
+  }
 }
 
 export type CustomerOrderByReferenceRow = {

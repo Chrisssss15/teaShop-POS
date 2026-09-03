@@ -56,14 +56,12 @@ import {
   fetchPickupBoard,
   fetchOrderItemsForOrders,
   fetchCustomerOrderStatus,
-  fetchCustomerOrderByReference,
   updateOrderFields,
   insertAuditLog,
 } from './services/orders'
 // Pure kitchen-label Supabase data-access moved to ./services/kitchen.
 import {
   fetchOpenKitchenLabels,
-  fetchKitchenLabelsForOrder,
   fetchKitchenLabelStatuses,
   updateKitchenLabel,
   cancelOpenKitchenLabelsForOrder,
@@ -144,14 +142,18 @@ const CUSTOMER_ORDER_ID_KEY = 'customer_order_id'
 const CUSTOMER_PICKUP_CODE_KEY = 'customer_pickup_code'
 const CUSTOMER_ORDER_STATUS_KEY = 'customer_order_status'
 const CUSTOMER_ORDER_NUMBER_KEY = 'customer_order_number'
+const CUSTOMER_ACCESS_TOKEN_KEY = 'customer_access_token'
+const CUSTOMER_CHECKOUT_REQUEST_ID_KEY = 'customer_checkout_request_id'
+const CUSTOMER_CHECKOUT_TOKEN_KEY = 'customer_checkout_token'
+const CUSTOMER_CHECKOUT_SIGNATURE_KEY = 'customer_checkout_signature'
 const CUSTOMER_LANGUAGE_KEY = 'customer_language'
 
 // localStorage (niet sessionStorage): onthoudt op dit apparaat de laatste
 // actieve customer-order zodat de klant na het sluiten van het tabblad zijn
-// bestelling/ophaalcode terugvindt. Bevat NOOIT status, naam, telefoon,
-// betaal-/auth-gegevens of de interne order-UUID — alleen het leesbare
-// ordernummer, de ophaalcode en wanneer de order geplaatst is. Max 24 uur
-// geldig; de backend blijft de bron van waarheid voor de actuele status.
+// bestelling/ophaalcode terugvindt. Bevat geen naam, telefoon of betaalstatus,
+// maar wel de interne order-UUID en een sterke order-specifieke capability
+// token. De database bewaart alleen de SHA-256-hash van die token. Max 24 uur
+// geldig; de backend blijft altijd de bron van waarheid voor de actuele status.
 const ACTIVE_CUSTOMER_ORDER_KEY = 'teashop_active_customer_order'
 const ACTIVE_CUSTOMER_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
@@ -590,14 +592,6 @@ if (!mode && isNativeCustomerApp()) {
 // echte status/betaling blijft uit Supabase komen. Browser/PWA gebruiken
 // ongewijzigd de bestaande http(s) return-URL.
 type CustomerPaymentReturn = { order: string | null; paymentCancelled: boolean }
-
-function buildNativePaymentReturnUrls(orderNumber: string): {
-  redirectUrl: string
-  cancelUrl: string
-} {
-  const base = `bluecup://payment-return?order=${encodeURIComponent(orderNumber)}`
-  return { redirectUrl: base, cancelUrl: `${base}&payment_cancelled=1` }
-}
 
 function parseCustomerPaymentReturnDeepLink(
   rawUrl: string
@@ -1230,6 +1224,10 @@ let customerOrderId = ''
 // customer-URL gebruikt na terugkeer van MultiSafepay; de echte order-herstel
 // blijft via customerOrderId + sessionStorage lopen.
 let customerOrderNumber = ''
+let customerAccessToken = ''
+let pendingCustomerCheckoutRequestId = ''
+let pendingCustomerCheckoutToken = ''
+let pendingCustomerCheckoutSignature = ''
 let customerOrderStatus: OrderStatus | null = null
 let customerOrderLabels: KitchenLabel[] = []
 let isCustomerCartOpen = false
@@ -1356,6 +1354,10 @@ function clearCustomerSessionStorage() {
   sessionStorage.removeItem(CUSTOMER_ORDER_NUMBER_KEY)
   sessionStorage.removeItem(CUSTOMER_PICKUP_CODE_KEY)
   sessionStorage.removeItem(CUSTOMER_ORDER_STATUS_KEY)
+  sessionStorage.removeItem(CUSTOMER_ACCESS_TOKEN_KEY)
+  sessionStorage.removeItem(CUSTOMER_CHECKOUT_REQUEST_ID_KEY)
+  sessionStorage.removeItem(CUSTOMER_CHECKOUT_TOKEN_KEY)
+  sessionStorage.removeItem(CUSTOMER_CHECKOUT_SIGNATURE_KEY)
 }
 
 function resetCustomerStateVariables() {
@@ -1367,6 +1369,10 @@ function resetCustomerStateVariables() {
   customerOrderPlaced = false
   customerOrderId = ''
   customerOrderNumber = ''
+  customerAccessToken = ''
+  pendingCustomerCheckoutRequestId = ''
+  pendingCustomerCheckoutToken = ''
+  pendingCustomerCheckoutSignature = ''
   customerOrderStatus = null
   customerOrderLabels = []
   isCustomerCartOpen = false
@@ -1386,13 +1392,20 @@ function resetCustomerStateVariables() {
 // try/catch-veilig (private mode / quota / corrupte data mogen niet crashen).
 
 type ActiveCustomerOrderHint = {
+  orderId: string
   orderNumber: string
   pickupCode: string
+  customerToken: string
   createdAt: string
 }
 
 function saveActiveCustomerOrderHint() {
-  if (!customerOrderNumber || !customerPickupCode) return
+  if (
+    !customerOrderId ||
+    !customerOrderNumber ||
+    !customerPickupCode ||
+    !/^[0-9a-f]{64}$/.test(customerAccessToken)
+  ) return
 
   try {
     // Bestaande createdAt behouden zolang het om dezelfde order gaat, zodat de
@@ -1416,8 +1429,10 @@ function saveActiveCustomerOrderHint() {
     }
 
     const hint: ActiveCustomerOrderHint = {
+      orderId: customerOrderId,
       orderNumber: customerOrderNumber,
       pickupCode: customerPickupCode,
+      customerToken: customerAccessToken,
       createdAt,
     }
 
@@ -1456,8 +1471,11 @@ function readActiveCustomerOrderHint(): ActiveCustomerOrderHint | null {
 
   const hint = (parsed ?? {}) as Partial<ActiveCustomerOrderHint>
   if (
+    typeof hint.orderId !== 'string' ||
     typeof hint.orderNumber !== 'string' ||
     typeof hint.pickupCode !== 'string' ||
+    typeof hint.customerToken !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(hint.customerToken) ||
     typeof hint.createdAt !== 'string'
   ) {
     clearActiveCustomerOrderHint()
@@ -1474,55 +1492,38 @@ function readActiveCustomerOrderHint(): ActiveCustomerOrderHint | null {
   }
 
   return {
+    orderId: hint.orderId,
     orderNumber: hint.orderNumber,
     pickupCode: hint.pickupCode,
+    customerToken: hint.customerToken,
     createdAt: hint.createdAt,
   }
 }
 
-// Herstelt na een tab-close (sessionStorage weg) de actieve customer-order uit
-// de localStorage-hint. De hint levert alleen ordernummer + ophaalcode; die
-// worden via de SECURITY DEFINER RPC get_customer_order_by_reference exact
-// gematcht tegen de order. Pas bij een match wordt de bestaande status-flow
-// (get_customer_order_status op de echte order-UUID) gestart. Bij geen match of
-// een RPC-fout stopt deze functie zonder de "bestelling geplaatst"-pagina te
-// tonen -> geen infinite loading.
+// Herstelt na een tab-close de actieve order met order-UUID + sterke token uit
+// de lokale hint. get_customer_order_status_v2 geeft uitsluitend bij de juiste
+// combinatie statusdata terug; ordernummer of de korte pickupcode zijn nooit
+// meer voldoende om een order op te vragen.
 async function restoreActiveCustomerOrderFromLocalStorage() {
   const hint = readActiveCustomerOrderHint()
   if (!hint) return
 
-  let order: Awaited<ReturnType<typeof fetchCustomerOrderByReference>>
-  try {
-    order = await fetchCustomerOrderByReference(hint.orderNumber, hint.pickupCode)
-  } catch (error) {
-    // RPC-fout: hint bewaren (kan tijdelijk zijn), maar NIET de statuspagina
-    // tonen. De normale startflow (menu) rendert gewoon.
-    console.error(
-      'Actieve customer-order herstellen mislukt:',
-      (error as { message?: string })?.message
-    )
-    return
-  }
-
-  if (!order) {
-    // order_number + pickup_code matchen geen customer/QR-order (verkeerde of
-    // verlopen data) -> hint opruimen en normale startflow tonen.
-    clearActiveCustomerOrderHint()
-    return
-  }
-
-  // Match: schakel over naar de bestaande, UUID-gebaseerde status-flow.
-  customerOrderId = order.id
-  customerOrderNumber = order.order_number
-  customerPickupCode = order.pickup_code || hint.pickupCode
-  customerOrderStatus = order.status
+  customerOrderId = hint.orderId
+  customerOrderNumber = hint.orderNumber
+  customerPickupCode = hint.pickupCode
+  customerAccessToken = hint.customerToken
+  customerOrderStatus = null
   customerOrderLabels = []
   customerOrderPlaced = true
 
-  saveCustomerState()
-  saveActiveCustomerOrderHint()
+  const restored = await loadCustomerOrderProgress(false)
+  if (!restored) {
+    clearActiveCustomerOrderHint()
+    resetCustomerStateVariables()
+    return
+  }
 
-  await loadCustomerOrderProgress(false)
+  saveCustomerState()
   startCustomerProgressRefresh()
 }
 
@@ -1572,6 +1573,16 @@ function saveCustomerState() {
   sessionStorage.setItem(CUSTOMER_ORDER_NUMBER_KEY, customerOrderNumber)
   sessionStorage.setItem(CUSTOMER_PICKUP_CODE_KEY, customerPickupCode)
   sessionStorage.setItem(CUSTOMER_ORDER_STATUS_KEY, customerOrderStatus || '')
+  sessionStorage.setItem(CUSTOMER_ACCESS_TOKEN_KEY, customerAccessToken)
+  sessionStorage.setItem(
+    CUSTOMER_CHECKOUT_REQUEST_ID_KEY,
+    pendingCustomerCheckoutRequestId
+  )
+  sessionStorage.setItem(CUSTOMER_CHECKOUT_TOKEN_KEY, pendingCustomerCheckoutToken)
+  sessionStorage.setItem(
+    CUSTOMER_CHECKOUT_SIGNATURE_KEY,
+    pendingCustomerCheckoutSignature
+  )
 }
 
 function normalizeSugarLevel(value: unknown): SugarLevel {
@@ -1616,6 +1627,13 @@ function loadCustomerStateAfterProducts() {
   customerOrderId = sessionStorage.getItem(CUSTOMER_ORDER_ID_KEY) || ''
   customerOrderNumber = sessionStorage.getItem(CUSTOMER_ORDER_NUMBER_KEY) || ''
   customerPickupCode = sessionStorage.getItem(CUSTOMER_PICKUP_CODE_KEY) || ''
+  customerAccessToken = sessionStorage.getItem(CUSTOMER_ACCESS_TOKEN_KEY) || ''
+  pendingCustomerCheckoutRequestId =
+    sessionStorage.getItem(CUSTOMER_CHECKOUT_REQUEST_ID_KEY) || ''
+  pendingCustomerCheckoutToken =
+    sessionStorage.getItem(CUSTOMER_CHECKOUT_TOKEN_KEY) || ''
+  pendingCustomerCheckoutSignature =
+    sessionStorage.getItem(CUSTOMER_CHECKOUT_SIGNATURE_KEY) || ''
 
   const savedStatus = sessionStorage.getItem(CUSTOMER_ORDER_STATUS_KEY) as OrderStatus | null
 
@@ -2220,41 +2238,43 @@ async function loadKitchenLabels(showLoading = true) {
 }
 
 async function loadCustomerOrderProgress(shouldRender = true) {
-  if (!customerOrderId) return
+  if (!customerOrderId || !customerAccessToken) return false
 
-  // De customer-statuspagina leest de eigen order via de RPC
-  // get_customer_order_status (services/orders), NIET direct uit public.orders.
-  // `p_order_id` is de onraadbare order-UUID uit sessionStorage. De customer-UI
-  // gebruikt hiervan alleen `status` en `pickup_code`.
+  // Eén token-beveiligde RPC levert zowel de minimale orderstatus als de
+  // minimale labelstatus. De browser leest orders/kitchen_labels niet direct.
   let order: Awaited<ReturnType<typeof fetchCustomerOrderStatus>>
 
   try {
-    order = await fetchCustomerOrderStatus(customerOrderId)
+    order = await fetchCustomerOrderStatus(
+      customerOrderId,
+      customerAccessToken
+    )
   } catch (orderError) {
     console.error('Customer order status laden mislukt:', orderError)
-    return
+    return false
   }
 
   if (!order) {
     console.error('Customer order status laden mislukt: order niet gevonden.')
-    return
+    return false
   }
 
   customerOrderStatus = order.status
   customerPickupCode = order.pickup_code || customerPickupCode
-
-  try {
-    customerOrderLabels = await fetchKitchenLabelsForOrder(customerOrderId)
-  } catch (labelsError) {
-    console.error('Customer labels laden mislukt:', labelsError)
-    return
-  }
+  customerOrderNumber = order.order_number || customerOrderNumber
+  customerOrderLabels = order.labels.map((label) => ({
+    ...label,
+    order_id: customerOrderId,
+  }))
 
   saveCustomerState()
+  saveActiveCustomerOrderHint()
 
   if (shouldRender) {
     render()
   }
+
+  return true
 }
 
 async function loadOrderItemsForOrders(orderList: Order[]) {
@@ -2898,20 +2918,6 @@ function getProductVatRate(product: Product) {
   return rate
 }
 
-function getCartItemOriginalUnitPrice(item: CartItem) {
-  const originalSizePrice = getProductSizePrice(item.product, item.cupSize)
-  const toppingsTotal = getToppingsTotal(item)
-
-  return roundMoney(originalSizePrice + toppingsTotal)
-}
-
-function getCartItemDiscountAmount(item: CartItem) {
-  const originalUnitPrice = getCartItemOriginalUnitPrice(item)
-  const finalUnitPrice = roundMoney(getCartItemUnitPrice(item))
-
-  return roundMoney(Math.max(0, originalUnitPrice - finalUnitPrice))
-}
-
 function getCartItemTaxAmounts(item: CartItem) {
   const grossAmount = roundMoney(getCartItemLineTotal(item))
   const vatRate = getProductVatRate(item.product)
@@ -3542,36 +3548,6 @@ function setCustomerPaymentMethod(method: PaymentMethod) {
 }
 
 
-// =============================
-// ORDER HELPERS: NUMBERS AND CODES
-// =============================
-
-function makeOrderNumber() {
-  const now = new Date()
-  const yyyy = now.getFullYear()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  const hh = String(now.getHours()).padStart(2, '0')
-  const mi = String(now.getMinutes()).padStart(2, '0')
-  const ss = String(now.getSeconds()).padStart(2, '0')
-
-  // Korte random suffix zodat twee customer/QR-orders in dezelfde seconde
-  // niet hetzelfde order_number krijgen (unieke constraint orders_order_number_key).
-  // crypto.getRandomValues werkt zonder library, ook buiten een secure context.
-  const bytes = new Uint8Array(2)
-  crypto.getRandomValues(bytes)
-  const suffix = Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .toUpperCase()
-
-  return `ORD-${yyyy}${mm}${dd}-${hh}${mi}${ss}-${suffix}`
-}
-
-function makePickupCode() {
-  const number = Math.floor(100 + Math.random() * 900)
-  return `P${number}`
-}
-
 // Geldige UUID v4. `crypto.randomUUID()` bestaat alleen in een secure context
 // (https of localhost) — via bijv. http://192.168.2.20:5173 is die undefined.
 // Dan valt hij terug op crypto.getRandomValues(), dat óók in een niet-secure
@@ -3591,6 +3567,48 @@ function makeUuid(): string {
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function makeCustomerAccessToken(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+function customerCheckoutCartSignature(): string {
+  return JSON.stringify(
+    cart.map((item) => [
+      item.product.id,
+      item.quantity,
+      item.cupSize,
+      item.iceLevel,
+      item.sugarLevel,
+      item.toppings.map((topping) => topping.id).sort(),
+    ])
+  )
+}
+
+function getOrCreateCustomerCheckoutIdentity(): {
+  requestId: string
+  customerToken: string
+} {
+  const signature = customerCheckoutCartSignature()
+  const hasValidIdentity =
+    /^[0-9a-f-]{36}$/i.test(pendingCustomerCheckoutRequestId) &&
+    /^[0-9a-f]{64}$/.test(pendingCustomerCheckoutToken) &&
+    pendingCustomerCheckoutSignature === signature
+
+  if (!hasValidIdentity) {
+    pendingCustomerCheckoutRequestId = makeUuid()
+    pendingCustomerCheckoutToken = makeCustomerAccessToken()
+    pendingCustomerCheckoutSignature = signature
+    saveCustomerState()
+  }
+
+  return {
+    requestId: pendingCustomerCheckoutRequestId,
+    customerToken: pendingCustomerCheckoutToken,
+  }
 }
 
 
@@ -3828,175 +3846,54 @@ async function submitCustomerOrder() {
   message = ''
   render()
 
-  const taxTotals = getCartTaxTotals()
-  const total = taxTotals.grossTotal
-  const orderNumber = makeOrderNumber()
-  const pickupCode = makePickupCode()
-  const customerSessionId = getCustomerSessionId()
+  const { requestId, customerToken } = getOrCreateCustomerCheckoutIdentity()
+  const customerItemsPayload = cart.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+    cup_size: item.product.product_type === 'drink' ? item.cupSize : null,
+    ice_level: item.product.product_type === 'drink' ? item.iceLevel : null,
+    sugar_level: item.product.product_type === 'drink' ? item.sugarLevel : null,
+    topping_ids: item.toppings.map((topping) => topping.id),
+    modifier_option_ids: [],
+  }))
 
-  // Client-side de order-UUID genereren en expliciet meesturen als `id`.
-  // Zo hoeft de anonieme customer-browser GEEN RETURNING / SELECT op `orders`
-  // meer te doen om de nieuwe order-id te weten.
-  const orderId = makeUuid()
-
-  const isOnlinePayment = customerPaymentMethod === 'online_fake'
-
-  const paymentStatus: PaymentStatus =
-    isOnlinePayment ? 'pending' : 'unpaid'
-
-  // =============================
-  // 1. ORDER OPSLAAN
-  // =============================
-
-  const { error: orderError } = await customerSupabase
-    .from('orders')
-    .insert({
-      id: orderId,
-      order_number: orderNumber,
-      status: 'new',
-      order_type: 'customer',
-      channel: 'qr',
-      subtotal: total,
-      total: total,
-      net_total: taxTotals.netTotal,
-      vat_total: taxTotals.vatTotal,
-      gross_total: taxTotals.grossTotal,
-      payment_status: paymentStatus,
-      payment_method: customerPaymentMethod,
-      paid_at: null,
-      customer_session_id: customerSessionId,
-      pickup_code: pickupCode,
-      customer_name: cleanCustomerName,
-      customer_phone: cleanCustomerPhone,
+  try {
+    const checkout = await createCustomerCheckout({
+      clientRequestId: requestId,
+      customerToken,
+      customerName: cleanCustomerName,
+      customerPhone: cleanCustomerPhone,
+      expectedTotal: getCartTaxTotals().grossTotal,
+      returnMode: isNativeCustomerApp() ? 'native' : 'web',
+      returnUrl: isNativeCustomerApp() ? undefined : window.location.href,
+      items: customerItemsPayload,
     })
 
-  if (orderError) {
+    customerOrderId = checkout.orderId
+    customerOrderNumber = checkout.orderNumber
+    customerPickupCode = checkout.pickupCode
+    customerAccessToken = checkout.customerToken
+    customerOrderStatus = 'new'
+    customerOrderLabels = []
+    customerOrderPlaced = true
+    isCustomerCartOpen = false
+    isCustomerCheckoutOpen = false
+    cart = []
     isSubmitting = false
-    message = `Bestelling plaatsen mislukt: ${orderError.message}`
-    render()
-    return
-  }
 
-  // =============================
-  // 2. ORDER ITEMS OPSLAAN
-  // =============================
+    saveCustomerState()
+    saveActiveCustomerOrderHint()
 
-  const orderItemsPayload = cart.map((item) => {
-    const tax = getCartItemTaxAmounts(item)
-    const discount = getProductDiscount(item.product)
-
-    return {
-      order_id: orderId,
-      product_id: item.product.id,
-      product_name: item.product.name,
-      product_name_snapshot: item.product.name,
-      original_unit_price: getCartItemOriginalUnitPrice(item),
-      unit_price: roundMoney(getCartItemUnitPrice(item)),
-      discount_type_snapshot: discount.type,
-      discount_value_snapshot: roundMoney(discount.value),
-      discount_amount: roundMoney(
-        getCartItemDiscountAmount(item) * item.quantity
-      ),
-      quantity: item.quantity,
-      qty: item.quantity,
-      line_total: tax.grossAmount,
-      vat_rate: tax.vatRate,
-      net_amount: tax.netAmount,
-      vat_amount: tax.vatAmount,
-      gross_amount: tax.grossAmount,
-      cup_size: item.cupSize,
-      ice_level: item.iceLevel,
-      sugar_level: item.sugarLevel,
-      toppings: item.toppings,
-    }
-  })
-
-  const { error: itemsError } = await customerSupabase
-    .from('order_items')
-    .insert(orderItemsPayload)
-
-  if (itemsError) {
-    await customerSupabase
-      .from('orders')
-      .delete()
-      .eq('id', orderId)
-
+    window.location.href = checkout.paymentUrl
+  } catch (error) {
+    console.error('Veilige customer-checkout mislukt:', error)
     isSubmitting = false
-    message = `Orderregels opslaan mislukt: ${itemsError.message}`
+    message =
+      error instanceof Error
+        ? error.message
+        : 'Online betaling starten mislukt.'
     render()
-    return
   }
-
-  // BELANGRIJK:
-  // Bij customer-orders maken we hier GEEN kitchen labels.
-  // De MultiSafepay webhook maakt de labels pas nadat de betaling
-  // daadwerkelijk als completed/paid is bevestigd.
-
-  // =============================
-  // 3. ONLINE BETALING STARTEN
-  // =============================
-
-  if (isOnlinePayment) {
-    try {
-      const payment = await createMultisafepayPayment(
-        orderId,
-        orderNumber,
-        total,
-        cleanCustomerName
-      )
-
-      customerOrderId = orderId
-      customerOrderNumber = orderNumber
-      customerPickupCode = pickupCode
-      customerOrderStatus = 'new'
-      customerOrderPlaced = true
-      isCustomerCartOpen = false
-      isCustomerCheckoutOpen = false
-
-      saveCustomerState()
-      saveActiveCustomerOrderHint()
-
-      cart = []
-      isSubmitting = false
-
-      window.location.href = payment.paymentUrl
-      return
-    } catch (error) {
-      console.error('MultiSafepay betaling starten mislukt:', error)
-
-      isSubmitting = false
-      message =
-        error instanceof Error
-          ? error.message
-          : 'Online betaling starten mislukt.'
-
-      render()
-      return
-    }
-  }
-
-  // =============================
-  // 4. BETALEN AAN BALIE
-  // =============================
-  // Deze order blijft unpaid. Ook hier maken we geen labels zolang
-  // payment_status niet op paid staat.
-
-  cart = []
-  customerOrderId = orderId
-  customerOrderNumber = orderNumber
-  customerPickupCode = pickupCode
-  customerOrderStatus = 'new'
-  customerOrderPlaced = true
-  isCustomerCartOpen = false
-  isCustomerCheckoutOpen = false
-  isSubmitting = false
-
-  saveCustomerState()
-  saveActiveCustomerOrderHint()
-
-  await loadCustomerOrderProgress(false)
-  startCustomerProgressRefresh()
-  render()
 }
 
 
@@ -4018,168 +3915,62 @@ function formatPaymentAmount(amountInCents: number) {
 // getPaymentTestStatusText / getPaymentTestStatusClass moved to
 // ./screens/tools/paymentTestScreen (payment-test-screen only).
 
-type MultisafepayPaymentResult = {
+type CustomerCheckoutResult = {
   paymentUrl: string
-  multisafepayOrderId: string
+  orderId: string
+  orderNumber: string
+  pickupCode: string
+  customerToken: string
 }
 
-async function createMultisafepayPayment(
-  orderId: string,
-  orderNumber: string,
-  total: number,
+type CustomerCheckoutRequest = {
+  clientRequestId: string
+  customerToken: string
   customerName: string
-): Promise<MultisafepayPaymentResult> {
-  const amountInCents = Math.max(0, Math.round(total * 100))
+  customerPhone: string
+  expectedTotal: number
+  returnMode: 'web' | 'native'
+  returnUrl?: string
+  items: Array<{
+    product_id: string
+    quantity: number
+    cup_size: CupSize | null
+    ice_level: IceLevel | null
+    sugar_level: SugarLevel | null
+    topping_ids: string[]
+    modifier_option_ids: string[]
+  }>
+}
 
-  // =============================
-  // 1. LOKALE PAYMENT OPSLAAN
-  // =============================
-
-  const {
-    data: paymentRecord,
-    error: paymentInsertError,
-  } = await customerSupabase
-    .from('payments')
-    .insert({
-      order_id: orderId,
-      provider: 'multisafepay',
-      provider_order_id: orderNumber,
-      amount: amountInCents,
-      currency: 'EUR',
-      status: 'pending',
-      payment_method: 'online_fake',
-      payment_url: null,
-      failure_reason: null,
-    })
-    .select('*')
-    .single()
-
-  if (paymentInsertError || !paymentRecord) {
-    throw new Error(
-      `Payment opslaan mislukt: ${paymentInsertError?.message ?? 'onbekende fout'}`
-    )
-  }
-
-  // =============================
-  // 2. RETURN URLS
-  // =============================
-
-  let redirectReturnUrl: string
-  let cancelReturnUrl: string
-
-  if (isNativeCustomerApp()) {
-    // Native iOS: custom scheme deep link. Alleen het leesbare order_number,
-    // geen interne UUID.
-    const nativeUrls = buildNativePaymentReturnUrls(orderNumber)
-    redirectReturnUrl = nativeUrls.redirectUrl
-    cancelReturnUrl = nativeUrls.cancelUrl
-  } else {
-    // Browser / PWA: ongewijzigde http(s) return-URL. In de zichtbare
-    // customer-URL staat alleen het leesbare ordernummer, nooit de interne
-    // order-UUID. `transactionid` wordt door MultiSafepay zelf toegevoegd en
-    // later client-side weer opgeschoond.
-    const returnUrl = new URL(window.location.href)
-    returnUrl.searchParams.set('mode', 'customer')
-    returnUrl.searchParams.set('order', orderNumber)
-    returnUrl.searchParams.delete('payment')
-    returnUrl.searchParams.delete('payment_cancelled')
-    returnUrl.searchParams.delete('transactionid')
-
-    const cancelUrl = new URL(returnUrl.toString())
-    cancelUrl.searchParams.set('payment_cancelled', '1')
-
-    redirectReturnUrl = returnUrl.toString()
-    cancelReturnUrl = cancelUrl.toString()
-  }
-
-  // =============================
-  // 3. EDGE FUNCTION AANROEPEN
-  // =============================
-
-  const {
-    data,
-    error: functionError,
-  } = await customerSupabase.functions.invoke(
-    'create-multisafepay-payment',
-    {
-      body: {
-        orderNumber,
-        amount: amountInCents,
-        description: `Blue Cup bestelling ${orderNumber}`,
-        customerName,
-        redirectUrl: redirectReturnUrl,
-        cancelUrl: cancelReturnUrl,
-      },
-    }
+async function createCustomerCheckout(
+  request: CustomerCheckoutRequest
+): Promise<CustomerCheckoutResult> {
+  const { data, error } = await customerSupabase.functions.invoke(
+    'create-customer-checkout-v2',
+    { body: request }
   )
 
-  if (functionError) {
-    const now = new Date().toISOString()
-
-    await customerSupabase
-      .from('payments')
-      .update({
-        status: 'failed',
-        failed_at: now,
-        failure_reason:
-          functionError.message || 'Edge Function fout',
-      })
-      .eq('id', paymentRecord.id)
-
-    // De anonieme customer-browser doet GEEN UPDATE meer op `orders`.
-    // De uiteindelijke payment_status van de order wordt server-side beheerd
-    // (MultiSafepay webhook / Edge Function). De order blijft hier op
-    // payment_status 'pending' staan; er zijn geen kitchen labels aangemaakt.
-    throw new Error(
-      `MultiSafepay starten mislukt: ${functionError.message}`
-    )
+  if (error) {
+    throw new Error(`Betaling starten mislukt: ${error.message}`)
   }
 
-  if (!data?.success || !data?.paymentUrl) {
-    const now = new Date().toISOString()
-
-    await customerSupabase
-      .from('payments')
-      .update({
-        status: 'failed',
-        failed_at: now,
-        failure_reason:
-          data?.error || 'Geen payment URL ontvangen',
-      })
-      .eq('id', paymentRecord.id)
-
-    // Geen client-side UPDATE op `orders` (anonieme customer-browser).
-    // Server-side (webhook / Edge Function) beheert de payment_status.
-    throw new Error(
-      data?.error ||
-      'MultiSafepay gaf geen betaalpagina terug.'
-    )
-  }
-
-  // =============================
-  // 4. PAYMENT URL OPSLAAN
-  // =============================
-
-  const { error: paymentUpdateError } = await customerSupabase
-    .from('payments')
-    .update({
-      payment_url: data.paymentUrl,
-      provider_order_id:
-        data.multisafepayOrderId || orderNumber,
-    })
-    .eq('id', paymentRecord.id)
-
-  if (paymentUpdateError) {
-    console.error(
-      'MultiSafepay payment URL opslaan mislukt:',
-      paymentUpdateError
-    )
+  if (
+    !data?.success ||
+    typeof data.paymentUrl !== 'string' ||
+    typeof data.orderId !== 'string' ||
+    typeof data.orderNumber !== 'string' ||
+    typeof data.pickupCode !== 'string' ||
+    typeof data.customerToken !== 'string'
+  ) {
+    throw new Error(data?.error || 'Betaalserver gaf een ongeldig antwoord.')
   }
 
   return {
     paymentUrl: data.paymentUrl,
-    multisafepayOrderId:
-      data.multisafepayOrderId || orderNumber,
+    orderId: data.orderId,
+    orderNumber: data.orderNumber,
+    pickupCode: data.pickupCode,
+    customerToken: data.customerToken,
   }
 }
 
