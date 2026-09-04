@@ -17498,8 +17498,9 @@ body.customer-menu-lock .customer-page .customer-product-list{
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  /* geen grote lege ruimte meer onderaan: alleen safe-area + kleine marge */
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  /* geen grote lege ruimte meer onderaan: alleen safe-area + kleine marge,
+     plus ruimte voor de vaste bottom-nav (stap 1 app-shell) eronder. */
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--customer-bottom-nav-h) + 24px);
 }
 
 /* Categorie-kolom blijft staan en scrollt niet zelf. */
@@ -17570,7 +17571,10 @@ body.customer-menu-lock .customer-page .customer-category-sidebar{
   position: fixed;
   left: 16px;
   right: 16px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  /* Zweeft boven de bottom-nav (stap 1 app-shell): de cart-bar wordt alleen
+     ooit samen met de nav gerenderd (zelfde overlay-voorwaarden in
+     shouldShowCustomerCartBar/shouldShowCustomerBottomNav in main.ts). */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--customer-bottom-nav-h) + 14px);
   z-index: 95;
 
   display: flex;
@@ -17665,7 +17669,178 @@ body.customer-menu-lock .customer-page .customer-category-sidebar{
 }
 
 /* Ruimte onder de productlijst zodat het laatste product niet achter de
-   floating cart-balk valt (alleen wanneer de balk zichtbaar is). */
+   floating cart-balk valt (alleen wanneer de balk zichtbaar is), plus de
+   bottom-nav eronder. */
 body.customer-menu-lock .customer-page.customer-has-cart-bar .customer-product-list{
-  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--customer-bottom-nav-h) + 92px);
+}
+
+/* ========================================================= */
+/* CUSTOMER APP-SHELL — bottom navigation (stap 1)            */
+/* --------------------------------------------------------- */
+/* Vaste footer met 4 tabs (Home/Bestellen/Order history/     */
+/* Settings) voor de normale customer-app views. Rendert NIET  */
+/* mee op de order-status/annuleer-pagina's (.customer-success-*/
+/* -page, ongewijzigd) en niet terwijl de cart-drawer/checkout/*/
+/* customizer-overlay open is (renderCustomerBottomNav krijgt  */
+/* dan showNav=false uit main.ts, dus de footer staat er dan   */
+/* niet eens in de DOM — geen overlap/z-index-gedoe nodig).    */
+/* De bestaande .customer-cart-bar (floating card) blijft      */
+/* ongewijzigd van gedrag, alleen zijn `bottom`-offset schuift  */
+/* omhoog zodat hij boven deze footer blijft zweven.            */
+/* ========================================================= */
+
+:root{
+  /* Hoogte van de bottom-nav zelf, exclusief safe-area-inset-bottom. Alleen
+     hier gedefinieerd; overal elders via var() zodat de paddings die om de
+     footer heen ruimte reserveren nooit los kunnen raken van de echte hoogte. */
+  --customer-bottom-nav-h: 64px;
+}
+
+.customer-bottom-nav{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+
+  display: flex;
+  align-items: stretch;
+
+  height: calc(var(--customer-bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+
+  background: #ffffff;
+  border-top: 1px solid #eadfd4;
+  box-shadow: 0 -6px 18px rgba(24, 16, 10, 0.07);
+}
+
+.customer-bottom-nav-btn{
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+
+  border: none;
+  background: transparent;
+  padding: 6px 4px 0;
+  margin: 0;
+
+  color: #8a7b70;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.customer-bottom-nav-btn .customer-bottom-nav-icon{
+  display: inline-flex;
+}
+
+.customer-bottom-nav-btn svg{
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.customer-bottom-nav-btn.active{
+  color: #0844a3;
+}
+
+.customer-bottom-nav-btn:active{
+  opacity: 0.7;
+}
+
+.customer-bottom-nav-btn:focus-visible{
+  outline: 3px solid rgba(8, 68, 163, 0.16);
+  outline-offset: -2px;
+}
+
+/* --- Home / Order history / Settings: eigen, normaal scrollende pagina --- */
+/* Zelfde patroon als .customer-success-page: geen scroll-lock, gewoon een
+   normale pagina (dit zijn geen productlijst-schermen). */
+.customer-placeholder-page{
+  height: auto !important;
+  min-height: 100dvh;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 18px
+    calc(env(safe-area-inset-bottom, 0px) + var(--customer-bottom-nav-h) + 32px);
+}
+
+.customer-placeholder-card{
+  width: min(420px, 100%);
+  margin: 0 auto;
+  padding: 28px 22px;
+
+  background: #ffffff;
+  border: 1px solid #eadfd4;
+  border-radius: 24px;
+  box-shadow: 0 10px 26px rgba(61, 38, 20, 0.06);
+
+  text-align: center;
+}
+
+.customer-placeholder-card h1{
+  margin: 0 0 6px;
+  color: #24160f;
+  font-size: 26px;
+  font-weight: 950;
+  letter-spacing: -0.5px;
+}
+
+.customer-placeholder-title{
+  margin: 0 0 10px;
+  color: #0844a3;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.customer-placeholder-text{
+  margin: 0;
+  color: #8a7b70;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.customer-home-card .tea-shop-logo{
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 16px;
+  margin: 0 auto 14px;
+}
+
+/* Settings-tab: taalkeuze die op native uit de header is gehaald. Alleen
+   gerenderd (main.ts geeft dan een niet-lege string door) wanneer
+   isNativeCustomerApp() true is — browser/PWA laat deze sectie leeg omdat de
+   header daar de taalkeuze behoudt. */
+.customer-settings-section{
+  margin: 18px 0 20px;
+  padding-top: 18px;
+  border-top: 1px solid #eadfd4;
+}
+
+.customer-settings-label{
+  margin: 0 0 10px;
+  color: #8a7b70;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }

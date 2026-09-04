@@ -98,6 +98,13 @@ import {
 } from './services/users'
 // Screen modules — pure rendering only, dependencies passed in by main.ts.
 import { renderPickupScreen } from './screens/customer/pickupScreen'
+import {
+  renderCustomerBottomNav,
+  renderCustomerHomeTab,
+  renderCustomerHistoryTab,
+  renderCustomerSettingsTab,
+  type CustomerTab,
+} from './screens/customer/customerNav'
 import { renderPaymentTestScreen } from './screens/tools/paymentTestScreen'
 // Zebra / kitchen-label print flow — extracted from main.ts (pure refactor).
 import {
@@ -1233,6 +1240,12 @@ let customerOrderLabels: KitchenLabel[] = []
 let isCustomerCartOpen = false
 let isCustomerCheckoutOpen = false
 let customerLanguage: CustomerLanguage = 'nl'
+
+// Stap 1 customer app-shell: welke van de 4 vaste bottom-nav-subviews is
+// actief (Home/Bestellen/Order history/Settings). GEEN nieuwe globale
+// `mode=`, geen sessionStorage-persistentie (start altijd op 'home', zowel
+// native als ?mode=customer). 'order' = de bestaande volledige menu-flow.
+let customerTab: CustomerTab = 'home'
 
 // Klant komt terug van MultiSafepay via de cancelUrl
 // (?mode=customer&order=<id>&payment_cancelled=1). In dat geval NIET de normale
@@ -3500,6 +3513,33 @@ function renderModifierSummary(
   `
 }
 
+
+// =============================
+// CUSTOMER: APP-SHELL BOTTOM NAVIGATION (stap 1)
+// =============================
+
+// Switcht alleen de subview binnen de bestaande customer-mode. Cart, checkout,
+// customizer en de order-status/cancel-flow zijn hier bewust niet bij
+// betrokken: die state blijft ongewijzigd bij een tab-wissel (cart blijft dus
+// gewoon staan als je van Bestellen naar Home gaat en weer terug).
+function goToCustomerTab(tab: CustomerTab) {
+  if (customerTab === tab) return
+  customerTab = tab
+  render()
+}
+
+// De footer mag nooit boven de cart-drawer / checkout-scherm / customizer
+// verschijnen — die overlays dekken het scherm al volledig af (hogere
+// z-index), maar we renderen de footer bewust ook niet mee zolang een van
+// deze open is, zodat er nooit een navigatie-knop "doorheen" een overlay
+// bereikbaar/zichtbaar is.
+function shouldShowCustomerBottomNav() {
+  return (
+    !isCustomerCartOpen &&
+    !isCustomerCheckoutOpen &&
+    !isCustomerCustomizerOpen
+  )
+}
 
 // =============================
 // CUSTOMER: CART AND CHECKOUT UI STATE
@@ -9135,7 +9175,7 @@ function renderCustomer() {
             </div>
           </div>
 
-          ${renderCustomerLanguageSwitcher()}
+          ${isNativeCustomerApp() ? '' : renderCustomerLanguageSwitcher()}
         </header>
 
         <section class="customer-success-card">
@@ -9162,7 +9202,7 @@ function renderCustomer() {
             </div>
           </div>
 
-          ${renderCustomerLanguageSwitcher()}
+          ${isNativeCustomerApp() ? '' : renderCustomerLanguageSwitcher()}
         </header>
 
         <section class="customer-success-card">
@@ -9218,6 +9258,42 @@ function renderCustomer() {
     `
   }
 
+  // Stap 1 app-shell: Home/Order history/Settings zijn losstaande placeholder-
+  // subviews met hun eigen (normaal scrollende) pagina. De bestaande volledige
+  // menu-/cart-/checkout-flow hieronder blijft de 'order'-tab (default bij een
+  // onbekende/toekomstige tab-waarde).
+  if (customerTab === 'home') {
+    return `
+      <div class="page customer-page customer-placeholder-page customer-home-page">
+        ${renderCustomerHomeTab()}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+      </div>
+    `
+  }
+
+  if (customerTab === 'history') {
+    return `
+      <div class="page customer-page customer-placeholder-page">
+        ${renderCustomerHistoryTab()}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+      </div>
+    `
+  }
+
+  if (customerTab === 'settings') {
+    // Taalkeuze verhuist ALLEEN op native naar Settings (header verliest 'm
+    // daar). Browser/PWA houdt de taalkeuze in de header en krijgt hier dus
+    // geen tweede switcher.
+    return `
+      <div class="page customer-page customer-placeholder-page">
+        ${renderCustomerSettingsTab(
+          isNativeCustomerApp() ? renderCustomerLanguageSwitcher() : ''
+        )}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+      </div>
+    `
+  }
+
   return `
     <div class="page customer-page${shouldShowCustomerCartBar() ? ' customer-has-cart-bar' : ''}">
       <header class="header customer-header">
@@ -9230,10 +9306,16 @@ function renderCustomer() {
           </div>
         </div>
 
-        <div class="customer-header-actions">
-          ${renderCustomerCartButton()}
-          ${renderCustomerLanguageSwitcher()}
-        </div>
+        ${
+          isNativeCustomerApp()
+            ? ''
+            : `
+              <div class="customer-header-actions">
+                ${renderCustomerCartButton()}
+                ${renderCustomerLanguageSwitcher()}
+              </div>
+            `
+        }
       </header>
 
       ${renderCustomerCustomizer()}
@@ -9250,6 +9332,7 @@ function renderCustomer() {
       </main>
 
       ${renderCustomerCartBar()}
+      ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
     </div>
   `
 }
@@ -15033,12 +15116,17 @@ function renderAuthGate() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!
 
-  // Alleen de customer menu-weergave (niet de status-/annuleerpagina's) krijgt
-  // de viewport-scrolllock: op iPhone/PWA mag dan uitsluitend de productlijst
-  // scrollen, niet de hele pagina. Andere modes (POS/admin/kitchen) raken dit
-  // nooit omdat de class er dan af gaat.
+  // Alleen de customer menu-weergave (Bestellen-tab; niet de status-/
+  // annuleerpagina's, en niet de nieuwe Home/Order history/Settings-
+  // placeholders, die gewoon normaal scrollen) krijgt de viewport-scrolllock:
+  // op iPhone/PWA mag dan uitsluitend de productlijst scrollen, niet de hele
+  // pagina. Andere modes (POS/admin/kitchen) raken dit nooit omdat de class
+  // er dan af gaat.
   const lockCustomerMenuScroll =
-    screen === 'customer' && !customerOrderPlaced && !customerPaymentCancelled
+    screen === 'customer' &&
+    !customerOrderPlaced &&
+    !customerPaymentCancelled &&
+    customerTab === 'order'
   document.documentElement.classList.toggle('customer-menu-lock', lockCustomerMenuScroll)
   document.body.classList.toggle('customer-menu-lock', lockCustomerMenuScroll)
 
@@ -15997,6 +16085,13 @@ function bindEvents() {
     button.addEventListener('click', () => {
       const toppingId = button.dataset.toppingId
       if (toppingId) toggleCustomizerTopping(toppingId)
+    })
+  })
+
+  document.querySelectorAll<HTMLButtonElement>('[data-customer-tab]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tab = button.dataset.customerTab as CustomerTab | undefined
+      if (tab) goToCustomerTab(tab)
     })
   })
 
