@@ -15116,6 +15116,17 @@ function renderAuthGate() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!
 
+  // render() vervangt straks #app.innerHTML volledig, wat .customer-product-list
+  // vernietigt en opnieuw aanmaakt -> scrollTop valt terug naar 0. Dat gaf de
+  // scroll-jump bij customizer openen/sluiten/toevoegen, categoriewissel, etc.
+  // Bewaar 'm hier (vóór elke DOM-mutatie) en herstel 'm direct na het
+  // vervangen van de customer-markup verderop in deze functie — alleen op dat
+  // ene element, nooit via window.scrollTo (de page/body scrollt niet zelf,
+  // .customer-product-list is de eigen scrollcontainer).
+  const customerProductListScrollTop =
+    document.querySelector<HTMLElement>('.customer-product-list')?.scrollTop ??
+    null
+
   // Alleen de customer menu-weergave (Bestellen-tab; niet de status-/
   // annuleerpagina's, en niet de nieuwe Home/Order history/Settings-
   // placeholders, die gewoon normaal scrollen) krijgt de viewport-scrolllock:
@@ -15171,6 +15182,17 @@ function render() {
 
   if (screen === 'customer') {
     app.innerHTML = renderCustomer()
+
+    // Alleen relevant als de nieuwe markup nog dezelfde productlijst toont
+    // (bv. nog steeds de 'order'-tab); op de status-/Home/Settings-schermen
+    // bestaat .customer-product-list niet en is dit een no-op.
+    if (customerProductListScrollTop !== null) {
+      const restoredProductList =
+        document.querySelector<HTMLElement>('.customer-product-list')
+      if (restoredProductList) {
+        restoredProductList.scrollTop = customerProductListScrollTop
+      }
+    }
   }
 
   if (screen === 'pickup') {
