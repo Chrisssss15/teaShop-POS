@@ -1,3 +1,7 @@
+-- LET OP: historisch consolidatiescript. Niet zelfstandig uitvoeren op een
+-- nieuwe productieomgeving: latere hardeningscripts en actuele live-RPC's zijn
+-- hierin niet verwerkt. Zie supabase/README.md voor de veilige volgorde.
+
 begin;
 
 -- =============================================================================

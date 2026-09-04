@@ -21,7 +21,9 @@
 //           by the Supabase platform — no manual secret setup is normally needed.
 // =============================================================================
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.108.2'
+
+const MAX_BODY_BYTES = 16 * 1024
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -36,7 +38,11 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
   })
 }
 
@@ -46,6 +52,11 @@ Deno.serve(async (req: Request) => {
   }
   if (req.method !== 'POST') {
     return json({ error: 'Method not allowed.' }, 405)
+  }
+
+  const contentLength = Number(req.headers.get('Content-Length') || 0)
+  if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+    return json({ error: 'Aanvraag is te groot.' }, 413)
   }
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
@@ -81,9 +92,24 @@ Deno.serve(async (req: Request) => {
   }
 
   // --- 3. Parse body & dispatch -------------------------------------------
+  let rawBody: string
+  try {
+    rawBody = await req.text()
+  } catch {
+    return json({ error: 'Aanvraag kon niet worden gelezen.' }, 400)
+  }
+
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) {
+    return json({ error: 'Aanvraag is te groot.' }, 413)
+  }
+
   let body: Record<string, unknown>
   try {
-    body = await req.json()
+    const parsed = JSON.parse(rawBody)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('not an object')
+    }
+    body = parsed as Record<string, unknown>
   } catch {
     return json({ error: 'Ongeldige aanvraag.' }, 400)
   }
@@ -141,8 +167,11 @@ async function createStaffUser(admin: any, body: Record<string, unknown>): Promi
   const role = String(body.role ?? '')
 
   if (!EMAIL_RE.test(email)) return json({ error: 'Ongeldig e-mailadres.' }, 400)
-  if (password.length < 8) return json({ error: 'Wachtwoord moet minimaal 8 tekens zijn.' }, 400)
-  if (!fullName) return json({ error: 'Vul een naam in.' }, 400)
+  if (email.length > 254) return json({ error: 'E-mailadres is te lang.' }, 400)
+  if (password.length < 12 || password.length > 128) {
+    return json({ error: 'Wachtwoord moet 12 tot 128 tekens zijn.' }, 400)
+  }
+  if (!fullName || fullName.length > 100) return json({ error: 'Vul een geldige naam in.' }, 400)
   if (!ALLOWED_ROLES.includes(role)) return json({ error: 'Ongeldige rol.' }, 400)
 
   // 1. create the auth user (email pre-confirmed: admin-created staff account)
