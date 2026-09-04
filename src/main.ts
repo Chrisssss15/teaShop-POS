@@ -105,6 +105,14 @@ import {
   renderCustomerSettingsTab,
   type CustomerTab,
 } from './screens/customer/customerNav'
+// Customer-facing (QR/native) translations — see src/languages/. Language
+// STATE (customerLanguage, sessionStorage) stays below in this file.
+import {
+  translations,
+  getCustomerTranslations,
+  type CustomerLanguage,
+  type CustomerTranslations,
+} from './languages'
 import { renderPaymentTestScreen } from './screens/tools/paymentTestScreen'
 // Zebra / kitchen-label print flow — extracted from main.ts (pure refactor).
 import {
@@ -128,8 +136,8 @@ import {
 // =============================
 // TYPES
 // =============================
-
-type CustomerLanguage = 'nl' | 'en' | 'cn'
+// CustomerLanguage now lives in ./languages (imported above) alongside the
+// translation data it indexes.
 
 // =============================
 // CONSTANTS
@@ -309,262 +317,6 @@ function setupTeaTypeCustomInputs() {
 
       updateState()
     })
-}
-
-
-const translations = {
-  nl: {
-    languageName: 'Nederlands',
-    orderTitle: 'Blue Cup Bestellen',
-    orderSubtitle: 'Scan & bestel',
-    chooseDrinks: 'Kies je drankjes',
-    customizeDrink: 'Maak je drankje persoonlijk',
-    required: 'Verplicht',
-    multiplePossible: 'Meerdere mogelijk',
-    iceLevel: 'Temperatuur / ijsniveau',
-    sugarLevel: 'Sugar level',
-    toppings: 'Toppings',
-    noToppings: 'Geen toppings beschikbaar.',
-    total: 'Totaal',
-    chooseIceSugar: 'Kies temperatuur/ijs & sugar',
-    addToOrder: 'Toevoegen aan bestelling',
-    edit: 'Bewerken',
-    saveChanges: 'Wijzigingen opslaan',
-    yourOrder: 'Jouw bestelling',
-    viewCart: 'Bekijk winkelwagen',
-    drink: 'drankje',
-    drinks: 'drankjes',
-    emptyCart: 'Je winkelmand is nog leeg.',
-    emptyCartHint: 'Voeg eerst een drankje toe met de rode plus knop.',
-    perItem: 'per stuk',
-    remove: 'Verwijder',
-    continueDetails: 'Verder naar gegevens',
-    enterDetails: 'Gegevens invullen',
-    checkoutSubtitle: 'Controleer je bestelling en kies je betaalmethode.',
-    contactDetails: 'Contactgegevens',
-    name: 'Naam',
-    namePlaceholder: 'Bijv. Chris',
-    phone: 'Telefoonnummer',
-    phonePlaceholder: 'Bijv. 0612345678',
-    paymentMethod: 'Betaalmethode',
-    onlinePayment: 'Online betalen',
-    onlinePaymentHint: 'Veilig online betalen via MultiSafepay',
-    payAtCounter: 'Betalen aan balie',
-    payAtCounterHint: 'Betaal bij ophalen',
-    overview: 'Overzicht',
-    noDrinksChosen: 'Geen drankjes gekozen.',
-    placeOrder: 'Plaats bestelling',
-    placingOrder: 'Bestelling plaatsen...',
-    orderPlaced: 'Bestelling geplaatst ✅',
-    thankYou: 'Bedankt voor je bestelling.',
-    pickupCode: 'Je pickup code is:',
-    status: 'Status',
-    yourDrinks: 'Je drankjes',
-    loadingDrinks: 'Drankjes laden...',
-    autoRefresh: 'Deze status vernieuwt automatisch elke 5 seconden. Deze sessie blijft maximaal 1 uur actief.',
-    newOrder: 'Nieuwe bestelling',
-    nameRequired: 'Vul je naam in voordat je bestelt.',
-    phoneRequired: 'Vul je telefoonnummer in voordat je bestelt.',
-    statusNew: 'Wachten',
-    statusPreparing: 'In bereiding',
-    statusReady: 'Klaar voor ophalen',
-    statusCompleted: 'Afgerond',
-    statusCancelled: 'Geannuleerd',
-    msgNew: 'We hebben je bestelling ontvangen.',
-    msgPreparing: 'Je drankjes worden nu gemaakt.',
-    msgReady: 'Je bestelling is klaar om op te halen!',
-    msgCompleted: 'Je bestelling is afgerond.',
-    msgCancelled: 'Je bestelling is geannuleerd.',
-    loadingStatus: 'We halen je status op...',
-    labelWaiting: 'Wachten',
-    labelPreparing: 'In bereiding',
-    labelFinished: 'Klaar',
-    labelCancelled: 'Geannuleerd',
-  },
-  en: {
-    languageName: 'English',
-    orderTitle: 'Blue Cup Order',
-    orderSubtitle: 'Scan & order',
-    chooseDrinks: 'Choose your drinks',
-    customizeDrink: 'Customize your drink',
-    required: 'Required',
-    multiplePossible: 'Multiple allowed',
-    iceLevel: 'Temperature / ice level',
-    sugarLevel: 'Sugar level',
-    toppings: 'Toppings',
-    noToppings: 'No toppings available.',
-    total: 'Total',
-    chooseIceSugar: 'Choose temperature/ice & sugar',
-    addToOrder: 'Add to order',
-    edit: 'Edit',
-    saveChanges: 'Save changes',
-    yourOrder: 'Your order',
-    viewCart: 'View cart',
-    drink: 'drink',
-    drinks: 'drinks',
-    emptyCart: 'Your cart is empty.',
-    emptyCartHint: 'Add a drink first with the red plus button.',
-    perItem: 'each',
-    remove: 'Remove',
-    continueDetails: 'Continue',
-    enterDetails: 'Enter your details',
-    checkoutSubtitle: 'Check your order and choose a payment method.',
-    contactDetails: 'Contact details',
-    name: 'Name',
-    namePlaceholder: 'E.g. Chris',
-    phone: 'Phone number',
-    phonePlaceholder: 'E.g. 0612345678',
-    paymentMethod: 'Payment method',
-    onlinePayment: 'Pay online',
-    onlinePaymentHint: 'Secure online payment via MultiSafepay',
-    payAtCounter: 'Pay at counter',
-    payAtCounterHint: 'Pay when collecting',
-    overview: 'Overview',
-    noDrinksChosen: 'No drinks selected.',
-    placeOrder: 'Place order',
-    placingOrder: 'Placing order...',
-    orderPlaced: 'Order placed ✅',
-    thankYou: 'Thanks for your order.',
-    pickupCode: 'Your pickup code is:',
-    status: 'Status',
-    yourDrinks: 'Your drinks',
-    loadingDrinks: 'Loading drinks...',
-    autoRefresh: 'This status refreshes automatically every 5 seconds. This session stays active for up to 1 hour.',
-    newOrder: 'New order',
-    nameRequired: 'Enter your name before ordering.',
-    phoneRequired: 'Enter your phone number before ordering.',
-    statusNew: 'Waiting',
-    statusPreparing: 'Preparing',
-    statusReady: 'Ready for pickup',
-    statusCompleted: 'Completed',
-    statusCancelled: 'Cancelled',
-    msgNew: 'We received your order.',
-    msgPreparing: 'Your drinks are being prepared.',
-    msgReady: 'Your order is ready for pickup!',
-    msgCompleted: 'Your order is completed.',
-    msgCancelled: 'Your order was cancelled.',
-    loadingStatus: 'Loading your status...',
-    labelWaiting: 'Waiting',
-    labelPreparing: 'Preparing',
-    labelFinished: 'Finished',
-    labelCancelled: 'Cancelled',
-  },
-  cn: {
-    languageName: '中文',
-    orderTitle: '奶茶店点单',
-    orderSubtitle: '扫码点单',
-    chooseDrinks: '选择饮品',
-    customizeDrink: '定制你的饮品',
-    required: '必选',
-    multiplePossible: '可多选',
-    iceLevel: '温度 / 冰量',
-    sugarLevel: '甜度',
-    toppings: '加料',
-    noToppings: '暂无可选加料。',
-    total: '总计',
-    chooseIceSugar: '请选择温度 / 冰量和甜度',
-    addToOrder: '加入订单',
-    edit: '编辑',
-    saveChanges: '保存修改',
-    yourOrder: '你的订单',
-    viewCart: '查看购物车',
-    drink: '杯饮品',
-    drinks: '杯饮品',
-    emptyCart: '购物车还是空的。',
-    emptyCartHint: '请先点击红色加号添加饮品。',
-    perItem: '每杯',
-    remove: '删除',
-    continueDetails: '继续填写信息',
-    enterDetails: '填写信息',
-    checkoutSubtitle: '请确认订单并选择付款方式。',
-    contactDetails: '联系信息',
-    name: '姓名',
-    namePlaceholder: '例如：Chris',
-    phone: '电话号码',
-    phonePlaceholder: '例如：0612345678',
-    paymentMethod: '付款方式',
-    onlinePayment: '在线付款',
-    onlinePaymentHint: '通过 MultiSafepay 安全在线付款',
-    payAtCounter: '柜台付款',
-    payAtCounterHint: '取餐时付款',
-    overview: '订单概览',
-    noDrinksChosen: '尚未选择饮品。',
-    placeOrder: '提交订单',
-    placingOrder: '正在提交订单...',
-    orderPlaced: '订单已提交 ✅',
-    thankYou: '感谢你的订单。',
-    pickupCode: '你的取餐码：',
-    status: '状态',
-    yourDrinks: '你的饮品',
-    loadingDrinks: '正在加载饮品...',
-    autoRefresh: '状态每 5 秒自动更新。此会话最多保留 1 小时。',
-    newOrder: '新订单',
-    nameRequired: '请先填写姓名。',
-    phoneRequired: '请先填写电话号码。',
-    statusNew: '等待中',
-    statusPreparing: '制作中',
-    statusReady: '可取餐',
-    statusCompleted: '已完成',
-    statusCancelled: '已取消',
-    msgNew: '我们已收到你的订单。',
-    msgPreparing: '你的饮品正在制作中。',
-    msgReady: '你的订单已经可以取餐！',
-    msgCompleted: '你的订单已完成。',
-    msgCancelled: '你的订单已取消。',
-    loadingStatus: '正在获取订单状态...',
-    labelWaiting: '等待中',
-    labelPreparing: '制作中',
-    labelFinished: '完成',
-    labelCancelled: '已取消',
-  },
-} as const
-
-const ICE_LEVEL_LABELS: Record<CustomerLanguage, Record<IceLevel, string>> = {
-  nl: {
-    no_ice: 'Geen ijs',
-    less_ice: 'Minder ijs',
-    normal_ice: 'Normaal ijs',
-    warm: 'Warm',
-    extra_ice: 'Extra ijs',
-  },
-  en: {
-    no_ice: 'No ice',
-    less_ice: 'Less ice',
-    normal_ice: 'Normal ice',
-    warm: 'Warm',
-    extra_ice: 'Extra ice',
-  },
-  cn: {
-    no_ice: '去冰',
-    less_ice: '少冰',
-    normal_ice: '正常冰',
-    warm: '热',
-    extra_ice: '多冰',
-  },
-}
-
-const SUGAR_LEVEL_LABELS: Record<CustomerLanguage, Record<SugarLevel, string>> = {
-  nl: {
-    none: 'Geen',
-    minimal: 'Minimaal',
-    less: 'Minder',
-    normal: 'Normaal',
-    sweet: 'Zoet',
-  },
-  en: {
-    none: 'None',
-    minimal: 'Minimal',
-    less: 'Less',
-    normal: 'Normal',
-    sweet: 'Sweet',
-  },
-  cn: {
-    none: '无糖',
-    minimal: '微糖',
-    less: '少糖',
-    normal: '正常糖',
-    sweet: '多糖',
-  },
 }
 
 // =============================
@@ -2618,9 +2370,12 @@ function addToCart(productId: string) {
   if (!product) return
 
   if (!product.is_active || product.is_sold_out) {
+    // Gedeeld met POS (screen 'pos'): staff ziet altijd de Nederlandse tekst,
+    // de customer/QR-flow de vertaalde variant.
+    const isCustomerScreen = screen === 'customer'
     message = product.is_sold_out
-      ? `${product.name} is uitverkocht.`
-      : `${product.name} is momenteel niet beschikbaar.`
+      ? `${product.name} ${isCustomerScreen ? t('productSoldOutSuffix') : 'is uitverkocht.'}`
+      : `${product.name} ${isCustomerScreen ? t('productUnavailableSuffix') : 'is momenteel niet beschikbaar.'}`
     render()
     return
   }
@@ -3217,7 +2972,11 @@ function groupProductsByCategory() {
 
 type TranslationKey = keyof typeof translations.nl
 
-function t(key: TranslationKey) {
+// Generic so each call site narrows to the exact value type for that key
+// (almost always `string`) instead of the full CustomerTranslations union —
+// t('iceLevel') stays a string even though CustomerTranslations also has
+// non-string keys (iceLevels/sugarLevels, looked up directly, not via t()).
+function t<K extends TranslationKey>(key: K): CustomerTranslations[K] {
   return translations[customerLanguage][key]
 }
 
@@ -3228,19 +2987,23 @@ function setCustomerLanguage(language: CustomerLanguage) {
 }
 
 function getIceLevelText(level?: IceLevel | null) {
+  const iceLevels = getCustomerTranslations(customerLanguage).iceLevels
+
   if (!level) {
-    return ICE_LEVEL_LABELS[customerLanguage].normal_ice
+    return iceLevels.normal_ice
   }
 
-  return ICE_LEVEL_LABELS[customerLanguage][level]
+  return iceLevels[level]
 }
 
 function getSugarLevelText(level?: SugarLevel | null) {
+  const sugarLevels = getCustomerTranslations(customerLanguage).sugarLevels
+
   if (!level) {
-    return SUGAR_LEVEL_LABELS[customerLanguage].normal
+    return sugarLevels.normal
   }
 
-  return SUGAR_LEVEL_LABELS[customerLanguage][level]
+  return sugarLevels[level]
 }
 
 function renderCustomerLanguageSwitcher() {
@@ -3931,7 +3694,7 @@ async function submitCustomerOrder() {
     message =
       error instanceof Error
         ? error.message
-        : 'Online betaling starten mislukt.'
+        : t('onlinePaymentStartFailed')
     render()
   }
 }
@@ -3991,7 +3754,7 @@ async function createCustomerCheckout(
   )
 
   if (error) {
-    throw new Error(`Betaling starten mislukt: ${error.message}`)
+    throw new Error(`${t('paymentStartFailedPrefix')}: ${error.message}`)
   }
 
   if (
@@ -4002,7 +3765,7 @@ async function createCustomerCheckout(
     typeof data.pickupCode !== 'string' ||
     typeof data.customerToken !== 'string'
   ) {
-    throw new Error(data?.error || 'Betaalserver gaf een ongeldig antwoord.')
+    throw new Error(data?.error || t('paymentServerInvalidResponse'))
   }
 
   return {
@@ -8480,7 +8243,8 @@ function getOrderedCategoryNames(grouped: Record<string, Product[]>) {
 
 function renderProductGroups(grouped: Record<string, Product[]>) {
   if (Object.keys(grouped).length === 0) {
-    return `<p>Geen producten gevonden.</p>`
+    // Gedeeld met POS: staff ziet Nederlands, customer/QR de vertaalde tekst.
+    return `<p>${screen === 'customer' ? escapeHtml(t('noProductsFound')) : 'Geen producten gevonden.'}</p>`
   }
 
   return getOrderedCategoryNames(grouped)
@@ -8551,7 +8315,7 @@ function renderProductGroups(grouped: Record<string, Product[]>) {
 
                     ${
                       product.is_sold_out
-                        ? `<span class="product-sold-out-badge">Uitverkocht</span>`
+                        ? `<span class="product-sold-out-badge">${screen === 'customer' ? escapeHtml(t('soldOut')) : 'Uitverkocht'}</span>`
                         : ''
                     }
                     ${
@@ -8766,8 +8530,8 @@ function renderCustomerCustomizer() {
       <div class="customer-customizer-content">
         <section class="customer-customizer-section">
           <div class="customer-customizer-section-title">
-            <h3>Bekergrootte${hasMultipleCupSizes ? ' *' : ''}</h3>
-            <span>${hasMultipleCupSizes ? escapeHtml(t('required')) : 'Vast'}</span>
+            <h3>${escapeHtml(t('cupSize'))}${hasMultipleCupSizes ? ' *' : ''}</h3>
+            <span>${hasMultipleCupSizes ? escapeHtml(t('required')) : escapeHtml(t('fixed'))}</span>
           </div>
 
           ${
@@ -8786,7 +8550,7 @@ function renderCustomerCustomizer() {
                           ${
                             size === 'large' && availableCupSizes.includes('medium')
                               ? `+ € ${Math.max(0, getCustomizerCupSizePrice('large') - getCustomizerCupSizePrice('medium')).toFixed(2)}`
-                              : 'Inbegrepen'
+                              : escapeHtml(t('included'))
                           }
                         </strong>
                       </button>
@@ -8797,7 +8561,7 @@ function renderCustomerCustomizer() {
               : `
                 <div class="customer-fixed-modifier">
                   <span>${escapeHtml(getCupSizeLabel(availableCupSizes[0]))}</span>
-                  <small>Vaste maat voor dit drankje</small>
+                  <small>${escapeHtml(t('fixedSizeHint'))}</small>
                 </div>
               `
           }
@@ -8831,12 +8595,12 @@ function renderCustomerCustomizer() {
                 <section class="customer-customizer-section">
                   <div class="customer-customizer-section-title">
                     <h3>${escapeHtml(t('iceLevel'))}</h3>
-                    <span>Vast</span>
+                    <span>${escapeHtml(t('fixed'))}</span>
                   </div>
 
                   <div class="customer-fixed-modifier">
                     <span>${escapeHtml(getIceLevelText(fixedIceLevel))}</span>
-                    <small>Dit is de standaard voor dit drankje</small>
+                    <small>${escapeHtml(t('fixedIceHint'))}</small>
                   </div>
                 </section>
               `
@@ -9155,6 +8919,10 @@ function renderCustomerCheckoutScreen() {
 
 function renderCustomer() {
   const grouped = groupProductsByCategory()
+  // Doorgegeven aan de losstaande, state-vrije screens/customer/customerNav
+  // modules (Home/Order history/Settings + bottom nav) zodat die de vertaalde
+  // tekst kunnen tonen zonder zelf customerLanguage/t() te hoeven kennen.
+  const customerTranslations = getCustomerTranslations(customerLanguage)
 
   if (isCustomerSessionExpired()) {
     clearCustomerSessionStorage()
@@ -9170,8 +8938,8 @@ function renderCustomer() {
             <img class="tea-shop-logo" src="/logo.jpg" alt="Tea Shop logo" />
 
             <div>
-              <h1>Betaling geannuleerd</h1>
-              <p class="sub">Je bestelling is nog niet betaald</p>
+              <h1>${escapeHtml(t('paymentCancelledTitle'))}</h1>
+              <p class="sub">${escapeHtml(t('paymentCancelledSubtitle'))}</p>
             </div>
           </div>
 
@@ -9179,10 +8947,10 @@ function renderCustomer() {
         </header>
 
         <section class="customer-success-card">
-          <p>Je bestelling is nog niet betaald. Er is niets afgeschreven.</p>
+          <p>${escapeHtml(t('paymentCancelledText'))}</p>
 
           <button class="checkout-btn" id="customer-payment-cancelled-retry">
-            Opnieuw bestellen
+            ${escapeHtml(t('retryOrder'))}
           </button>
         </section>
       </div>
@@ -9265,8 +9033,8 @@ function renderCustomer() {
   if (customerTab === 'home') {
     return `
       <div class="page customer-page customer-placeholder-page customer-home-page">
-        ${renderCustomerHomeTab()}
-        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+        ${renderCustomerHomeTab(customerTranslations)}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav(), customerTranslations)}
       </div>
     `
   }
@@ -9274,8 +9042,8 @@ function renderCustomer() {
   if (customerTab === 'history') {
     return `
       <div class="page customer-page customer-placeholder-page">
-        ${renderCustomerHistoryTab()}
-        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+        ${renderCustomerHistoryTab(customerTranslations)}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav(), customerTranslations)}
       </div>
     `
   }
@@ -9287,9 +9055,10 @@ function renderCustomer() {
     return `
       <div class="page customer-page customer-placeholder-page">
         ${renderCustomerSettingsTab(
+          customerTranslations,
           isNativeCustomerApp() ? renderCustomerLanguageSwitcher() : ''
         )}
-        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+        ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav(), customerTranslations)}
       </div>
     `
   }
@@ -9332,7 +9101,7 @@ function renderCustomer() {
       </main>
 
       ${renderCustomerCartBar()}
-      ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav())}
+      ${renderCustomerBottomNav(customerTab, shouldShowCustomerBottomNav(), customerTranslations)}
     </div>
   `
 }
@@ -9659,7 +9428,7 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
                     ${selectedMediumIceLevels.includes(level) ? 'checked' : ''}
                     ${allowIceCustomization ? '' : 'disabled'}
                   />
-                  <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
+                  <span>${escapeHtml(translations.nl.iceLevels[level])}</span>
                 </label>
               `
             ).join('')}
@@ -9688,7 +9457,7 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
                     ${selectedLargeIceLevels.includes(level) ? 'checked' : ''}
                     ${allowIceCustomization ? '' : 'disabled'}
                   />
-                  <span>${escapeHtml(ICE_LEVEL_LABELS.nl[level])}</span>
+                  <span>${escapeHtml(translations.nl.iceLevels[level])}</span>
                 </label>
               `
             ).join('')}
@@ -9716,7 +9485,7 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
                 value="${level}"
                 ${defaultIceLevel === level ? 'selected' : ''}
               >
-                ${escapeHtml(ICE_LEVEL_LABELS.nl[level])}
+                ${escapeHtml(translations.nl.iceLevels[level])}
               </option>
             `
           ).join('')}
@@ -9755,7 +9524,7 @@ function renderAdminProductCustomizationFields(product?: Product | null) {
                 ${selectedSugarLevels.includes(level) ? 'checked' : ''}
                 ${allowSugarCustomization ? '' : 'disabled'}
               />
-              <span>${escapeHtml(SUGAR_LEVEL_LABELS.nl[level])}</span>
+              <span>${escapeHtml(translations.nl.sugarLevels[level])}</span>
             </label>
           `
         ).join('')}
